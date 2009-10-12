@@ -35,7 +35,7 @@ Volume::~Volume() {
     free(mMountpoint);
 }
 
-int Volume::handleDiskInsertion(const char *dp, int maj, int min, int nr_parts) {
+int Volume::handleBlockEvent(NetlinkEvent *evt) {
     errno = ENOSYS;
     return -1;
 }

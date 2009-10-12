@@ -29,6 +29,7 @@ protected:
     int            mPartIdx;
     int            mDiskMaj;
     int            mDiskNumParts;
+    unsigned char  mPendingPartMap;
 
 public:
     DeviceVolume(const char *label, const char *mount_point, int partIdx);
@@ -36,7 +37,13 @@ public:
 
     int addPath(const char *path);
 
-    int handleDiskInsertion(const char *dp, int maj, int min, int nr_parts);
+    int handleBlockEvent(NetlinkEvent *evt);
+
+private:
+    void handleDiskAdded(const char *devpath, NetlinkEvent *evt);
+    void handleDiskRemoved(const char *devpath, NetlinkEvent *evt);
+    void handlePartitionAdded(const char *devpath, NetlinkEvent *evt);
+    void handlePartitionRemoved(const char *devpath, NetlinkEvent *evt);
 };
 
 typedef android::List<DeviceVolume *> DeviceVolumeCollection;

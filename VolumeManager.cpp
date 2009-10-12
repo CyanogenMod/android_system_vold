@@ -15,11 +15,15 @@
  */
 
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include <errno.h>
 
 #define LOG_TAG "Vold"
 
 #include <cutils/log.h>
+
+#include <sysutils/NetlinkEvent.h>
 
 #include "VolumeManager.h"
 #include "DeviceVolume.h"
@@ -56,36 +60,23 @@ int VolumeManager::addVolume(Volume *v) {
     return 0;
 }
 
-void VolumeManager::handleDiskInserted(const char *devpath, int maj, int min,
-                                       int nr_parts) {
+void VolumeManager::handleBlockEvent(NetlinkEvent *evt) {
+    const char *devpath = evt->findParam("DEVPATH");
 
-    /* Lookup possible candidate DeviceVolumes */
+    /* Lookup a volume to handle this device */
     VolumeCollection::iterator it;
     bool hit = false;
     for (it = mVolumes->begin(); it != mVolumes->end(); ++it) {
-        if (!(*it)->handleDiskInsertion(devpath, maj, min, nr_parts)) {
+        if (!(*it)->handleBlockEvent(evt)) {
             hit = true;
-            LOGD("Volume '%s' has handled disk insertion for '%s'",
-                 (*it)->getLabel(), devpath);
             break;
         }
     }
 
     if (!hit) {
-        LOGW("No volumes handled insertion of disk '%s'", devpath);
+        LOGW("No volumes handled block event for '%s'", devpath);
     }
 }
-
-void VolumeManager::handleDiskRemoved(int maj, int min) {
-}
-
-void VolumeManager::handlePartCreated(const char *devpath, int maj, int min,
-                                      int part_no) {
-}
-
-void VolumeManager::handlePartRemoved(int maj, int min) {
-}
-
 
 int VolumeManager::listVolumes(SocketClient *cli) {
     VolumeCollection::iterator i;

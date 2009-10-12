@@ -41,13 +41,7 @@ public:
     int start();
     int stop();
 
-    void handleDiskInserted(const char *devpath, int maj, int min,
-                            int nr_parts);
-    void handleDiskRemoved(int maj, int min);
-
-    void handlePartCreated(const char *devpath, int maj, int min,
-                           int part_no);
-    void handlePartRemoved(int maj, int min);
+    void handleBlockEvent(NetlinkEvent *evt);
 
     int addVolume(Volume *v);
 

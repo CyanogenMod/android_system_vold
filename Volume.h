@@ -19,6 +19,8 @@
 
 #include <utils/List.h>
 
+class NetlinkEvent;
+
 class Volume {
 private:
     int mState;
@@ -43,7 +45,7 @@ public:
     const char *getMountpoint() { return mMountpoint; }
     int getState() { return mState; }
 
-    virtual int handleDiskInsertion(const char *dp, int maj, int min, int nr_parts);
+    virtual int handleBlockEvent(NetlinkEvent *evt);
 
 protected:
     void setState(int state);

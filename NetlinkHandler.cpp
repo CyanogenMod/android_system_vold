@@ -44,7 +44,6 @@ int NetlinkHandler::stop() {
 void NetlinkHandler::onEvent(NetlinkEvent *evt) {
     VolumeManager *vm = VolumeManager::Instance();
     const char *subsys = evt->getSubsystem();
-    int action = evt->getAction();
 
     if (!subsys) {
         LOGW("No subsystem found in netlink event");
@@ -52,37 +51,7 @@ void NetlinkHandler::onEvent(NetlinkEvent *evt) {
     }
 
     if (!strcmp(subsys, "block")) {
-        const char *devpath = evt->findParam("DEVPATH");
-        const char *devtype = evt->findParam("DEVTYPE");
-        int major = atoi(evt->findParam("MAJOR"));
-        int minor = atoi(evt->findParam("MINOR"));
-
-        LOGI("Block event %d, type %s, %d:%d, path '%s'", action, devtype, major, minor, devpath);
-
-        if (!strcmp(devtype, "disk")) {
-            const char *tmp = evt->findParam("NPARTS");
-
-            if (!tmp) {
-                LOGE("Disk uevent missing 'NPARTS' parameter");
-                return;
-            }
-            if (action == NetlinkEvent::NlActionAdd)
-                vm->handleDiskInserted(devpath, major, minor, atoi(tmp));
-            else if (action == NetlinkEvent::NlActionRemove)
-                vm->handleDiskRemoved(major, minor);
-        } else {
-            const char *tmp = evt->findParam("PARTN");
-
-            if (!tmp) {
-                LOGE("Partition uevent missing 'PARTN' parameter");
-                return;
-            }
-            if (action == NetlinkEvent::NlActionAdd)
-                vm->handlePartCreated(devpath, major, minor, atoi(tmp));
-            else if (action == NetlinkEvent::NlActionRemove)
-                vm->handlePartRemoved(major, minor);
-        }
-        LOGD("Block event handled");
+        vm->handleBlockEvent(evt);
     } else if (!strcmp(subsys, "battery")) {
     } else if (!strcmp(subsys, "power_supply")) {
     } else {

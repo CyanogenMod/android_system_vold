@@ -15,12 +15,14 @@
  */
 
 #include <stdio.h>
-#include <errno.h>
+#include <stdlib.h>
 #include <string.h>
+#include <errno.h>
 
 #define LOG_TAG "Vold"
 
 #include <cutils/log.h>
+#include <sysutils/NetlinkEvent.h>
 
 #include "DeviceVolume.h"
 
@@ -44,30 +46,68 @@ int DeviceVolume::addPath(const char *path) {
     return 0;
 }
 
-int DeviceVolume::handleDiskInsertion(const char *dp, int maj, int min,
-                                      int nr_parts) {
-    PathCollection::iterator  it;
+int DeviceVolume::handleBlockEvent(NetlinkEvent *evt) {
+    const char *dp = evt->findParam("DEVPATH");
 
-    LOGD("Dv::diskInsertion - %s %d %d %d", dp, maj, min, nr_parts);
+    PathCollection::iterator  it;
     for (it = mPaths->begin(); it != mPaths->end(); ++it) {
-        LOGD("Dv::chk %s", *it);
         if (!strncmp(dp, *it, strlen(*it))) {
-            /*
-             * We can handle this disk. If there are no partitions then we're 
-             * good to go son!
-             */
-            mDiskMaj = maj;
-            mDiskNumParts = nr_parts;
-            if (nr_parts == 0) {
-                LOGD("Dv::diskIns - No partitions - good to go");
-                setState(Volume::State_Idle);
+            /* We can handle this disk */
+            int action = evt->getAction();
+            const char *devtype = evt->findParam("DEVTYPE");
+
+            if (!strcmp(devtype, "disk")) {
+                if (action == NetlinkEvent::NlActionAdd)
+                    handleDiskAdded(dp, evt);
+                else if (action == NetlinkEvent::NlActionRemove)
+                    handleDiskRemoved(dp, evt);
+                else
+                    LOGD("Ignoring non add/remove event");
             } else {
-                LOGD("Dv::diskIns - waiting for %d partitions", nr_parts);
-                setState(Volume::State_Pending);
+                if (action == NetlinkEvent::NlActionAdd)
+                    handlePartitionAdded(dp, evt);
+                else if (action == NetlinkEvent::NlActionRemove)
+                    handlePartitionRemoved(dp, evt);
+                else
+                    LOGD("Ignoring non add/remove event");
             }
+
             return 0;
         }
     }
     errno = ENODEV;
     return -1;
+}
+
+void DeviceVolume::handleDiskAdded(const char *devpath, NetlinkEvent *evt) {
+    mDiskMaj = atoi(evt->findParam("MAJOR"));
+    mDiskNumParts = atoi(evt->findParam("NPARTS"));
+
+    int partmask = 0;
+    int i;
+    for (i = 0; i < mDiskNumParts; i++) {
+        partmask |= (1 << i);
+    }
+    mPendingPartMap = partmask;
+
+    if (mDiskNumParts == 0) {
+        LOGD("Dv::diskIns - No partitions - good to go son!");
+        setState(Volume::State_Idle);
+    } else {
+        LOGD("Dv::diskIns - waiting for %d partitions (mask 0x%x)",
+             mDiskNumParts, mPendingPartMap);
+        setState(Volume::State_Pending);
+    }
+}
+
+void DeviceVolume::handlePartitionAdded(const char *devpath, NetlinkEvent *evt) {
+    int major = atoi(evt->findParam("MAJOR"));
+    int minor = atoi(evt->findParam("MINOR"));
+    int part_num = atoi(evt->findParam("PARTN"));
+}
+
+void DeviceVolume::handleDiskRemoved(const char *devpath, NetlinkEvent *evt) {
+}
+
+void DeviceVolume::handlePartitionRemoved(const char *devpath, NetlinkEvent *evt) {
 }
