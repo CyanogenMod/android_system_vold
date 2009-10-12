@@ -85,7 +85,7 @@ void DeviceVolume::handleDiskAdded(const char *devpath, NetlinkEvent *evt) {
 
     int partmask = 0;
     int i;
-    for (i = 0; i < mDiskNumParts; i++) {
+    for (i = 1; i <= mDiskNumParts; i++) {
         partmask |= (1 << i);
     }
     mPendingPartMap = partmask;
@@ -104,6 +104,14 @@ void DeviceVolume::handlePartitionAdded(const char *devpath, NetlinkEvent *evt) 
     int major = atoi(evt->findParam("MAJOR"));
     int minor = atoi(evt->findParam("MINOR"));
     int part_num = atoi(evt->findParam("PARTN"));
+
+    mPendingPartMap &= ~(1 << part_num);
+    if (!mPendingPartMap) {
+        LOGD("Dv:partAdd: Got all partitions - ready to rock!");
+        setState(Volume::State_Idle);
+    } else {
+        LOGD("Dv:partAdd: pending mask now = 0x%x", mPendingPartMap);
+    }
 }
 
 void DeviceVolume::handleDiskRemoved(const char *devpath, NetlinkEvent *evt) {
