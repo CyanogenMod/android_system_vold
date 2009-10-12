@@ -26,7 +26,7 @@
 #include <sysutils/NetlinkEvent.h>
 
 #include "VolumeManager.h"
-#include "DeviceVolume.h"
+#include "DirectVolume.h"
 #include "ErrorCode.h"
 
 VolumeManager *VolumeManager::sInstance = NULL;

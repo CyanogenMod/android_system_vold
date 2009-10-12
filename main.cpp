@@ -31,7 +31,7 @@
 #include "VolumeManager.h"
 #include "CommandListener.h"
 #include "NetlinkManager.h"
-#include "DeviceVolume.h"
+#include "DirectVolume.h"
 
 static int process_config(VolumeManager *vm);
 static void coldboot(const char *path);
@@ -171,7 +171,7 @@ static int process_config(VolumeManager *vm) {
         }
 
         if (!strcmp(type, "dev_mount")) {
-            DeviceVolume *dv = NULL;
+            DirectVolume *dv = NULL;
             char *part, *sysfs_path;
 
             if (!(part = strsep(&next, " \t"))) {
@@ -183,7 +183,7 @@ static int process_config(VolumeManager *vm) {
                 goto out_syntax;
             }
 
-            dv = new DeviceVolume(label, mount_point, atoi(part));
+            dv = new DirectVolume(label, mount_point, atoi(part));
 
             while((sysfs_path = strsep(&next, " \t"))) {
                 if (dv->addPath(sysfs_path)) {

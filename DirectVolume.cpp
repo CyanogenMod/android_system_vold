@@ -24,16 +24,16 @@
 #include <cutils/log.h>
 #include <sysutils/NetlinkEvent.h>
 
-#include "DeviceVolume.h"
+#include "DirectVolume.h"
 
-DeviceVolume::DeviceVolume(const char *label, const char *mount_point, int partIdx) :
+DirectVolume::DirectVolume(const char *label, const char *mount_point, int partIdx) :
               Volume(label, mount_point) {
     mPartIdx = partIdx;
   
     mPaths = new PathCollection();
 }
 
-DeviceVolume::~DeviceVolume() {
+DirectVolume::~DirectVolume() {
     PathCollection::iterator it;
 
     for (it = mPaths->begin(); it != mPaths->end(); ++it)
@@ -41,12 +41,12 @@ DeviceVolume::~DeviceVolume() {
     delete mPaths;
 }
 
-int DeviceVolume::addPath(const char *path) {
+int DirectVolume::addPath(const char *path) {
     mPaths->push_back(strdup(path));
     return 0;
 }
 
-int DeviceVolume::handleBlockEvent(NetlinkEvent *evt) {
+int DirectVolume::handleBlockEvent(NetlinkEvent *evt) {
     const char *dp = evt->findParam("DEVPATH");
 
     PathCollection::iterator  it;
@@ -79,7 +79,7 @@ int DeviceVolume::handleBlockEvent(NetlinkEvent *evt) {
     return -1;
 }
 
-void DeviceVolume::handleDiskAdded(const char *devpath, NetlinkEvent *evt) {
+void DirectVolume::handleDiskAdded(const char *devpath, NetlinkEvent *evt) {
     mDiskMaj = atoi(evt->findParam("MAJOR"));
     mDiskNumParts = atoi(evt->findParam("NPARTS"));
 
@@ -100,7 +100,7 @@ void DeviceVolume::handleDiskAdded(const char *devpath, NetlinkEvent *evt) {
     }
 }
 
-void DeviceVolume::handlePartitionAdded(const char *devpath, NetlinkEvent *evt) {
+void DirectVolume::handlePartitionAdded(const char *devpath, NetlinkEvent *evt) {
     int major = atoi(evt->findParam("MAJOR"));
     int minor = atoi(evt->findParam("MINOR"));
     int part_num = atoi(evt->findParam("PARTN"));
@@ -114,8 +114,8 @@ void DeviceVolume::handlePartitionAdded(const char *devpath, NetlinkEvent *evt) 
     }
 }
 
-void DeviceVolume::handleDiskRemoved(const char *devpath, NetlinkEvent *evt) {
+void DirectVolume::handleDiskRemoved(const char *devpath, NetlinkEvent *evt) {
 }
 
-void DeviceVolume::handlePartitionRemoved(const char *devpath, NetlinkEvent *evt) {
+void DirectVolume::handlePartitionRemoved(const char *devpath, NetlinkEvent *evt) {
 }

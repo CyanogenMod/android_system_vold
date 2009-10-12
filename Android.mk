@@ -14,7 +14,7 @@ LOCAL_SRC_FILES:=                                      \
                   NetlinkHandler.cpp                   \
                   BlockDevice.cpp                      \
                   Volume.cpp                           \
-                  DeviceVolume.cpp      
+                  DirectVolume.cpp
 
 LOCAL_MODULE:= vold
 

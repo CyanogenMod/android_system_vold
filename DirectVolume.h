@@ -23,7 +23,7 @@
 
 typedef android::List<char *> PathCollection;
 
-class DeviceVolume : public Volume {
+class DirectVolume : public Volume {
 protected:
     PathCollection *mPaths;
     int            mPartIdx;
@@ -32,8 +32,8 @@ protected:
     unsigned char  mPendingPartMap;
 
 public:
-    DeviceVolume(const char *label, const char *mount_point, int partIdx);
-    virtual ~DeviceVolume();
+    DirectVolume(const char *label, const char *mount_point, int partIdx);
+    virtual ~DirectVolume();
 
     int addPath(const char *path);
 
@@ -46,6 +46,6 @@ private:
     void handlePartitionRemoved(const char *devpath, NetlinkEvent *evt);
 };
 
-typedef android::List<DeviceVolume *> DeviceVolumeCollection;
+typedef android::List<DirectVolume *> DirectVolumeCollection;
 
 #endif
