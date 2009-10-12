@@ -38,12 +38,15 @@ public:
     int addPath(const char *path);
 
     int handleBlockEvent(NetlinkEvent *evt);
+protected:
+    int prepareToMount(int *major, int *minor);
 
 private:
     void handleDiskAdded(const char *devpath, NetlinkEvent *evt);
     void handleDiskRemoved(const char *devpath, NetlinkEvent *evt);
     void handlePartitionAdded(const char *devpath, NetlinkEvent *evt);
     void handlePartitionRemoved(const char *devpath, NetlinkEvent *evt);
+
 };
 
 typedef android::List<DirectVolume *> DirectVolumeCollection;

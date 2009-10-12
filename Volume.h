@@ -41,6 +41,9 @@ public:
     Volume(const char *label, const char *mount_point);
     virtual ~Volume();
 
+    int mount();
+    int unmount();
+
     const char *getLabel() { return mLabel; }
     const char *getMountpoint() { return mMountpoint; }
     int getState() { return mState; }
@@ -49,6 +52,11 @@ public:
 
 protected:
     void setState(int state);
+
+    virtual int prepareToMount(int *major, int *minor) = 0;
+
+private:
+    int checkFilesystem(const char *nodepath);
 };
 
 typedef android::List<Volume *> VolumeCollection;

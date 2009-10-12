@@ -89,6 +89,48 @@ int VolumeManager::listVolumes(SocketClient *cli) {
         cli->sendMsg(ErrorCode::VolumeListResult, buffer, false);
         free(buffer);
     }
-    cli->sendMsg(ErrorCode::CommandOkay, "Volumes Listed", false);
+    cli->sendMsg(ErrorCode::CommandOkay, "Volumes listed.", false);
     return 0;
+}
+
+int VolumeManager::mountVolume(const char *label) {
+    Volume *v = lookupVolume(label);
+
+    if (!v) {
+        errno = ENOENT;
+        return -1;
+    }
+
+    if (v->getState() != Volume::State_Idle) {
+        errno = EBUSY;
+        return -1;
+    }
+
+    return v->mount();
+}
+
+int VolumeManager::unmountVolume(const char *label) {
+    Volume *v = lookupVolume(label);
+
+    if (!v) {
+        errno = ENOENT;
+        return -1;
+    }
+
+    if (v->getState() != Volume::State_Mounted) {
+        errno = EBUSY;
+        return -1;
+    }
+
+    return v->unmount();
+}
+
+Volume *VolumeManager::lookupVolume(const char *label) {
+    VolumeCollection::iterator i;
+
+    for (i = mVolumes->begin(); i != mVolumes->end(); ++i) {
+        if (!strcmp(label, (*i)->getLabel()))
+            return (*i);
+    }
+    return NULL;
 }

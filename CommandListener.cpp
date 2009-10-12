@@ -53,9 +53,13 @@ CommandListener::MountVolumeCmd::MountVolumeCmd() :
 
 int CommandListener::MountVolumeCmd::runCommand(SocketClient *cli,
                                                       int argc, char **argv) {
-    VolumeManager *nm = VolumeManager::Instance();
-    errno = ENOSYS;
-    cli->sendMsg(ErrorCode::OperationFailed, "Failed to mount volume", true);
+    /* Synchronously mount a volume */
+    if (VolumeManager::Instance()->mountVolume(argv[1])) {
+        cli->sendMsg(ErrorCode::OperationFailed, "Failed to mount volume.", true);
+    } else {
+        cli->sendMsg(ErrorCode::CommandOkay, "Volume mounted.", false);
+    }
+
     return 0;
 }
 
@@ -65,9 +69,13 @@ CommandListener::UnmountVolumeCmd::UnmountVolumeCmd() :
 
 int CommandListener::UnmountVolumeCmd::runCommand(SocketClient *cli,
                                                       int argc, char **argv) {
-    VolumeManager *nm = VolumeManager::Instance();
-    errno = ENOSYS;
-    cli->sendMsg(ErrorCode::OperationFailed, "Failed to unmount volume", true);
+    /* Synchronously unmount a volume */
+    if (VolumeManager::Instance()->mountVolume(argv[1])) {
+        cli->sendMsg(ErrorCode::OperationFailed, "Failed to unmount volume.", true);
+    } else {
+        cli->sendMsg(ErrorCode::CommandOkay, "Volume unmounted.", false);
+    }
+
     return 0;
 }
 

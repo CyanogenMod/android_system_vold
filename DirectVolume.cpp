@@ -119,3 +119,8 @@ void DirectVolume::handleDiskRemoved(const char *devpath, NetlinkEvent *evt) {
 
 void DirectVolume::handlePartitionRemoved(const char *devpath, NetlinkEvent *evt) {
 }
+
+int DirectVolume::prepareToMount(int *major, int *minor) {
+    errno = ENOSYS;
+    return -1;
+}

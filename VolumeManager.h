@@ -46,6 +46,8 @@ public:
     int addVolume(Volume *v);
 
     int listVolumes(SocketClient *cli);
+    int mountVolume(const char *label);
+    int unmountVolume(const char *label);
 
     void setBroadcaster(SocketListener *sl) { mBroadcaster = sl; }
     SocketListener *getBroadcaster() { return mBroadcaster; }
@@ -54,5 +56,6 @@ public:
 
 private:
     VolumeManager();
+    Volume *lookupVolume(const char *label);
 };
 #endif
