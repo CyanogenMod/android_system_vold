@@ -56,6 +56,17 @@ void Volume::setState(int state) {
     mState = state;
 }
 
+int Volume::createDeviceNode(const char *path, int major, int minor) {
+    mode_t mode = 0660 | S_IFBLK;
+    dev_t dev = (major << 8) | minor;
+    if (mknod(path, mode, dev) < 0) {
+        if (errno != EEXIST) {
+            return -1;
+        }
+    }
+    return 0;
+}
+
 int Volume::mount() {
     char nodepath[255];
     int major = -1, minor = -1;
@@ -65,21 +76,26 @@ int Volume::mount() {
         return -1;
     }
 
-    /* Create device nodes */
-    mode_t mode = 0660 | S_IFBLK;
-    dev_t dev = (major << 8) | minor;
     sprintf(nodepath, "/dev/block/vold/%d:%d", major, minor);
-    if (mknod(nodepath, mode, dev) < 0) {
-        LOGE("Error making device nodes for '%s' (%s)",
-             nodepath, strerror(errno));
+
+    LOGD("nodepath = %s\n", nodepath);
+
+    /* Create device nodes */
+    if (createDeviceNode(nodepath, major, minor)) {
+        LOGE("Error making device nodes for '%s' (%s)", nodepath,
+             strerror(errno));
+        // XXX: cleanup will be needed eventually
         return -1;
     }
 
     /* Run disk checker */
     if (checkFilesystem(nodepath)) {
+        LOGE("Error checking filesystem (%s)", strerror(errno));
         setState(Volume::State_Idle);
         return -1;
     }
+
+    
 
     setState(Volume::State_Idle);
     return 0;

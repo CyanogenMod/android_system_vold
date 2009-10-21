@@ -31,6 +31,8 @@ DirectVolume::DirectVolume(const char *label, const char *mount_point, int partI
     mPartIdx = partIdx;
   
     mPaths = new PathCollection();
+    for (int i = 0; i < MAX_PARTITIONS; i++)
+        mPartMinors[i] = -1;
 }
 
 DirectVolume::~DirectVolume() {
@@ -80,7 +82,8 @@ int DirectVolume::handleBlockEvent(NetlinkEvent *evt) {
 }
 
 void DirectVolume::handleDiskAdded(const char *devpath, NetlinkEvent *evt) {
-    mDiskMaj = atoi(evt->findParam("MAJOR"));
+    mDiskMajor = atoi(evt->findParam("MAJOR"));
+    mDiskMinor = atoi(evt->findParam("MAJOR"));
     mDiskNumParts = atoi(evt->findParam("NPARTS"));
 
     int partmask = 0;
@@ -105,6 +108,12 @@ void DirectVolume::handlePartitionAdded(const char *devpath, NetlinkEvent *evt) 
     int minor = atoi(evt->findParam("MINOR"));
     int part_num = atoi(evt->findParam("PARTN"));
 
+    if (major != mDiskMajor) {
+        LOGE("Partition '%s' has a different major than its disk!", devpath);
+        return;
+    }
+    mPartMinors[part_num -1] = minor;
+
     mPendingPartMap &= ~(1 << part_num);
     if (!mPendingPartMap) {
         LOGD("Dv:partAdd: Got all partitions - ready to rock!");
@@ -120,7 +129,37 @@ void DirectVolume::handleDiskRemoved(const char *devpath, NetlinkEvent *evt) {
 void DirectVolume::handlePartitionRemoved(const char *devpath, NetlinkEvent *evt) {
 }
 
+/*
+ * Called from Volume to determine the major/minor numbers
+ * to be used for mounting
+ */
 int DirectVolume::prepareToMount(int *major, int *minor) {
-    errno = ENOSYS;
-    return -1;
+    *major = mDiskMajor;
+
+    if (mPartIdx == -1) {
+        /* No specific partition specified */
+
+        if (!mDiskNumParts) {
+            *minor = mDiskMinor;
+            return 0;
+        }
+
+        /* 
+         * XXX: Use first partition for now.
+         * The right thing to do would be to choose
+         * this based on the partition type.
+         *
+         */
+  
+        *minor = mPartMinors[0];
+        return 0;
+    }
+
+    if (mPartIdx - 1 > mDiskNumParts) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    *minor = mPartMinors[mPartIdx-1];
+    return 0;
 }

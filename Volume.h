@@ -55,6 +55,8 @@ protected:
 
     virtual int prepareToMount(int *major, int *minor) = 0;
 
+    int createDeviceNode(const char *path, int major, int minor);
+
 private:
     int checkFilesystem(const char *nodepath);
 };
