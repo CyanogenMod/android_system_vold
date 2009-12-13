@@ -27,15 +27,18 @@
 
 #include "CommandListener.h"
 #include "VolumeManager.h"
-#include "ErrorCode.h"
+#include "ResponseCode.h"
 
 CommandListener::CommandListener() :
                  FrameworkListener("vold") {
     registerCmd(new ListVolumesCmd());
-    registerCmd(new MountVolumeCmd());
-    registerCmd(new UnmountVolumeCmd());
-    registerCmd(new ShareVolumeCmd());
-    registerCmd(new UnshareVolumeCmd());
+    registerCmd(new MountCmd());
+    registerCmd(new UnmountCmd());
+    registerCmd(new ShareCmd());
+    registerCmd(new UnshareCmd());
+    registerCmd(new ShareAvailableCmd());
+    registerCmd(new SimulateCmd());
+    registerCmd(new FormatCmd());
 }
 
 CommandListener::ListVolumesCmd::ListVolumesCmd() :
@@ -47,58 +50,113 @@ int CommandListener::ListVolumesCmd::runCommand(SocketClient *cli,
     return VolumeManager::Instance()->listVolumes(cli);
 }
 
-CommandListener::MountVolumeCmd::MountVolumeCmd() :
-                 VoldCommand("mount_volume") {
+CommandListener::MountCmd::MountCmd() :
+                 VoldCommand("mount") {
 }
 
-int CommandListener::MountVolumeCmd::runCommand(SocketClient *cli,
+int CommandListener::MountCmd::runCommand(SocketClient *cli,
                                                       int argc, char **argv) {
     /* Synchronously mount a volume */
     if (VolumeManager::Instance()->mountVolume(argv[1])) {
-        cli->sendMsg(ErrorCode::OperationFailed, "Failed to mount volume.", true);
+        cli->sendMsg(ResponseCode::OperationFailed, "Failed to mount volume.", true);
     } else {
-        cli->sendMsg(ErrorCode::CommandOkay, "Volume mounted.", false);
+        cli->sendMsg(ResponseCode::CommandOkay, "Volume mounted.", false);
     }
 
     return 0;
 }
 
-CommandListener::UnmountVolumeCmd::UnmountVolumeCmd() :
-                 VoldCommand("unmount_volume") {
+CommandListener::UnmountCmd::UnmountCmd() :
+                 VoldCommand("unmount") {
 }
 
-int CommandListener::UnmountVolumeCmd::runCommand(SocketClient *cli,
+int CommandListener::UnmountCmd::runCommand(SocketClient *cli,
                                                       int argc, char **argv) {
     /* Synchronously unmount a volume */
-    if (VolumeManager::Instance()->mountVolume(argv[1])) {
-        cli->sendMsg(ErrorCode::OperationFailed, "Failed to unmount volume.", true);
+    if (VolumeManager::Instance()->unmountVolume(argv[1])) {
+        cli->sendMsg(ResponseCode::OperationFailed, "Failed to unmount volume.", true);
     } else {
-        cli->sendMsg(ErrorCode::CommandOkay, "Volume unmounted.", false);
+        cli->sendMsg(ResponseCode::CommandOkay, "Volume unmounted.", false);
     }
 
     return 0;
 }
 
-CommandListener::ShareVolumeCmd::ShareVolumeCmd() :
-                 VoldCommand("share_volume") {
+CommandListener::ShareCmd::ShareCmd() :
+                 VoldCommand("share") {
 }
 
-int CommandListener::ShareVolumeCmd::runCommand(SocketClient *cli,
+int CommandListener::ShareCmd::runCommand(SocketClient *cli,
                                                       int argc, char **argv) {
-    VolumeManager *nm = VolumeManager::Instance();
-    errno = ENOSYS;
-    cli->sendMsg(ErrorCode::OperationFailed, "Failed to share volume", true);
+    if (VolumeManager::Instance()->shareVolume(argv[1], argv[2])) {
+        cli->sendMsg(ResponseCode::OperationFailed, "Failed to share volume.", true);
+    } else {
+        cli->sendMsg(ResponseCode::CommandOkay, "Volume shared.", false);
+    }
+
     return 0;
 }
 
-CommandListener::UnshareVolumeCmd::UnshareVolumeCmd() :
-                 VoldCommand("unshare_volume") {
+CommandListener::UnshareCmd::UnshareCmd() :
+                 VoldCommand("unshare") {
 }
 
-int CommandListener::UnshareVolumeCmd::runCommand(SocketClient *cli,
+int CommandListener::UnshareCmd::runCommand(SocketClient *cli,
                                                       int argc, char **argv) {
-    VolumeManager *nm = VolumeManager::Instance();
-    errno = ENOSYS;
-    cli->sendMsg(ErrorCode::OperationFailed, "Failed to unshare volume", true);
+    if (VolumeManager::Instance()->unshareVolume(argv[1], argv[2])) {
+        cli->sendMsg(ResponseCode::OperationFailed, "Failed to unshare volume.", true);
+    } else {
+        cli->sendMsg(ResponseCode::CommandOkay, "Volume unshared.", false);
+    }
+
+    return 0;
+}
+
+CommandListener::ShareAvailableCmd::ShareAvailableCmd() :
+                 VoldCommand("share_available") {
+}
+
+int CommandListener::ShareAvailableCmd::runCommand(SocketClient *cli,
+                                                      int argc, char **argv) {
+    bool avail = false;
+
+    if (VolumeManager::Instance()->shareAvailable(argv[1], &avail)) {
+        cli->sendMsg(ResponseCode::OperationFailed,
+                     "Failed to determine share availability", true);
+    } else {
+        cli->sendMsg(ResponseCode::ShareAvailabilityResult,
+                     (avail ? "Share available" : "Share unavailable"),
+                     false);
+    }
+    return 0;
+}
+
+CommandListener::SimulateCmd::SimulateCmd() :
+                 VoldCommand("simulate") {
+}
+
+int CommandListener::SimulateCmd::runCommand(SocketClient *cli,
+                                            int argc, char **argv) {
+    if (VolumeManager::Instance()->simulate(argv[1], argv[2])) {
+        cli->sendMsg(ResponseCode::OperationFailed, "Failed to execute.", true);
+    } else {
+        cli->sendMsg(ResponseCode::CommandOkay, "Simulation executed.", false);
+    }
+
+    return 0;
+}
+
+CommandListener::FormatCmd::FormatCmd() :
+                 VoldCommand("format") {
+}
+
+int CommandListener::FormatCmd::runCommand(SocketClient *cli,
+                                            int argc, char **argv) {
+    if (VolumeManager::Instance()->formatVolume(argv[1])) {
+        cli->sendMsg(ResponseCode::OperationFailed, "Failed to format", true);
+    } else {
+        cli->sendMsg(ResponseCode::CommandOkay, "Volume formatted.", false);
+    }
+
     return 0;
 }

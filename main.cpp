@@ -42,7 +42,9 @@ int main() {
     CommandListener *cl;
     NetlinkManager *nm;
 
-    LOGI("Vold 2.0 firing up");
+    LOGI("Vold 2.0 (the revenge) firing up");
+
+    mkdir("/dev/block/vold", 0755);
 
     /* Create our singleton managers */
     if (!(vm = VolumeManager::Instance())) {
@@ -54,6 +56,7 @@ int main() {
         LOGE("Unable to create NetlinkManager");
         exit(1);
     };
+
 
     cl = new CommandListener();
     vm->setBroadcaster((SocketListener *) cl);
@@ -183,7 +186,11 @@ static int process_config(VolumeManager *vm) {
                 goto out_syntax;
             }
 
-            dv = new DirectVolume(label, mount_point, atoi(part));
+            if (!strcmp(part, "auto")) {
+                dv = new DirectVolume(vm, label, mount_point, -1);
+            } else {
+                dv = new DirectVolume(vm, label, mount_point, atoi(part));
+            }
 
             while((sysfs_path = strsep(&next, " \t"))) {
                 if (dv->addPath(sysfs_path)) {

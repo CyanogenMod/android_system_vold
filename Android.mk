@@ -15,7 +15,9 @@ LOCAL_SRC_FILES:=                                      \
                   BlockDevice.cpp                      \
                   Volume.cpp                           \
                   DirectVolume.cpp                     \
-                  logwrapper.c
+                  logwrapper.c                         \
+                  ProcessKiller.c                      \
+                  geom_mbr_enc.c
 
 LOCAL_MODULE:= vold
 

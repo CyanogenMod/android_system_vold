@@ -34,31 +34,52 @@ private:
         int runCommand(SocketClient *c, int argc, char ** argv);
     };
 
-    class MountVolumeCmd : public VoldCommand {
+    class MountCmd : public VoldCommand {
     public:
-        MountVolumeCmd();
-        virtual ~MountVolumeCmd() {}
+        MountCmd();
+        virtual ~MountCmd() {}
         int runCommand(SocketClient *c, int argc, char ** argv);
     };
 
-    class UnmountVolumeCmd : public VoldCommand {
+    class UnmountCmd : public VoldCommand {
     public:
-        UnmountVolumeCmd();
-        virtual ~UnmountVolumeCmd() {}
+        UnmountCmd();
+        virtual ~UnmountCmd() {}
         int runCommand(SocketClient *c, int argc, char ** argv);
     };
 
-    class ShareVolumeCmd : public VoldCommand {
+    class ShareCmd : public VoldCommand {
     public:
-        ShareVolumeCmd();
-        virtual ~ShareVolumeCmd() {}
+        ShareCmd();
+        virtual ~ShareCmd() {}
         int runCommand(SocketClient *c, int argc, char ** argv);
     };
 
-    class UnshareVolumeCmd : public VoldCommand {
+    class UnshareCmd : public VoldCommand {
     public:
-        UnshareVolumeCmd();
-        virtual ~UnshareVolumeCmd() {}
+        UnshareCmd();
+        virtual ~UnshareCmd() {}
+        int runCommand(SocketClient *c, int argc, char ** argv);
+    };
+
+    class ShareAvailableCmd : public VoldCommand {
+    public:
+        ShareAvailableCmd();
+        virtual ~ShareAvailableCmd() {}
+        int runCommand(SocketClient *c, int argc, char ** argv);
+    };
+
+    class SimulateCmd : public VoldCommand {
+    public:
+        SimulateCmd();
+        virtual ~SimulateCmd() {}
+        int runCommand(SocketClient *c, int argc, char ** argv);
+    };
+
+    class FormatCmd : public VoldCommand {
+    public:
+        FormatCmd();
+        virtual ~FormatCmd() {}
         int runCommand(SocketClient *c, int argc, char ** argv);
     };
 

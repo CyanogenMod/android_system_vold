@@ -38,20 +38,28 @@ protected:
     unsigned char  mPendingPartMap;
 
 public:
-    DirectVolume(const char *label, const char *mount_point, int partIdx);
+    DirectVolume(VolumeManager *vm, const char *label, const char *mount_point, int partIdx);
     virtual ~DirectVolume();
 
     int addPath(const char *path);
 
     int handleBlockEvent(NetlinkEvent *evt);
+    dev_t getDiskDevice();
+    void handleVolumeShared();
+    void handleVolumeUnshared();
+
 protected:
-    int prepareToMount(int *major, int *minor);
+    int getDeviceNodes(dev_t *devs, int max);
 
 private:
     void handleDiskAdded(const char *devpath, NetlinkEvent *evt);
     void handleDiskRemoved(const char *devpath, NetlinkEvent *evt);
+    void handleDiskChanged(const char *devpath, NetlinkEvent *evt);
     void handlePartitionAdded(const char *devpath, NetlinkEvent *evt);
     void handlePartitionRemoved(const char *devpath, NetlinkEvent *evt);
+    void handlePartitionChanged(const char *devpath, NetlinkEvent *evt);
+
+    int doMountVfat(const char *deviceNode, const char *mountPoint);
 
 };
 

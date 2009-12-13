@@ -14,10 +14,10 @@
  * limitations under the License.
  */
 
-#ifndef _ERRORCODE_H
-#define _ERRORCODE_H
+#ifndef _RESPONSECODE_H
+#define _RESPONSECODE_H
 
-class ErrorCode {
+class ResponseCode {
 public:
     // 100 series - Requestion action was initiated; expect another reply
     // before proceeding with a new command.
@@ -27,6 +27,7 @@ public:
 
     // 200 series - Requested action has been successfully completed
     static const int CommandOkay = 200;
+    static const int ShareAvailabilityResult  = 210;
 
     // 400 series - The command was accepted but the requested action
     // did not take place.
@@ -38,6 +39,16 @@ public:
     static const int CommandParameterError = 501;
 
     // 600 series - Unsolicited broadcasts
-    static const int UnsolicitedInformational = 600;
+    static const int UnsolicitedInformational       = 600;
+    static const int VolumeStateChange              = 605;
+    static const int VolumeMountFailedBlank         = 610;
+    static const int VolumeMountFailedDamaged       = 611;
+    static const int VolumeMountFailedNoMedia       = 612;
+
+    static const int ShareAvailabilityChange        = 620;
+
+    static const int VolumeDiskInserted            = 630;
+    static const int VolumeDiskRemoved             = 631;
+    static const int VolumeBadRemoval              = 632;
 };
 #endif

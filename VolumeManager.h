@@ -34,6 +34,7 @@ private:
     BlockDeviceCollection *mBlockDevices;
 
     VolumeCollection      *mVolumes;
+    bool                   mUsbMassStorageConnected;
 
 public:
     virtual ~VolumeManager();
@@ -42,12 +43,18 @@ public:
     int stop();
 
     void handleBlockEvent(NetlinkEvent *evt);
+    void handleSwitchEvent(NetlinkEvent *evt);
 
     int addVolume(Volume *v);
 
     int listVolumes(SocketClient *cli);
     int mountVolume(const char *label);
     int unmountVolume(const char *label);
+    int shareVolume(const char *label, const char *method);
+    int unshareVolume(const char *label, const char *method);
+    int shareAvailable(const char *method, bool *avail);
+    int simulate(const char *cmd, const char *arg);
+    int formatVolume(const char *label);
 
     void setBroadcaster(SocketListener *sl) { mBroadcaster = sl; }
     SocketListener *getBroadcaster() { return mBroadcaster; }
@@ -57,5 +64,6 @@ public:
 private:
     VolumeManager();
     Volume *lookupVolume(const char *label);
+    void notifyUmsConnected(bool connected);
 };
 #endif
