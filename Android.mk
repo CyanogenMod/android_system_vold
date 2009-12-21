@@ -1,4 +1,4 @@
-BUILD_VOLD2 := false
+BUILD_VOLD2 := true
 ifeq ($(BUILD_VOLD2),true)
 
 LOCAL_PATH:= $(call my-dir)
