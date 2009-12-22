@@ -56,6 +56,9 @@ public:
     int simulate(const char *cmd, const char *arg);
     int formatVolume(const char *label);
 
+    // XXX: This should be moved private once switch uevents are working
+    void notifyUmsConnected(bool connected);
+
     void setBroadcaster(SocketListener *sl) { mBroadcaster = sl; }
     SocketListener *getBroadcaster() { return mBroadcaster; }
 
@@ -64,6 +67,5 @@ public:
 private:
     VolumeManager();
     Volume *lookupVolume(const char *label);
-    void notifyUmsConnected(bool connected);
 };
 #endif

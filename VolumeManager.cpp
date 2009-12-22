@@ -79,8 +79,14 @@ void VolumeManager::notifyUmsConnected(bool connected) {
 }
 
 void VolumeManager::handleSwitchEvent(NetlinkEvent *evt) {
+    const char *devpath = evt->findParam("DEVPATH");
     const char *name = evt->findParam("SWITCH_NAME");
     const char *state = evt->findParam("SWITCH_STATE");
+
+    if (!name || !state) {
+        LOGW("Switch %s event missing name/state info", devpath);
+        return;
+    }
 
     if (!strcmp(name, "usb_mass_storage")) {
 
@@ -228,7 +234,8 @@ int VolumeManager::shareVolume(const char *label, const char *method) {
              sizeof(nodepath), "/dev/block/vold/%d:%d",
              MAJOR(d), MINOR(d));
 
-    if ((fd = open("/sys/devices/platform/usb_mass_storage/lun0", O_WRONLY)) < 0) {
+    if ((fd = open("/sys/devices/platform/usb_mass_storage/lun0/file",
+                   O_WRONLY)) < 0) {
         LOGE("Unable to open ums lunfile (%s)", strerror(errno));
         return -1;
     }
@@ -270,7 +277,7 @@ int VolumeManager::unshareVolume(const char *label, const char *method) {
              sizeof(nodepath), "/dev/block/vold/%d:%d",
              MAJOR(d), MINOR(d));
 
-    if ((fd = open("/sys/devices/platform/usb_mass_storage/lun0", O_WRONLY)) < 0) {
+    if ((fd = open("/sys/devices/platform/usb_mass_storage/lun0/file", O_WRONLY)) < 0) {
         LOGE("Unable to open ums lunfile (%s)", strerror(errno));
         return -1;
     }
