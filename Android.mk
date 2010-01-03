@@ -1,4 +1,8 @@
-BUILD_VOLD2 := true
+BUILD_VOLD2 := false
+ifneq ($(TARGET_SIMULATOR),true)
+    BUILD_VOLD2 := true
+endif
+
 ifeq ($(BUILD_VOLD2),true)
 
 LOCAL_PATH:= $(call my-dir)
