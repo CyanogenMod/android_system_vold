@@ -126,7 +126,15 @@ int DirectVolume::handleBlockEvent(NetlinkEvent *evt) {
 void DirectVolume::handleDiskAdded(const char *devpath, NetlinkEvent *evt) {
     mDiskMajor = atoi(evt->findParam("MAJOR"));
     mDiskMinor = atoi(evt->findParam("MINOR"));
-    mDiskNumParts = atoi(evt->findParam("NPARTS"));
+
+    const char *tmp = evt->findParam("NPARTS");
+    if (tmp) {
+        mDiskNumParts = atoi(tmp);
+    } else {
+        LOGW("Kernel block uevent missing 'NPARTS'");
+        mDiskNumParts = 1;
+    }
+
     char msg[255];
 
     int partmask = 0;
@@ -158,7 +166,17 @@ void DirectVolume::handleDiskAdded(const char *devpath, NetlinkEvent *evt) {
 void DirectVolume::handlePartitionAdded(const char *devpath, NetlinkEvent *evt) {
     int major = atoi(evt->findParam("MAJOR"));
     int minor = atoi(evt->findParam("MINOR"));
-    int part_num = atoi(evt->findParam("PARTN"));
+
+    int part_num;
+
+    const char *tmp = evt->findParam("PARTN");
+
+    if (tmp) {
+        part_num = atoi(tmp);
+    } else {
+        LOGW("Kernel block uevent missing 'PARTN'");
+        part_num = 1;
+    }
 
     if (major != mDiskMajor) {
         LOGE("Partition '%s' has a different major than its disk!", devpath);
@@ -191,7 +209,14 @@ void DirectVolume::handleDiskChanged(const char *devpath, NetlinkEvent *evt) {
     }
 
     LOGI("Volume %s disk has changed", getLabel());
-    mDiskNumParts = atoi(evt->findParam("NPARTS"));
+    const char *tmp = evt->findParam("NPARTS");
+    if (tmp) {
+        mDiskNumParts = atoi(tmp);
+    } else {
+        LOGW("Kernel block uevent missing 'NPARTS'");
+        mDiskNumParts = 1;
+    }
+
     int partmask = 0;
     int i;
     for (i = 1; i <= mDiskNumParts; i++) {
@@ -226,7 +251,6 @@ void DirectVolume::handleDiskRemoved(const char *devpath, NetlinkEvent *evt) {
 void DirectVolume::handlePartitionRemoved(const char *devpath, NetlinkEvent *evt) {
     int major = atoi(evt->findParam("MAJOR"));
     int minor = atoi(evt->findParam("MINOR"));
-    int part_num = atoi(evt->findParam("PARTN"));
     char msg[255];
 
     LOGD("Volume %s %s partition %d:%d removed\n", getLabel(), getMountpoint(), major, minor);
