@@ -87,24 +87,24 @@ int main() {
         FILE *fp;
         char state[255];
 
-        if (!(fp = fopen("/sys/devices/virtual/switch/usb_mass_storage/state",
+        if ((fp = fopen("/sys/devices/virtual/switch/usb_mass_storage/state",
                          "r"))) {
-            LOGE("Failed to open ums switch (%s)", strerror(errno));
-            exit(1);
-        }
-        if (!fgets(state, sizeof(state), fp)) {
-            LOGE("Failed to read switch state (%s)", strerror(errno));
+            if (!fgets(state, sizeof(state), fp)) {
+                LOGE("Failed to read switch state (%s)", strerror(errno));
+                fclose(fp);
+                exit(1);
+            }
+            if (!strncmp(state, "online", 6)) {
+                LOGD("Bootstrapped ums is connected");
+                vm->notifyUmsConnected(true);
+            } else {
+                LOGD("Bootstrapped ums is disconnected");
+                vm->notifyUmsConnected(false);
+            }
             fclose(fp);
-            exit(1);
-        }
-        if (!strncmp(state, "online", 6)) {
-            LOGD("Bootstrapped ums is connected");
-            vm->notifyUmsConnected(true);
         } else {
-            LOGD("Bootstrapped ums is disconnected");
-            vm->notifyUmsConnected(false);
+            LOGW("No UMS switch available");
         }
-        fclose(fp);
     }
 //    coldboot("/sys/class/switch");
 
