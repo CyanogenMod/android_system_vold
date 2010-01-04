@@ -21,7 +21,8 @@ LOCAL_SRC_FILES:=                                      \
                   DirectVolume.cpp                     \
                   logwrapper.c                         \
                   ProcessKiller.c                      \
-                  geom_mbr_enc.c
+                  geom_mbr_enc.c                       \
+                  Fat.cpp
 
 LOCAL_MODULE:= vold
 

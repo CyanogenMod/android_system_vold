@@ -73,9 +73,6 @@ protected:
     int createDeviceNode(const char *path, int major, int minor);
 
 private:
-    int checkFilesystem(const char *nodepath);
-    int doMountVfat(const char *deviceNode, const char *mountPoint);
-    int doFormatVfat(const char *deviceNode);
     int initializeMbr(const char *deviceNode);
     bool isMountpointMounted(const char *path);
 };
