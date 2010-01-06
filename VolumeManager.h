@@ -55,6 +55,12 @@ public:
     int shareAvailable(const char *method, bool *avail);
     int simulate(const char *cmd, const char *arg);
     int formatVolume(const char *label);
+    int createAsec(const char *id, int sizeMb, const char *fstype,
+                   const char *key, int ownerUid);
+    int finalizeAsec(const char *id);
+    int destroyAsec(const char *id);
+    int mountAsec(const char *id, const char *key, int ownerUid);
+    int getAsecMountPath(const char *id, char *buffer, int maxlen);
 
     // XXX: This should be moved private once switch uevents are working
     void notifyUmsConnected(bool connected);
@@ -67,5 +73,6 @@ public:
 private:
     VolumeManager();
     Volume *lookupVolume(const char *label);
+    bool isMountpointMounted(const char *mp);
 };
 #endif

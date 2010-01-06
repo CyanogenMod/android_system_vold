@@ -16,8 +16,10 @@
 
 #include <stdlib.h>
 #include <sys/socket.h>
+#include <sys/types.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <dirent.h>
 #include <errno.h>
 
 #define LOG_TAG "CommandListener"
@@ -39,6 +41,12 @@ CommandListener::CommandListener() :
     registerCmd(new ShareAvailableCmd());
     registerCmd(new SimulateCmd());
     registerCmd(new FormatCmd());
+    registerCmd(new CreateAsecCmd());
+    registerCmd(new FinalizeAsecCmd());
+    registerCmd(new DestroyAsecCmd());
+    registerCmd(new MountAsecCmd());
+    registerCmd(new ListAsecCmd());
+    registerCmd(new AsecPathCmd());
 }
 
 CommandListener::ListVolumesCmd::ListVolumesCmd() :
@@ -156,6 +164,145 @@ int CommandListener::FormatCmd::runCommand(SocketClient *cli,
         cli->sendMsg(ResponseCode::OperationFailed, "Failed to format", true);
     } else {
         cli->sendMsg(ResponseCode::CommandOkay, "Volume formatted.", false);
+    }
+
+    return 0;
+}
+
+CommandListener::CreateAsecCmd::CreateAsecCmd() :
+                 VoldCommand("create_asec") {
+}
+
+int CommandListener::CreateAsecCmd::runCommand(SocketClient *cli,
+                                            int argc, char **argv) {
+    if (argc != 6) {
+        cli->sendMsg(ResponseCode::CommandSyntaxError,
+                     "Usage: create_asec <namespace-id> <size_mb> <fstype> <key> <ownerUid>",
+                     false);
+        return 0;
+    }
+
+    if (VolumeManager::Instance()->createAsec(argv[1], atoi(argv[2]),
+                                              argv[3], argv[4],
+                                              atoi(argv[5]))) {
+        cli->sendMsg(ResponseCode::OperationFailed, "Cache creation failed", true);
+    } else {
+        cli->sendMsg(ResponseCode::CommandOkay, "Cache created", false);
+    }
+
+    return 0;
+}
+
+CommandListener::FinalizeAsecCmd::FinalizeAsecCmd() :
+                 VoldCommand("finalize_asec") {
+}
+
+int CommandListener::FinalizeAsecCmd::runCommand(SocketClient *cli,
+                                            int argc, char **argv) {
+    if (argc != 2) {
+        cli->sendMsg(ResponseCode::CommandSyntaxError,
+                     "Usage: finalize_asec <namespace-id>", false);
+        return 0;
+    }
+
+    if (VolumeManager::Instance()->finalizeAsec(argv[1])) {
+        cli->sendMsg(ResponseCode::OperationFailed, "Cache finalize failed", true);
+    } else {
+        cli->sendMsg(ResponseCode::CommandOkay, "Cache finalized", false);
+    }
+    return 0;
+}
+
+CommandListener::DestroyAsecCmd::DestroyAsecCmd() :
+                 VoldCommand("destroy_asec") {
+}
+
+int CommandListener::DestroyAsecCmd::runCommand(SocketClient *cli,
+                                            int argc, char **argv) {
+    if (argc != 2) {
+        cli->sendMsg(ResponseCode::CommandSyntaxError,
+                     "Usage: destroy_asec <namespace-id>", false);
+        return 0;
+    }
+
+    if (VolumeManager::Instance()->destroyAsec(argv[1])) {
+        cli->sendMsg(ResponseCode::OperationFailed, "Destroy failed", true);
+    } else {
+        cli->sendMsg(ResponseCode::CommandOkay, "Cache Destroyed", false);
+    }
+    return 0;
+}
+
+CommandListener::MountAsecCmd::MountAsecCmd() :
+                 VoldCommand("mount_asec") {
+}
+
+int CommandListener::MountAsecCmd::runCommand(SocketClient *cli,
+                                            int argc, char **argv) {
+    if (argc != 4) {
+        cli->sendMsg(ResponseCode::CommandSyntaxError,
+                     "Usage: mount_asec <namespace-id> <key> <ownerUid>", false);
+        return 0;
+    }
+
+    if (VolumeManager::Instance()->mountAsec(argv[1], argv[2], atoi(argv[3]))) {
+        cli->sendMsg(ResponseCode::OperationFailed, "Mount failed", true);
+    } else {
+        cli->sendMsg(ResponseCode::CommandOkay, "Mount succeeded", false);
+    }
+    return 0;
+}
+
+CommandListener::ListAsecCmd::ListAsecCmd() :
+                 VoldCommand("list_asec") {
+
+}
+
+int CommandListener::ListAsecCmd::runCommand(SocketClient *cli,
+                                            int argc, char **argv) {
+    DIR *d = opendir("/sdcard/android_secure");
+
+    if (!d) {
+        cli->sendMsg(ResponseCode::OperationFailed, "Failed to open asec dir", true);
+        return 0;  
+    }
+
+    struct dirent *dent;
+    while ((dent = readdir(d))) {
+        if (dent->d_name[0] == '.')
+            continue;
+        if (!strcmp(&dent->d_name[strlen(dent->d_name)-5], ".asec")) {
+            char id[255];
+            memset(id, 0, sizeof(id));
+            strncpy(id, dent->d_name, strlen(dent->d_name) -5);
+            cli->sendMsg(ResponseCode::AsecListResult, id, false);
+        }
+    }
+    closedir(d);
+    cli->sendMsg(ResponseCode::CommandOkay, "ASEC listing complete", false);
+
+    return 0;
+}
+
+CommandListener::AsecPathCmd::AsecPathCmd() :
+                 VoldCommand("asec_path") {
+}
+
+int CommandListener::AsecPathCmd::runCommand(SocketClient *cli,
+                                            int argc, char **argv) {
+    if (argc != 2) {
+        cli->sendMsg(ResponseCode::CommandSyntaxError,
+                     "Usage: asec_path <namespace-id>", false);
+        return 0;
+    }
+
+    char mountPath[255];
+
+    if (VolumeManager::Instance()->getAsecMountPath(argv[1], mountPath,
+                                                    sizeof(mountPath))) {
+        cli->sendMsg(ResponseCode::OperationFailed, "Failed to get mount path", true);
+    } else {
+        cli->sendMsg(ResponseCode::AsecPathResult, mountPath, false);
     }
 
     return 0;

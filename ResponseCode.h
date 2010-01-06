@@ -21,13 +21,15 @@ class ResponseCode {
 public:
     // 100 series - Requestion action was initiated; expect another reply
     // before proceeding with a new command.
-    static const int ActionInitiated = 100;
+    static const int ActionInitiated  = 100;
 
     static const int VolumeListResult = 110;
+    static const int AsecListResult   = 111;
 
     // 200 series - Requested action has been successfully completed
-    static const int CommandOkay = 200;
+    static const int CommandOkay              = 200;
     static const int ShareAvailabilityResult  = 210;
+    static const int AsecPathResult           = 211;
 
     // 400 series - The command was accepted but the requested action
     // did not take place.

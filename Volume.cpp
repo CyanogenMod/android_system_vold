@@ -268,7 +268,7 @@ int Volume::mountVol() {
 
         LOGI("%s checks out - attempting to mount\n", devicePath);
         errno = 0;
-        if (!(rc = Fat::doMount(devicePath, getMountpoint()))) {
+        if (!(rc = Fat::doMount(devicePath, getMountpoint(), false, false))) {
             LOGI("%s sucessfully mounted for volume %s\n", devicePath,
                  getLabel());
             setState(Volume::State_Mounted);

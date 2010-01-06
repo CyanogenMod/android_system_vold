@@ -1,0 +1,195 @@
+/*
+ * Copyright (C) 2008 The Android Open Source Project
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+#include <stdio.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <errno.h>
+#include <string.h>
+
+#define LOG_TAG "Vold"
+
+#include <cutils/log.h>
+
+#include "Loop.h"
+
+int Loop::lookupActive(const char *loopFile, char *buffer, size_t len) {
+    int i;
+    int fd;
+    char filename[256];
+
+    memset(buffer, 0, len);
+
+    for (i = 0; i < LOOP_MAX; i++) {
+        struct loop_info li;
+        int rc;
+
+        sprintf(filename, "/dev/block/loop%d", i);
+
+        if ((fd = open(filename, O_RDWR)) < 0) {
+            LOGE("Unable to open %s (%s)", filename, strerror(errno));
+            return -1;
+        }
+
+        rc = ioctl(fd, LOOP_GET_STATUS, &li);
+        close(fd);
+        if (rc < 0 && errno == ENXIO) {
+            continue;
+            break;
+        }
+
+        if (rc < 0) {
+            LOGE("Unable to get loop status for %s (%s)", filename,
+                 strerror(errno));
+            return -1;
+        }
+        if (!strncmp(li.lo_name, loopFile, LO_NAME_SIZE)) {
+            break;
+        }
+    }
+
+    if (i == LOOP_MAX) {
+        errno = ENOENT;
+        return -1;
+    }
+    strncpy(buffer, filename, len -1);
+    return 0;
+}
+
+int Loop::getNextAvailable(char *buffer, size_t len) {
+    int i;
+    int fd;
+    char filename[256];
+
+    memset(buffer, 0, len);
+
+    for (i = 0; i < LOOP_MAX; i++) {
+        struct loop_info li;
+        int rc;
+
+        sprintf(filename, "/dev/block/loop%d", i);
+
+        if ((fd = open(filename, O_RDWR)) < 0) {
+            LOGE("Unable to open %s (%s)", filename, strerror(errno));
+            return -1;
+        }
+
+        rc = ioctl(fd, LOOP_GET_STATUS, &li);
+        close(fd);
+        if (rc < 0 && errno == ENXIO)
+            break;
+
+        if (rc < 0) {
+            LOGE("Unable to get loop status for %s (%s)", filename,
+                 strerror(errno));
+            return -1;
+        }
+    }
+
+    if (i == LOOP_MAX) {
+        LOGE("Exhausted all loop devices");
+        errno = ENOSPC;
+        return -1;
+    }
+    strncpy(buffer, filename, len -1);
+    return 0;
+}
+
+int Loop::create(const char *loopDevice, const char *loopFile) {
+    int fd;
+    int file_fd;
+
+    LOGD("Creating loop for file '%s' into loop device '%s'", loopFile,
+         loopDevice);
+    if ((fd = open(loopDevice, O_RDWR)) < 0) {
+        LOGE("Unable to open loop device %s (%s)", loopDevice,
+             strerror(errno));
+        return -1;
+    }
+
+    if ((file_fd = open(loopFile, O_RDWR)) < 0) {
+        LOGE("Unable to open %s (%s)", loopFile, strerror(errno));
+        close(fd);
+        return -1;
+    }
+
+    if (ioctl(fd, LOOP_SET_FD, file_fd) < 0) {
+        LOGE("Error setting up loopback interface (%s)", strerror(errno));
+        close(file_fd);
+        close(fd);
+        return -1;
+    }
+
+    struct loop_info li;
+
+    memset(&li, 0, sizeof(li));
+    strncpy(li.lo_name, loopFile, LO_NAME_SIZE);
+
+    if (ioctl(fd, LOOP_SET_STATUS, &li) < 0) {
+        LOGE("Error setting loopback status (%s)", strerror(errno));
+        close(file_fd);
+        close(fd);
+        return -1;
+    }
+
+    close(fd);
+    close(file_fd);
+
+    return 0;
+}
+
+int Loop::destroyByDevice(const char *loopDevice) {
+    int device_fd;
+
+    device_fd = open(loopDevice, O_RDONLY);
+    if (device_fd < 0) {
+        LOGE("Failed to open loop (%d)", errno);
+        return -1;
+    }
+
+    if (ioctl(device_fd, LOOP_CLR_FD, 0) < 0) {
+        LOGE("Failed to destroy loop (%d)", errno);
+        close(device_fd);
+        return -1;
+    }
+
+    close(device_fd);
+    return 0;
+}
+
+int Loop::destroyByFile(const char *loopFile) {
+    errno = ENOSYS;
+    return -1;
+}
+
+int Loop::createImageFile(const char *file, size_t sizeMb) {
+    int fd;
+
+    LOGD("Creating ASEC image file %s (%d mb)", file, sizeMb);
+
+    if ((fd = creat(file, 0600)) < 0) {
+        LOGE("Error creating imagefile (%s)", strerror(errno));
+        return -1;
+    }
+
+    if (ftruncate(fd, (sizeMb * (1024 * 1024))) < 0) {
+        LOGE("Error truncating imagefile (%s)", strerror(errno));
+        close(fd);
+        return -1;
+    }
+    close(fd);
+    return 0;
+}

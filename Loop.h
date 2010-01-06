@@ -14,17 +14,23 @@
  * limitations under the License.
  */
 
-#ifndef _FAT_H
-#define _FAT_H
+#ifndef _LOOP_H
+#define _LOOP_H
 
 #include <unistd.h>
+#include <linux/loop.h>
 
-class Fat {
+class Loop {
 public:
-    static int check(const char *fsPath);
-    static int doMount(const char *fsPath, const char *mountPoint, bool ro,
-                       bool remount);
-    static int format(const char *fsPath);
+    static const int LOOP_MAX = 8;
+public:
+    static int getNextAvailable(char *buffer, size_t len);
+    static int lookupActive(const char *loopFile, char *buffer, size_t len);
+  
+    static int create(const char *loopDevice, const char *loopFile);
+    static int destroyByDevice(const char *loopDevice);
+    static int destroyByFile(const char *loopFile);
+    static int createImageFile(const char *file, size_t sizeMb);
 };
 
 #endif

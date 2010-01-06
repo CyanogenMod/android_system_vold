@@ -19,6 +19,10 @@
 #include <string.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <sys/mount.h>
+
 #include <linux/kdev_t.h>
 
 #define LOG_TAG "Vold"
@@ -30,6 +34,8 @@
 #include "VolumeManager.h"
 #include "DirectVolume.h"
 #include "ResponseCode.h"
+#include "Loop.h"
+#include "Fat.h"
 
 VolumeManager *VolumeManager::sInstance = NULL;
 
@@ -147,6 +153,191 @@ int VolumeManager::formatVolume(const char *label) {
     }
 
     return v->formatVol();
+}
+
+int VolumeManager::getAsecMountPath(const char *id, char *buffer, int maxlen) {
+    char mountPoint[255];
+
+    snprintf(mountPoint, sizeof(mountPoint), "/asec/%s", id);
+
+    if (!isMountpointMounted(mountPoint)) {
+        errno = ENOENT;
+        return -1;
+    } 
+    snprintf(buffer, maxlen, "/asec/%s", id);
+    return 0;
+}
+
+int VolumeManager::createAsec(const char *id, int sizeMb,
+                              const char *fstype, const char *key, int ownerUid) {
+
+    mkdir("/sdcard/android_secure", 0777);
+
+    if (lookupVolume(id)) {
+        LOGE("ASEC volume '%s' currently exists", id);
+        errno = EADDRINUSE;
+        return -1;
+    }
+
+    char asecFileName[255];
+    snprintf(asecFileName, sizeof(asecFileName),
+             "/sdcard/android_secure/%s.asec", id);
+
+    if (!access(asecFileName, F_OK)) {
+        LOGE("ASEC file '%s' currently exists - destroy it first! (%s)",
+             asecFileName, strerror(errno));
+        errno = EADDRINUSE;
+        return -1;
+    }
+
+    if (Loop::createImageFile(asecFileName, sizeMb)) {
+        LOGE("ASEC image file creation failed (%s)", strerror(errno));
+        return -1;
+    }
+
+    char loopDevice[255];
+    if (Loop::getNextAvailable(loopDevice, sizeof(loopDevice))) {
+        unlink(asecFileName);
+        return -1;
+    }
+
+    if (Loop::create(loopDevice, asecFileName)) {
+        LOGE("ASEC loop device creation failed (%s)", strerror(errno));
+        unlink(asecFileName);
+        return -1;
+    }
+
+    /* XXX: Start devmapper */
+
+    if (Fat::format(loopDevice)) {
+        LOGE("ASEC FAT format failed (%s)", strerror(errno));
+        Loop::destroyByDevice(loopDevice);
+        unlink(asecFileName);
+        return -1;
+    }
+
+    char mountPoint[255];
+
+    snprintf(mountPoint, sizeof(mountPoint), "/asec/%s", id);
+    if (mkdir(mountPoint, 0777)) {
+        LOGE("Mountpoint creation failed (%s)", strerror(errno));
+        Loop::destroyByDevice(loopDevice);
+        unlink(asecFileName);
+        return -1;
+    }
+
+    if (Fat::doMount(loopDevice, mountPoint, false, false)) {
+        LOGE("ASEC FAT mount failed (%s)", strerror(errno));
+        Loop::destroyByDevice(loopDevice);
+        unlink(asecFileName);
+        return -1;
+    }
+    
+    return 0;
+}
+
+int VolumeManager::finalizeAsec(const char *id) {
+    char asecFileName[255];
+    char loopDevice[255];
+    char mountPoint[255];
+
+    snprintf(asecFileName, sizeof(asecFileName),
+             "/sdcard/android_secure/%s.asec", id);
+
+    if (Loop::lookupActive(asecFileName, loopDevice, sizeof(loopDevice))) {
+        LOGE("Unable to finalize %s (%s)", id, strerror(errno));
+        return -1;
+    }
+
+    snprintf(mountPoint, sizeof(mountPoint), "/asec/%s", id);
+    if (Fat::doMount(loopDevice, mountPoint, true, true)) {
+        LOGE("ASEC finalize mount failed (%s)", strerror(errno));
+        return -1;
+    }
+
+    LOGD("ASEC %s finalized", id);
+    return 0;
+}
+
+int VolumeManager::destroyAsec(const char *id) {
+    char asecFileName[255];
+    char mountPoint[255];
+
+    snprintf(asecFileName, sizeof(asecFileName),
+             "/sdcard/android_secure/%s.asec", id);
+    snprintf(mountPoint, sizeof(mountPoint), "/asec/%s", id);
+
+    if (isMountpointMounted(mountPoint)) {
+        int i, rc;
+        for (i = 0; i < 10; i++) {
+            rc = umount(mountPoint);
+            if (!rc) {
+                break;
+            }
+            if (rc && (errno == EINVAL || errno == ENOENT)) {
+                rc = 0;
+                break;
+            }
+            LOGW("ASEC %s unmount attempt %d failed (%s)",
+                  id, i +1, strerror(errno));
+            usleep(1000 * 250);
+        }
+        if (rc) {
+            LOGE("Failed to unmount ASEC %s for destroy", id);
+            return -1;
+        }
+    }
+
+    char loopDevice[255];
+    if (!Loop::lookupActive(asecFileName, loopDevice, sizeof(loopDevice))) {
+        Loop::destroyByDevice(loopDevice);
+    }
+
+    unlink(asecFileName);
+
+    LOGD("ASEC %s destroyed", id);
+    return 0;
+}
+
+int VolumeManager::mountAsec(const char *id, const char *key, int ownerUid) {
+    char asecFileName[255];
+    char mountPoint[255];
+
+    snprintf(asecFileName, sizeof(asecFileName),
+             "/sdcard/android_secure/%s.asec", id);
+    snprintf(mountPoint, sizeof(mountPoint), "/asec/%s", id);
+
+    if (isMountpointMounted(mountPoint)) {
+        LOGE("ASEC %s already mounted", id);
+        errno = EBUSY;
+        return -1;
+    }
+
+    char loopDevice[255];
+    if (Loop::lookupActive(asecFileName, loopDevice, sizeof(loopDevice))) {
+        if (Loop::getNextAvailable(loopDevice, sizeof(loopDevice))) {
+            LOGE("Unable to find loop device for ASEC mount");
+            return -1;
+        }
+
+        if (Loop::create(loopDevice, asecFileName)) {
+            LOGE("ASEC loop device creation failed (%s)", strerror(errno));
+            return -1;
+        }
+    }
+
+    if (mkdir(mountPoint, 0777)) {
+        LOGE("Mountpoint creation failed (%s)", strerror(errno));
+        return -1;
+    }
+
+    if (Fat::doMount(loopDevice, mountPoint, true, false)) {
+        LOGE("ASEC mount failed (%s)", strerror(errno));
+        return -1;
+    }
+
+    LOGD("ASEC %s mounted", id);
+    return 0;
 }
 
 int VolumeManager::mountVolume(const char *label) {
@@ -334,3 +525,31 @@ Volume *VolumeManager::lookupVolume(const char *label) {
     }
     return NULL;
 }
+
+bool VolumeManager::isMountpointMounted(const char *mp)
+{
+    char device[256];
+    char mount_path[256];
+    char rest[256];
+    FILE *fp;
+    char line[1024];
+
+    if (!(fp = fopen("/proc/mounts", "r"))) {
+        LOGE("Error opening /proc/mounts (%s)", strerror(errno));
+        return false;
+    }
+
+    while(fgets(line, sizeof(line), fp)) {
+        line[strlen(line)-1] = '\0';
+        sscanf(line, "%255s %255s %255s\n", device, mount_path, rest);
+        if (!strcmp(mount_path, mp)) {
+            fclose(fp);
+            return true;
+        }
+
+    }
+
+    fclose(fp);
+    return false;
+}
+

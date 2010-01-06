@@ -92,11 +92,14 @@ int Fat::check(const char *fsPath) {
     return 0;
 }
 
-int Fat::doMount(const char *fsPath, const char *mountPoint) {
+int Fat::doMount(const char *fsPath, const char *mountPoint, bool ro, bool remount) {
     int rc;
     unsigned long flags;
 
     flags = MS_NODEV | MS_NOEXEC | MS_NOSUID | MS_DIRSYNC;
+
+    flags |= (ro ? MS_RDONLY : 0);
+    flags |= (remount ? MS_REMOUNT : 0);
 
     /*
      * Note: This is a temporary hack. If the sampling profiler is enabled,
@@ -168,7 +171,9 @@ int Fat::format(const char *fsPath) {
     int rc;
     args[0] = MKDOSFS_PATH;
     args[1] = "-F";
-    if ((nr_sec * 512) <= ((unsigned int) (1024*1024*1024) * 2)) 
+    if ((nr_sec * 512) <= ((unsigned int) (1024*1024) * 32)) 
+            args[2] = "12";
+    else if ((nr_sec * 512) <= ((unsigned int) (1024*1024*1024) * 2)) 
             args[2] = "16";
     else
             args[2] = "32";

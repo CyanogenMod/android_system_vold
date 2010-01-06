@@ -83,6 +83,49 @@ private:
         int runCommand(SocketClient *c, int argc, char ** argv);
     };
 
+    class CreateAsecCmd : public VoldCommand {
+    public:
+        CreateAsecCmd();
+        virtual ~CreateAsecCmd() {}
+        int runCommand(SocketClient *c, int argc, char ** argv);
+    };
+
+    class FinalizeAsecCmd : public VoldCommand {
+    public:
+        FinalizeAsecCmd();
+        virtual ~FinalizeAsecCmd() {}
+        int runCommand(SocketClient *c, int argc, char ** argv);
+    };
+
+    class DestroyAsecCmd : public VoldCommand {
+    public:
+        DestroyAsecCmd();
+        virtual ~DestroyAsecCmd() {}
+        int runCommand(SocketClient *c, int argc, char ** argv);
+    };
+
+    class MountAsecCmd : public VoldCommand {
+    public:
+        MountAsecCmd();
+        virtual ~MountAsecCmd() {}
+        int runCommand(SocketClient *c, int argc, char ** argv);
+    };
+
+    class ListAsecCmd : public VoldCommand {
+    public:
+        ListAsecCmd();
+        virtual ~ListAsecCmd() {}
+        int runCommand(SocketClient *c, int argc, char ** argv);
+    };
+
+    class AsecPathCmd : public VoldCommand {
+    public:
+        AsecPathCmd();
+        virtual ~AsecPathCmd() {}
+        int runCommand(SocketClient *c, int argc, char ** argv);
+    };
+
+
 };
 
 #endif
