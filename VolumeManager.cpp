@@ -220,10 +220,12 @@ int VolumeManager::createAsec(const char *id, int sizeMb,
 
     snprintf(mountPoint, sizeof(mountPoint), "/asec/%s", id);
     if (mkdir(mountPoint, 0777)) {
-        LOGE("Mountpoint creation failed (%s)", strerror(errno));
-        Loop::destroyByDevice(loopDevice);
-        unlink(asecFileName);
-        return -1;
+        if (errno != EEXIST) {
+            LOGE("Mountpoint creation failed (%s)", strerror(errno));
+            Loop::destroyByDevice(loopDevice);
+            unlink(asecFileName);
+            return -1;
+        }
     }
 
     if (Fat::doMount(loopDevice, mountPoint, false, false, ownerUid,
