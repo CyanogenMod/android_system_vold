@@ -31,7 +31,7 @@ LOCAL_C_INCLUDES := $(KERNEL_HEADERS) -I../../frameworks/base/include/
 
 LOCAL_CFLAGS := 
 
-LOCAL_SHARED_LIBRARIES := libsysutils
+LOCAL_SHARED_LIBRARIES := libsysutils libcutils
 
 include $(BUILD_EXECUTABLE)
 
