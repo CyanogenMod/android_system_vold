@@ -226,7 +226,8 @@ int VolumeManager::createAsec(const char *id, int sizeMb,
         return -1;
     }
 
-    if (Fat::doMount(loopDevice, mountPoint, false, false)) {
+    if (Fat::doMount(loopDevice, mountPoint, false, false, ownerUid,
+                     0, 0007, false)) {
         LOGE("ASEC FAT mount failed (%s)", strerror(errno));
         Loop::destroyByDevice(loopDevice);
         unlink(asecFileName);
@@ -250,7 +251,8 @@ int VolumeManager::finalizeAsec(const char *id) {
     }
 
     snprintf(mountPoint, sizeof(mountPoint), "/asec/%s", id);
-    if (Fat::doMount(loopDevice, mountPoint, true, true)) {
+    // XXX:
+    if (Fat::doMount(loopDevice, mountPoint, true, true, 0, 0, 0227, false)) {
         LOGE("ASEC finalize mount failed (%s)", strerror(errno));
         return -1;
     }
@@ -331,7 +333,8 @@ int VolumeManager::mountAsec(const char *id, const char *key, int ownerUid) {
         return -1;
     }
 
-    if (Fat::doMount(loopDevice, mountPoint, true, false)) {
+    if (Fat::doMount(loopDevice, mountPoint, true, false, ownerUid, 0,
+                     0227, false)) {
         LOGE("ASEC mount failed (%s)", strerror(errno));
         return -1;
     }

@@ -92,9 +92,12 @@ int Fat::check(const char *fsPath) {
     return 0;
 }
 
-int Fat::doMount(const char *fsPath, const char *mountPoint, bool ro, bool remount) {
+int Fat::doMount(const char *fsPath, const char *mountPoint,
+                 bool ro, bool remount, int ownerUid, int ownerGid,
+                 int permMask, bool createLost) {
     int rc;
     unsigned long flags;
+    char mountData[255];
 
     flags = MS_NODEV | MS_NOEXEC | MS_NOSUID | MS_DIRSYNC;
 
@@ -112,28 +115,22 @@ int Fat::doMount(const char *fsPath, const char *mountPoint, bool ro, bool remou
     if (value[0] == '1') {
         LOGW("The SD card is world-writable because the"
             " 'persist.sampling_profiler' system property is set to '1'.");
-        rc = mount(fsPath, mountPoint, (const char *) "vfat", (unsigned long) flags,
-                (const void *) "utf8,uid=1000,gid=1015,fmask=000,dmask=000,shortname=mixed");
-    } else {
-        /*
-         * The mount masks restrict access so that:
-         * 1. The 'system' user cannot access the SD card at all -
-         *    (protects system_server from grabbing file references)
-         * 2. Group users can RWX
-         * 3. Others can only RX
-         */
-        rc = mount(fsPath, mountPoint, "vfat", flags,
-                "utf8,uid=1000,gid=1015,fmask=702,dmask=702,shortname=mixed");
+        permMask = 0;
     }
+
+    sprintf(mountData,
+            "utf8,uid=%d,gid=%d,fmask=%o,dmask=%o,shortname=mixed",
+            ownerUid, ownerGid, permMask, permMask);
+
+    rc = mount(fsPath, mountPoint, "vfat", flags, mountData);
 
     if (rc && errno == EROFS) {
         LOGE("%s appears to be a read only filesystem - retrying mount RO", fsPath);
         flags |= MS_RDONLY;
-        rc = mount(fsPath, mountPoint, "vfat", flags,
-                   "utf8,uid=1000,gid=1015,fmask=702,dmask=702,shortname=mixed");
+        rc = mount(fsPath, mountPoint, "vfat", flags, mountData);
     }
 
-    if (rc == 0) {
+    if (rc == 0 && createLost) {
         char *lost_path;
         asprintf(&lost_path, "%s/LOST.DIR", mountPoint);
         if (access(lost_path, F_OK)) {
