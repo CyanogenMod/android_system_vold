@@ -168,13 +168,7 @@ int Fat::format(const char *fsPath) {
     int rc;
     args[0] = MKDOSFS_PATH;
     args[1] = "-F";
-    if ((nr_sec * 512) <= ((unsigned int) (1024*1024) * 32)) 
-            args[2] = "12";
-    else if ((nr_sec * 512) <= ((unsigned int) (1024*1024*1024) * 2)) 
-            args[2] = "16";
-    else
-            args[2] = "32";
-
+    args[2] = "32";
     args[3] = "-O";
     args[4] = "android";
     args[5] = fsPath;
