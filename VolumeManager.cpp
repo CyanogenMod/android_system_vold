@@ -37,6 +37,8 @@
 #include "Loop.h"
 #include "Fat.h"
 
+extern "C" void KillProcessesWithOpenFiles(const char *, int, int, int);
+
 VolumeManager *VolumeManager::sInstance = NULL;
 
 VolumeManager *VolumeManager::Instance() {
@@ -285,6 +287,11 @@ int VolumeManager::destroyAsec(const char *id) {
             }
             LOGW("ASEC %s unmount attempt %d failed (%s)",
                   id, i +1, strerror(errno));
+
+            if (i >= 5) {
+                KillProcessesWithOpenFiles(mountPoint, (i < 7 ? 0 : 1),
+                                           NULL, 0);
+            }
             usleep(1000 * 250);
         }
         if (rc) {
