@@ -20,6 +20,9 @@
 #include <errno.h>
 #include <string.h>
 
+#include <sys/types.h>
+#include <sys/stat.h>
+
 #define LOG_TAG "Vold"
 
 #include <cutils/log.h>
@@ -69,12 +72,10 @@ int Loop::lookupActive(const char *loopFile, char *buffer, size_t len) {
     return 0;
 }
 
-int Loop::getNextAvailable(char *buffer, size_t len) {
+int Loop::create(const char *loopFile, char *loopDeviceBuffer, size_t len) {
     int i;
     int fd;
     char filename[256];
-
-    memset(buffer, 0, len);
 
     for (i = 0; i < LOOP_MAX; i++) {
         struct loop_info li;
@@ -82,15 +83,29 @@ int Loop::getNextAvailable(char *buffer, size_t len) {
 
         sprintf(filename, "/dev/block/loop%d", i);
 
+        /*
+         * The kernel starts us off with 8 loop nodes, but more
+         * are created on-demand if needed.
+         */
+        mode_t mode = 0660 | S_IFBLK;
+        dev_t dev = (7 << 8) | i;
+        if (mknod(filename, mode, dev) < 0) {
+            if (errno != EEXIST) {
+                LOGE("Error creating loop device node (%s)", strerror(errno));
+                return -1;
+            }
+        }
+
         if ((fd = open(filename, O_RDWR)) < 0) {
             LOGE("Unable to open %s (%s)", filename, strerror(errno));
             return -1;
         }
 
         rc = ioctl(fd, LOOP_GET_STATUS, &li);
-        close(fd);
         if (rc < 0 && errno == ENXIO)
             break;
+
+        close(fd);
 
         if (rc < 0) {
             LOGE("Unable to get loop status for %s (%s)", filename,
@@ -104,21 +119,10 @@ int Loop::getNextAvailable(char *buffer, size_t len) {
         errno = ENOSPC;
         return -1;
     }
-    strncpy(buffer, filename, len -1);
-    return 0;
-}
 
-int Loop::create(const char *loopDevice, const char *loopFile) {
-    int fd;
+    strncpy(loopDeviceBuffer, filename, len -1);
+
     int file_fd;
-
-    LOGD("Creating loop for file '%s' into loop device '%s'", loopFile,
-         loopDevice);
-    if ((fd = open(loopDevice, O_RDWR)) < 0) {
-        LOGE("Unable to open loop device %s (%s)", loopDevice,
-             strerror(errno));
-        return -1;
-    }
 
     if ((file_fd = open(loopFile, O_RDWR)) < 0) {
         LOGE("Unable to open %s (%s)", loopFile, strerror(errno));

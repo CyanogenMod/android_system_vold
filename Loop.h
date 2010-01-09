@@ -22,12 +22,10 @@
 
 class Loop {
 public:
-    static const int LOOP_MAX = 8;
+    static const int LOOP_MAX = 255;
 public:
-    static int getNextAvailable(char *buffer, size_t len);
     static int lookupActive(const char *loopFile, char *buffer, size_t len);
-  
-    static int create(const char *loopDevice, const char *loopFile);
+    static int create(const char *loopFile, char *loopDeviceBuffer, size_t len);
     static int destroyByDevice(const char *loopDevice);
     static int destroyByFile(const char *loopFile);
     static int createImageFile(const char *file, size_t sizeMb);

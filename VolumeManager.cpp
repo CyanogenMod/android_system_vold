@@ -198,12 +198,7 @@ int VolumeManager::createAsec(const char *id, int sizeMb,
     }
 
     char loopDevice[255];
-    if (Loop::getNextAvailable(loopDevice, sizeof(loopDevice))) {
-        unlink(asecFileName);
-        return -1;
-    }
-
-    if (Loop::create(loopDevice, asecFileName)) {
+    if (Loop::create(asecFileName, loopDevice, sizeof(loopDevice))) {
         LOGE("ASEC loop device creation failed (%s)", strerror(errno));
         unlink(asecFileName);
         return -1;
@@ -327,12 +322,7 @@ int VolumeManager::mountAsec(const char *id, const char *key, int ownerUid) {
 
     char loopDevice[255];
     if (Loop::lookupActive(asecFileName, loopDevice, sizeof(loopDevice))) {
-        if (Loop::getNextAvailable(loopDevice, sizeof(loopDevice))) {
-            LOGE("Unable to find loop device for ASEC mount");
-            return -1;
-        }
-
-        if (Loop::create(loopDevice, asecFileName)) {
+        if (Loop::create(asecFileName, loopDevice, sizeof(loopDevice))) {
             LOGE("ASEC loop device creation failed (%s)", strerror(errno));
             return -1;
         }
