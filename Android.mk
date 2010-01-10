@@ -23,7 +23,8 @@ LOCAL_SRC_FILES:=                                      \
                   ProcessKiller.c                      \
                   geom_mbr_enc.c                       \
                   Fat.cpp                              \
-                  Loop.cpp
+                  Loop.cpp                             \
+                  Devmapper.cpp
 
 LOCAL_MODULE:= vold
 

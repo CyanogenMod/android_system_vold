@@ -36,6 +36,7 @@
 #include "ResponseCode.h"
 #include "Loop.h"
 #include "Fat.h"
+#include "Devmapper.h"
 
 extern "C" void KillProcessesWithOpenFiles(const char *, int, int, int);
 
@@ -204,10 +205,27 @@ int VolumeManager::createAsec(const char *id, int sizeMb,
         return -1;
     }
 
-    /* XXX: Start devmapper */
+    char dmDevice[255];
+    bool cleanupDm = false;
 
-    if (Fat::format(loopDevice)) {
+    if (strcmp(key, "none")) {
+        if (Devmapper::create(id, loopDevice, key, sizeMb, dmDevice,
+                             sizeof(dmDevice))) {
+            LOGE("ASEC device mapping failed (%s)", strerror(errno));
+            Loop::destroyByDevice(loopDevice);
+            unlink(asecFileName);
+            return -1;
+        }
+        cleanupDm = true;
+    } else {
+        strcpy(dmDevice, loopDevice);
+    }
+
+    if (Fat::format(dmDevice)) {
         LOGE("ASEC FAT format failed (%s)", strerror(errno));
+        if (cleanupDm) {
+            Devmapper::destroy(id);
+        }
         Loop::destroyByDevice(loopDevice);
         unlink(asecFileName);
         return -1;
@@ -219,16 +237,22 @@ int VolumeManager::createAsec(const char *id, int sizeMb,
     if (mkdir(mountPoint, 0777)) {
         if (errno != EEXIST) {
             LOGE("Mountpoint creation failed (%s)", strerror(errno));
+            if (cleanupDm) {
+                Devmapper::destroy(id);
+            }
             Loop::destroyByDevice(loopDevice);
             unlink(asecFileName);
             return -1;
         }
     }
 
-    if (Fat::doMount(loopDevice, mountPoint, false, false, ownerUid,
+    if (Fat::doMount(dmDevice, mountPoint, false, false, ownerUid,
                      0, 0000, false)) {
 //                     0, 0007, false)) {
         LOGE("ASEC FAT mount failed (%s)", strerror(errno));
+        if (cleanupDm) {
+            Devmapper::destroy(id);
+        }
         Loop::destroyByDevice(loopDevice);
         unlink(asecFileName);
         return -1;
@@ -261,7 +285,7 @@ int VolumeManager::finalizeAsec(const char *id) {
     return 0;
 }
 
-int VolumeManager::destroyAsec(const char *id) {
+int VolumeManager::unmountAsec(const char *id) {
     char asecFileName[255];
     char mountPoint[255];
 
@@ -270,35 +294,57 @@ int VolumeManager::destroyAsec(const char *id) {
     snprintf(mountPoint, sizeof(mountPoint), "/asec/%s", id);
 
     if (isMountpointMounted(mountPoint)) {
-        int i, rc;
-        for (i = 0; i < 10; i++) {
-            rc = umount(mountPoint);
-            if (!rc) {
-                break;
-            }
-            if (rc && (errno == EINVAL || errno == ENOENT)) {
-                rc = 0;
-                break;
-            }
-            LOGW("ASEC %s unmount attempt %d failed (%s)",
-                  id, i +1, strerror(errno));
+        LOGE("Unmount request for ASEC %s when not mounted", id);
+        errno = EINVAL;
+        return -1;
+    }
 
-            if (i >= 5) {
-                KillProcessesWithOpenFiles(mountPoint, (i < 7 ? 0 : 1),
-                                           NULL, 0);
-            }
-            usleep(1000 * 250);
+    int i, rc;
+    for (i = 0; i < 10; i++) {
+        rc = umount(mountPoint);
+        if (!rc) {
+            break;
         }
-        if (rc) {
-            LOGE("Failed to unmount ASEC %s for destroy", id);
-            return -1;
+        if (rc && (errno == EINVAL || errno == ENOENT)) {
+            rc = 0;
+            break;
         }
+        LOGW("ASEC %s unmount attempt %d failed (%s)",
+              id, i +1, strerror(errno));
+
+        if (i >= 5) {
+            KillProcessesWithOpenFiles(mountPoint, (i < 7 ? 0 : 1),
+                                       NULL, 0);
+        }
+        usleep(1000 * 250);
+    }
+
+    if (rc) {
+        LOGE("Failed to unmount ASEC %s", id);
+        return -1;
+    }
+
+    if (Devmapper::destroy(id) && errno != ENXIO) {
+        LOGE("Failed to destroy devmapper instance (%s)", strerror(errno));
     }
 
     char loopDevice[255];
     if (!Loop::lookupActive(asecFileName, loopDevice, sizeof(loopDevice))) {
         Loop::destroyByDevice(loopDevice);
     }
+    return 0;
+}
+
+int VolumeManager::destroyAsec(const char *id) {
+    char asecFileName[255];
+    char mountPoint[255];
+
+    snprintf(asecFileName, sizeof(asecFileName),
+             "/sdcard/android_secure/%s.asec", id);
+    snprintf(mountPoint, sizeof(mountPoint), "/asec/%s", id);
+
+    if (unmountAsec(id))
+        return -1;
 
     unlink(asecFileName);
 
@@ -326,17 +372,66 @@ int VolumeManager::mountAsec(const char *id, const char *key, int ownerUid) {
             LOGE("ASEC loop device creation failed (%s)", strerror(errno));
             return -1;
         }
+        LOGD("New loop device created at %s", loopDevice);
+    } else {
+        LOGD("Found active loopback for %s at %s", asecFileName, loopDevice);
+    }
+
+    char dmDevice[255];
+    bool cleanupDm = false;
+    if (strcmp(key, "none")) {
+        if (Devmapper::lookupActive(id, dmDevice, sizeof(dmDevice))) {
+            unsigned int nr_sec = 0;
+            int fd;
+
+            if ((fd = open(loopDevice, O_RDWR)) < 0) {
+                LOGE("Failed to open loopdevice (%s)", strerror(errno));
+                Loop::destroyByDevice(loopDevice);
+                return -1;
+            }
+
+            if (ioctl(fd, BLKGETSIZE, &nr_sec)) {
+                LOGE("Failed to get loop size (%s)", strerror(errno));
+                Loop::destroyByDevice(loopDevice);
+                close(fd);
+                return -1;
+            }
+            close(fd);
+            if (Devmapper::create(id, loopDevice, key,
+                                  (nr_sec * 512) / (1024 * 1024),
+                                  dmDevice, sizeof(dmDevice))) {
+                LOGE("ASEC device mapping failed (%s)", strerror(errno));
+                Loop::destroyByDevice(loopDevice);
+                return -1;
+            }
+            LOGD("New devmapper instance created at %s", dmDevice);
+        } else {
+            LOGD("Found active devmapper for %s at %s", asecFileName, dmDevice);
+        }
+        cleanupDm = true;
+    } else {
+        strcpy(dmDevice, loopDevice);
     }
 
     if (mkdir(mountPoint, 0777)) {
-        LOGE("Mountpoint creation failed (%s)", strerror(errno));
-        return -1;
+        if (errno != EEXIST) {
+            LOGE("Mountpoint creation failed (%s)", strerror(errno));
+            if (cleanupDm) {
+                Devmapper::destroy(id);
+            }
+            Loop::destroyByDevice(loopDevice);
+            return -1;
+        }
     }
 
-    if (Fat::doMount(loopDevice, mountPoint, true, false, ownerUid, 0,
+    if (Fat::doMount(dmDevice, mountPoint, true, false, ownerUid, 0,
                      0222, false)) {
 //                     0227, false)) {
         LOGE("ASEC mount failed (%s)", strerror(errno));
+        if (cleanupDm) {
+            Devmapper::destroy(id);
+        }
+        Loop::destroyByDevice(loopDevice);
         return -1;
     }
 

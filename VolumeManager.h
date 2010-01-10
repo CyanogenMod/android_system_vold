@@ -60,6 +60,7 @@ public:
     int finalizeAsec(const char *id);
     int destroyAsec(const char *id);
     int mountAsec(const char *id, const char *key, int ownerUid);
+    int unmountAsec(const char *id);
     int getAsecMountPath(const char *id, char *buffer, int maxlen);
 
     // XXX: This should be moved private once switch uevents are working

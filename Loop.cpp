@@ -43,7 +43,9 @@ int Loop::lookupActive(const char *loopFile, char *buffer, size_t len) {
         sprintf(filename, "/dev/block/loop%d", i);
 
         if ((fd = open(filename, O_RDWR)) < 0) {
-            LOGE("Unable to open %s (%s)", filename, strerror(errno));
+            if (errno != ENOENT) {
+                LOGE("Unable to open %s (%s)", filename, strerror(errno));
+            }
             return -1;
         }
 
@@ -88,7 +90,7 @@ int Loop::create(const char *loopFile, char *loopDeviceBuffer, size_t len) {
          * are created on-demand if needed.
          */
         mode_t mode = 0660 | S_IFBLK;
-        dev_t dev = (7 << 8) | i;
+        unsigned int dev = (0xff & i) | ((i << 12) & 0xfff00000) | (7 << 8);
         if (mknod(filename, mode, dev) < 0) {
             if (errno != EEXIST) {
                 LOGE("Error creating loop device node (%s)", strerror(errno));
@@ -189,7 +191,7 @@ int Loop::createImageFile(const char *file, size_t sizeMb) {
         return -1;
     }
 
-    if (ftruncate(fd, (sizeMb * (1024 * 1024))) < 0) {
+    if (ftruncate(fd, 1024 + (sizeMb * (1024 * 1024))) < 0) {
         LOGE("Error truncating imagefile (%s)", strerror(errno));
         close(fd);
         return -1;
