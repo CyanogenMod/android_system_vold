@@ -186,9 +186,9 @@ int CommandListener::CreateAsecCmd::runCommand(SocketClient *cli,
     if (VolumeManager::Instance()->createAsec(argv[1], atoi(argv[2]),
                                               argv[3], argv[4],
                                               atoi(argv[5]))) {
-        cli->sendMsg(ResponseCode::OperationFailed, "Cache creation failed", true);
+        cli->sendMsg(ResponseCode::OperationFailed, "Container creation failed", true);
     } else {
-        cli->sendMsg(ResponseCode::CommandOkay, "Cache created", false);
+        cli->sendMsg(ResponseCode::CommandOkay, "Container created", false);
     }
 
     return 0;
@@ -207,9 +207,9 @@ int CommandListener::FinalizeAsecCmd::runCommand(SocketClient *cli,
     }
 
     if (VolumeManager::Instance()->finalizeAsec(argv[1])) {
-        cli->sendMsg(ResponseCode::OperationFailed, "Cache finalize failed", true);
+        cli->sendMsg(ResponseCode::OperationFailed, "Container finalize failed", true);
     } else {
-        cli->sendMsg(ResponseCode::CommandOkay, "Cache finalized", false);
+        cli->sendMsg(ResponseCode::CommandOkay, "Container finalized", false);
     }
     return 0;
 }
@@ -229,7 +229,7 @@ int CommandListener::DestroyAsecCmd::runCommand(SocketClient *cli,
     if (VolumeManager::Instance()->destroyAsec(argv[1])) {
         cli->sendMsg(ResponseCode::OperationFailed, "Destroy failed", true);
     } else {
-        cli->sendMsg(ResponseCode::CommandOkay, "Cache Destroyed", false);
+        cli->sendMsg(ResponseCode::CommandOkay, "Container Destroyed", false);
     }
     return 0;
 }
