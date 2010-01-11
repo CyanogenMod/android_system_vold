@@ -171,7 +171,7 @@ int VolumeManager::getAsecMountPath(const char *id, char *buffer, int maxlen) {
     return 0;
 }
 
-int VolumeManager::createAsec(const char *id, int sizeMb,
+int VolumeManager::createAsec(const char *id, unsigned int numSectors,
                               const char *fstype, const char *key, int ownerUid) {
 
     mkdir("/sdcard/android_secure", 0777);
@@ -193,7 +193,7 @@ int VolumeManager::createAsec(const char *id, int sizeMb,
         return -1;
     }
 
-    if (Loop::createImageFile(asecFileName, sizeMb)) {
+    if (Loop::createImageFile(asecFileName, numSectors)) {
         LOGE("ASEC image file creation failed (%s)", strerror(errno));
         return -1;
     }
@@ -209,7 +209,7 @@ int VolumeManager::createAsec(const char *id, int sizeMb,
     bool cleanupDm = false;
 
     if (strcmp(key, "none")) {
-        if (Devmapper::create(id, loopDevice, key, sizeMb, dmDevice,
+        if (Devmapper::create(id, loopDevice, key, numSectors, dmDevice,
                              sizeof(dmDevice))) {
             LOGE("ASEC device mapping failed (%s)", strerror(errno));
             Loop::destroyByDevice(loopDevice);
@@ -397,8 +397,7 @@ int VolumeManager::mountAsec(const char *id, const char *key, int ownerUid) {
                 return -1;
             }
             close(fd);
-            if (Devmapper::create(id, loopDevice, key,
-                                  (nr_sec * 512) / (1024 * 1024),
+            if (Devmapper::create(id, loopDevice, key, nr_sec,
                                   dmDevice, sizeof(dmDevice))) {
                 LOGE("ASEC device mapping failed (%s)", strerror(errno));
                 Loop::destroyByDevice(loopDevice);

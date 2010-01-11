@@ -28,7 +28,7 @@ public:
     static int create(const char *loopFile, char *loopDeviceBuffer, size_t len);
     static int destroyByDevice(const char *loopDevice);
     static int destroyByFile(const char *loopFile);
-    static int createImageFile(const char *file, size_t sizeMb);
+    static int createImageFile(const char *file, unsigned int numSectors);
 };
 
 #endif

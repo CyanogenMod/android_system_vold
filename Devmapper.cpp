@@ -60,8 +60,8 @@ int Devmapper::lookupActive(const char *name, char *ubuffer, size_t len) {
  
     ioctlInit(io, 4096, name, 0);
     if (ioctl(fd, DM_DEV_STATUS, io)) {
-        if (errno != ENODEV) {
-            LOGE("Error retrieving device status (%s)", strerror(errno));
+        if (errno != ENXIO) {
+            LOGE("DM_DEV_STATUS ioctl failed for lookup (%s)", strerror(errno));
         }
         free(buffer);
         close(fd);
@@ -76,8 +76,8 @@ int Devmapper::lookupActive(const char *name, char *ubuffer, size_t len) {
     return 0;
 }
 
-int Devmapper::create(const char *name, const char *loopFile, const char *key, int sizeMb,
-                      char *ubuffer, size_t len) {
+int Devmapper::create(const char *name, const char *loopFile, const char *key,
+                      unsigned int numSectors, char *ubuffer, size_t len) {
     char *buffer = (char *) malloc(4096);
     if (!buffer) {
         LOGE("Error allocating memory (%s)", strerror(errno));
@@ -121,7 +121,7 @@ int Devmapper::create(const char *name, const char *loopFile, const char *key, i
     // Retrieve the device number we were allocated
     ioctlInit(io, 4096, name, 0);
     if (ioctl(fd, DM_DEV_STATUS, io)) {
-        LOGE("Error retrieving device status (%s)", strerror(errno));
+        LOGE("Error retrieving devmapper status (%s)", strerror(errno));
         free(buffer);
         close(fd);
         return -1;
@@ -139,7 +139,7 @@ int Devmapper::create(const char *name, const char *loopFile, const char *key, i
     io->target_count = 1;
     tgt->status = 0;
     tgt->sector_start = 0;
-    tgt->length = (sizeMb * (1024 * 1024)) / 512;
+    tgt->length = numSectors;
     strcpy(tgt->target_type, "crypt");
 
     char *cryptParams = buffer + sizeof(struct dm_ioctl) + sizeof(struct dm_target_spec);

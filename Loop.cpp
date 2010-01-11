@@ -181,17 +181,17 @@ int Loop::destroyByFile(const char *loopFile) {
     return -1;
 }
 
-int Loop::createImageFile(const char *file, size_t sizeMb) {
+int Loop::createImageFile(const char *file, unsigned int numSectors) {
     int fd;
 
-    LOGD("Creating ASEC image file %s (%d mb)", file, sizeMb);
+    LOGD("Creating ASEC image file %s (%u sectors)", file, numSectors);
 
     if ((fd = creat(file, 0600)) < 0) {
         LOGE("Error creating imagefile (%s)", strerror(errno));
         return -1;
     }
 
-    if (ftruncate(fd, 1024 + (sizeMb * (1024 * 1024))) < 0) {
+    if (ftruncate(fd, numSectors * 512) < 0) {
         LOGE("Error truncating imagefile (%s)", strerror(errno));
         close(fd);
         return -1;

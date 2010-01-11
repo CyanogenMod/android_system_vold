@@ -182,6 +182,7 @@ int CommandListener::CreateAsecCmd::runCommand(SocketClient *cli,
         return 0;
     }
 
+    unsigned int numSectors = (atoi(argv[2]) * (1024 * 1024)) / 512;
     if (VolumeManager::Instance()->createAsec(argv[1], atoi(argv[2]),
                                               argv[3], argv[4],
                                               atoi(argv[5]))) {
