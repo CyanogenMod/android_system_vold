@@ -190,7 +190,9 @@ int Devmapper::destroy(const char *name) {
     ioctlInit(io, 4096, name, 0);
 
     if (ioctl(fd, DM_DEV_REMOVE, io)) {
-        LOGE("Error destroying device mapping (%s)", strerror(errno));
+        if (errno != ENXIO) {
+            LOGE("Error destroying device mapping (%s)", strerror(errno));
+        }
         free(buffer);
         close(fd);
         return -1;

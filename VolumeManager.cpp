@@ -293,7 +293,7 @@ int VolumeManager::unmountAsec(const char *id) {
              "/sdcard/android_secure/%s.asec", id);
     snprintf(mountPoint, sizeof(mountPoint), "/asec/%s", id);
 
-    if (isMountpointMounted(mountPoint)) {
+    if (!isMountpointMounted(mountPoint)) {
         LOGE("Unmount request for ASEC %s when not mounted", id);
         errno = EINVAL;
         return -1;
@@ -343,10 +343,17 @@ int VolumeManager::destroyAsec(const char *id) {
              "/sdcard/android_secure/%s.asec", id);
     snprintf(mountPoint, sizeof(mountPoint), "/asec/%s", id);
 
-    if (unmountAsec(id))
-        return -1;
+    if (isMountpointMounted(mountPoint)) {
+        if (unmountAsec(id)) {
+            LOGE("Failed to unmount asec %s for destroy (%s)", id, strerror(errno));
+            return -1;
+        }
+    }
 
-    unlink(asecFileName);
+    if (unlink(asecFileName)) {
+        LOGE("Failed to unlink asec %s (%s)", id, strerror(errno));
+        return -1;
+    }
 
     LOGD("ASEC %s destroyed", id);
     return 0;
