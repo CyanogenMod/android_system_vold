@@ -51,12 +51,15 @@ VolumeManager *VolumeManager::Instance() {
 VolumeManager::VolumeManager() {
     mBlockDevices = new BlockDeviceCollection();
     mVolumes = new VolumeCollection();
+    mActiveContainers = new AsecIdCollection();
     mBroadcaster = NULL;
     mUsbMassStorageConnected = false;
 }
 
 VolumeManager::~VolumeManager() {
     delete mBlockDevices;
+    delete mVolumes;
+    delete mActiveContainers;
 }
 
 int VolumeManager::start() {
@@ -257,7 +260,8 @@ int VolumeManager::createAsec(const char *id, unsigned int numSectors,
         unlink(asecFileName);
         return -1;
     }
-    
+
+    mActiveContainers->push_back(strdup(id));
     return 0;
 }
 
@@ -324,6 +328,8 @@ int VolumeManager::unmountAsec(const char *id) {
         return -1;
     }
 
+    unlink(mountPoint);
+
     if (Devmapper::destroy(id) && errno != ENXIO) {
         LOGE("Failed to destroy devmapper instance (%s)", strerror(errno));
     }
@@ -331,6 +337,18 @@ int VolumeManager::unmountAsec(const char *id) {
     char loopDevice[255];
     if (!Loop::lookupActive(asecFileName, loopDevice, sizeof(loopDevice))) {
         Loop::destroyByDevice(loopDevice);
+    }
+
+    AsecIdCollection::iterator it;
+    for (it = mActiveContainers->begin(); it != mActiveContainers->end(); ++it) {
+        if (!strcmp(*it, id)) {
+            free(*it);
+            mActiveContainers->erase(it);
+            break;
+        }
+    }
+    if (it == mActiveContainers->end()) {
+        LOGW("mActiveContainers is inconsistent!");
     }
     return 0;
 }
@@ -441,6 +459,7 @@ int VolumeManager::mountAsec(const char *id, const char *key, int ownerUid) {
         return -1;
     }
 
+    mActiveContainers->push_back(strdup(id));
     LOGD("ASEC %s mounted", id);
     return 0;
 }
@@ -608,6 +627,15 @@ int VolumeManager::unmountVolume(const char *label) {
              v->getState());
         errno = EBUSY;
         return -1;
+    }
+
+    while(mActiveContainers->size()) {
+        AsecIdCollection::iterator it = mActiveContainers->begin();
+        LOGI("Unmounting ASEC %s (dependant on %s)", *it, v->getMountpoint());
+        if (unmountAsec(*it)) {
+            LOGE("Failed to unmount ASEC %s (%s) - unmount of %s may fail!", *it,
+                 strerror(errno), v->getMountpoint());
+        }
     }
 
     return v->unmountVol();

@@ -25,6 +25,8 @@
 #include "BlockDevice.h"
 #include "Volume.h"
 
+typedef android::List<char *> AsecIdCollection;
+
 class VolumeManager {
 private:
     static VolumeManager *sInstance;
@@ -34,6 +36,7 @@ private:
     BlockDeviceCollection *mBlockDevices;
 
     VolumeCollection      *mVolumes;
+    AsecIdCollection      *mActiveContainers;
     bool                   mUsbMassStorageConnected;
 
 public:
