@@ -45,6 +45,7 @@ CommandListener::CommandListener() :
     registerCmd(new FinalizeAsecCmd());
     registerCmd(new DestroyAsecCmd());
     registerCmd(new MountAsecCmd());
+    registerCmd(new UnmountAsecCmd());
     registerCmd(new ListAsecCmd());
     registerCmd(new AsecPathCmd());
 }
@@ -250,6 +251,26 @@ int CommandListener::MountAsecCmd::runCommand(SocketClient *cli,
         cli->sendMsg(ResponseCode::OperationFailed, "Mount failed", true);
     } else {
         cli->sendMsg(ResponseCode::CommandOkay, "Mount succeeded", false);
+    }
+    return 0;
+}
+
+CommandListener::UnmountAsecCmd::UnmountAsecCmd() :
+                 VoldCommand("unmount_asec") {
+}
+
+int CommandListener::UnmountAsecCmd::runCommand(SocketClient *cli,
+                                            int argc, char **argv) {
+    if (argc != 2) {
+        cli->sendMsg(ResponseCode::CommandSyntaxError,
+                     "Usage: unmount_asec <namespace-id>", false);
+        return 0;
+    }
+
+    if (VolumeManager::Instance()->unmountAsec(argv[1])) {
+        cli->sendMsg(ResponseCode::OperationFailed, "Unmount failed", true);
+    } else {
+        cli->sendMsg(ResponseCode::CommandOkay, "Unmount succeeded", false);
     }
     return 0;
 }

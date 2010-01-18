@@ -111,6 +111,13 @@ private:
         int runCommand(SocketClient *c, int argc, char ** argv);
     };
 
+    class UnmountAsecCmd : public VoldCommand {
+    public:
+        UnmountAsecCmd();
+        virtual ~UnmountAsecCmd() {}
+        int runCommand(SocketClient *c, int argc, char ** argv);
+    };
+
     class ListAsecCmd : public VoldCommand {
     public:
         ListAsecCmd();
