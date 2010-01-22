@@ -165,11 +165,6 @@ int VolumeManager::getAsecMountPath(const char *id, char *buffer, int maxlen) {
     char mountPoint[255];
 
     snprintf(mountPoint, sizeof(mountPoint), "/asec/%s", id);
-
-    if (!isMountpointMounted(mountPoint)) {
-        errno = ENOENT;
-        return -1;
-    } 
     snprintf(buffer, maxlen, "/asec/%s", id);
     return 0;
 }
