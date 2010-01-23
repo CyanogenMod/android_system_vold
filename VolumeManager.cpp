@@ -357,6 +357,7 @@ int VolumeManager::destroyAsec(const char *id) {
     snprintf(mountPoint, sizeof(mountPoint), "/asec/%s", id);
 
     if (isMountpointMounted(mountPoint)) {
+        LOGD("Unmounting container before destroy");
         if (unmountAsec(id)) {
             LOGE("Failed to unmount asec %s for destroy (%s)", id, strerror(errno));
             return -1;
@@ -364,7 +365,7 @@ int VolumeManager::destroyAsec(const char *id) {
     }
 
     if (unlink(asecFileName)) {
-        LOGE("Failed to unlink asec %s (%s)", id, strerror(errno));
+        LOGE("Failed to unlink asec '%s' (%s)", asecFileName, strerror(errno));
         return -1;
     }
 
