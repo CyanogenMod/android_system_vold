@@ -46,6 +46,7 @@ CommandListener::CommandListener() :
     registerCmd(new DestroyAsecCmd());
     registerCmd(new MountAsecCmd());
     registerCmd(new UnmountAsecCmd());
+    registerCmd(new RenameAsecCmd());
     registerCmd(new ListAsecCmd());
     registerCmd(new AsecPathCmd());
 }
@@ -271,6 +272,26 @@ int CommandListener::UnmountAsecCmd::runCommand(SocketClient *cli,
         cli->sendMsg(ResponseCode::OperationFailed, "Unmount failed", true);
     } else {
         cli->sendMsg(ResponseCode::CommandOkay, "Unmount succeeded", false);
+    }
+    return 0;
+}
+
+CommandListener::RenameAsecCmd::RenameAsecCmd() :
+                 VoldCommand("rename_asec") {
+}
+
+int CommandListener::RenameAsecCmd::runCommand(SocketClient *cli,
+                                            int argc, char **argv) {
+    if (argc != 3) {
+        cli->sendMsg(ResponseCode::CommandSyntaxError,
+                     "Usage: rename_asec <id1> <id2>", false);
+        return 0;
+    }
+
+    if (VolumeManager::Instance()->renameAsec(argv[1], argv[2])) {
+        cli->sendMsg(ResponseCode::OperationFailed, "Rename failed", true);
+    } else {
+        cli->sendMsg(ResponseCode::CommandOkay, "Rename succeeded", false);
     }
     return 0;
 }

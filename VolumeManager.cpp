@@ -284,6 +284,42 @@ int VolumeManager::finalizeAsec(const char *id) {
     return 0;
 }
 
+int VolumeManager::renameAsec(const char *id1, const char *id2) {
+    char *asecFilename1;
+    char *asecFilename2;
+    char mountPoint[255];
+
+    asprintf(&asecFilename1, "/sdcard/android_secure/%s.asec", id1);
+    asprintf(&asecFilename2, "/sdcard/android_secure/%s.asec", id2);
+
+    snprintf(mountPoint, sizeof(mountPoint), "/asec/%s", id1);
+    if (isMountpointMounted(mountPoint)) {
+        LOGW("Rename attempt when src mounted");
+        errno = EBUSY;
+        goto out_err;
+    }
+
+    if (!access(asecFilename2, F_OK)) {
+        LOGE("Rename attempt when dst exists");
+        errno = EADDRINUSE;
+        goto out_err;
+    }
+
+    if (rename(asecFilename1, asecFilename2)) {
+        LOGE("Rename of '%s' to '%s' failed (%s)", asecFilename1, asecFilename2, strerror(errno));
+        goto out_err;
+    }
+
+    free(asecFilename1);
+    free(asecFilename2);
+    return 0;
+
+out_err:
+    free(asecFilename1);
+    free(asecFilename2);
+    return -1;
+}
+
 int VolumeManager::unmountAsec(const char *id) {
     char asecFileName[255];
     char mountPoint[255];

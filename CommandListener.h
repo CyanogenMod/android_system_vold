@@ -118,6 +118,13 @@ private:
         int runCommand(SocketClient *c, int argc, char ** argv);
     };
 
+    class RenameAsecCmd : public VoldCommand {
+    public:
+        RenameAsecCmd();
+        virtual ~RenameAsecCmd() {}
+        int runCommand(SocketClient *c, int argc, char ** argv);
+    };
+
     class ListAsecCmd : public VoldCommand {
     public:
         ListAsecCmd();
@@ -131,7 +138,6 @@ private:
         virtual ~AsecPathCmd() {}
         int runCommand(SocketClient *c, int argc, char ** argv);
     };
-
 
 };
 
