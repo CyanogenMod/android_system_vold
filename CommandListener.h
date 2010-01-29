@@ -27,24 +27,10 @@ public:
 
 private:
 
-    class ListVolumesCmd : public VoldCommand {
+    class VolumeCmd : public VoldCommand {
     public:
-        ListVolumesCmd();
-        virtual ~ListVolumesCmd() {}
-        int runCommand(SocketClient *c, int argc, char ** argv);
-    };
-
-    class MountCmd : public VoldCommand {
-    public:
-        MountCmd();
-        virtual ~MountCmd() {}
-        int runCommand(SocketClient *c, int argc, char ** argv);
-    };
-
-    class UnmountCmd : public VoldCommand {
-    public:
-        UnmountCmd();
-        virtual ~UnmountCmd() {}
+        VolumeCmd();
+        virtual ~VolumeCmd() {}
         int runCommand(SocketClient *c, int argc, char ** argv);
     };
 
@@ -55,87 +41,10 @@ private:
         int runCommand(SocketClient *c, int argc, char ** argv);
     };
 
-    class UnshareCmd : public VoldCommand {
+    class AsecCmd : public VoldCommand {
     public:
-        UnshareCmd();
-        virtual ~UnshareCmd() {}
-        int runCommand(SocketClient *c, int argc, char ** argv);
-    };
-
-    class ShareAvailableCmd : public VoldCommand {
-    public:
-        ShareAvailableCmd();
-        virtual ~ShareAvailableCmd() {}
-        int runCommand(SocketClient *c, int argc, char ** argv);
-    };
-
-    class SimulateCmd : public VoldCommand {
-    public:
-        SimulateCmd();
-        virtual ~SimulateCmd() {}
-        int runCommand(SocketClient *c, int argc, char ** argv);
-    };
-
-    class FormatCmd : public VoldCommand {
-    public:
-        FormatCmd();
-        virtual ~FormatCmd() {}
-        int runCommand(SocketClient *c, int argc, char ** argv);
-    };
-
-    class CreateAsecCmd : public VoldCommand {
-    public:
-        CreateAsecCmd();
-        virtual ~CreateAsecCmd() {}
-        int runCommand(SocketClient *c, int argc, char ** argv);
-    };
-
-    class FinalizeAsecCmd : public VoldCommand {
-    public:
-        FinalizeAsecCmd();
-        virtual ~FinalizeAsecCmd() {}
-        int runCommand(SocketClient *c, int argc, char ** argv);
-    };
-
-    class DestroyAsecCmd : public VoldCommand {
-    public:
-        DestroyAsecCmd();
-        virtual ~DestroyAsecCmd() {}
-        int runCommand(SocketClient *c, int argc, char ** argv);
-    };
-
-    class MountAsecCmd : public VoldCommand {
-    public:
-        MountAsecCmd();
-        virtual ~MountAsecCmd() {}
-        int runCommand(SocketClient *c, int argc, char ** argv);
-    };
-
-    class UnmountAsecCmd : public VoldCommand {
-    public:
-        UnmountAsecCmd();
-        virtual ~UnmountAsecCmd() {}
-        int runCommand(SocketClient *c, int argc, char ** argv);
-    };
-
-    class RenameAsecCmd : public VoldCommand {
-    public:
-        RenameAsecCmd();
-        virtual ~RenameAsecCmd() {}
-        int runCommand(SocketClient *c, int argc, char ** argv);
-    };
-
-    class ListAsecCmd : public VoldCommand {
-    public:
-        ListAsecCmd();
-        virtual ~ListAsecCmd() {}
-        int runCommand(SocketClient *c, int argc, char ** argv);
-    };
-
-    class AsecPathCmd : public VoldCommand {
-    public:
-        AsecPathCmd();
-        virtual ~AsecPathCmd() {}
+        AsecCmd();
+        virtual ~AsecCmd() {}
         int runCommand(SocketClient *c, int argc, char ** argv);
     };
 

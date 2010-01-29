@@ -521,6 +521,27 @@ int VolumeManager::shareAvailable(const char *method, bool *avail) {
     return 0;
 }
 
+int VolumeManager::shareEnabled(const char *label, const char *method, bool *enabled) {
+    Volume *v = lookupVolume(label);
+
+    if (!v) {
+        errno = ENOENT;
+        return -1;
+    }
+
+    if (strcmp(method, "ums")) {
+        errno = ENOSYS;
+        return -1;
+    }
+
+    if (v->getState() != Volume::State_Shared) {
+        *enabled = true;
+    } else {
+        *enabled = false;
+    }
+    return 0;
+}
+
 int VolumeManager::simulate(const char *cmd, const char *arg) {
 
     if (!strcmp(cmd, "ums")) {

@@ -28,12 +28,18 @@ public:
 
     // 200 series - Requested action has been successfully completed
     static const int CommandOkay              = 200;
-    static const int ShareAvailabilityResult  = 210;
+    static const int ShareStatusResult        = 210;
     static const int AsecPathResult           = 211;
+    static const int ShareEnabledResult       = 212;
 
     // 400 series - The command was accepted but the requested action
     // did not take place.
-    static const int OperationFailed = 400;
+    static const int OperationFailed          = 400;
+    static const int OpFailedNoMedia          = 401;
+    static const int OpFailedMediaBlank       = 402;
+    static const int OpFailedMediaCorrupt     = 403;
+    static const int OpFailedVolNotMounted    = 404;
+    static const int OpFailedVolBusy          = 405;
 
     // 500 series - The command was not accepted and the requested
     // action did not take place.

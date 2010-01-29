@@ -56,6 +56,7 @@ public:
     int shareVolume(const char *label, const char *method);
     int unshareVolume(const char *label, const char *method);
     int shareAvailable(const char *method, bool *avail);
+    int shareEnabled(const char *path, const char *method, bool *enabled);
     int simulate(const char *cmd, const char *arg);
     int formatVolume(const char *label);
     int createAsec(const char *id, unsigned numSectors, const char *fstype,

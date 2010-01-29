@@ -252,50 +252,31 @@ int Volume::mountVol() {
             if (errno == ENODATA) {
                 LOGW("%s does not contain a FAT filesystem\n", devicePath);
                 continue;
-            } else {
-                /* Badness - abort the mount */
-                LOGE("%s failed FS checks (%s)", devicePath, strerror(errno));
-                snprintf(errmsg, sizeof(errmsg),
-                         "Volume %s %s mount failed - filesystem check failed",
-                         getLabel(), getMountpoint());
-                mVm->getBroadcaster()->sendBroadcast(
-                                         ResponseCode::VolumeMountFailedDamaged,
-                                         errmsg, false);
-                setState(Volume::State_Idle);
-                goto out;
             }
+            errno = EIO;
+            /* Badness - abort the mount */
+            LOGE("%s failed FS checks (%s)", devicePath, strerror(errno));
+            setState(Volume::State_Idle);
+            return -1;
         }
 
         LOGI("%s checks out - attempting to mount\n", devicePath);
         errno = 0;
         if (!(rc = Fat::doMount(devicePath, getMountpoint(), false, false,
                                 1000, 1015, 0702, true))) {
-            LOGI("%s sucessfully mounted for volume %s\n", devicePath,
-                 getLabel());
+            LOGI("%s sucessfully mounted for volume %s\n", devicePath, getLabel());
             setState(Volume::State_Mounted);
             mCurrentlyMountedKdev = deviceNodes[i];
-            goto out;
+            return 0;
         }
 
         LOGW("%s failed to mount via VFAT (%s)\n", devicePath, strerror(errno));
     }
 
-    // XXX: Doesn't handle multiple partitions properly
-    if (errno == ENODATA) {
-        snprintf(errmsg, sizeof(errmsg),
-                 "Volume %s %s mount failed - no supported file-systems",
-                 getLabel(), getMountpoint());
-        mVm->getBroadcaster()->sendBroadcast(
-                                 ResponseCode::VolumeMountFailedBlank,
-                                 errmsg, false);
-    }
-   
-
     LOGE("Volume %s found no suitable devices for mounting :(\n", getLabel());
     setState(Volume::State_Idle);
 
-out:
-    return rc;
+    return -1;
 }
 
 int Volume::unmountVol() {
