@@ -67,7 +67,7 @@ int CommandListener::VolumeCmd::runCommand(SocketClient *cli,
     } else if (!strcmp(argv[1], "shared")) {
         bool enabled = false;
 
-        if (vm->shareEnabled(argv[1], argv[2], &enabled)) {
+        if (vm->shareEnabled(argv[2], argv[3], &enabled)) {
             cli->sendMsg(
                     ResponseCode::OperationFailed, "Failed to determine share enable state", true);
         } else {
