@@ -359,7 +359,9 @@ int VolumeManager::unmountAsec(const char *id) {
         return -1;
     }
 
-    unlink(mountPoint);
+    if (rmdir(mountPoint)) {
+        LOGE("Failed to rmdir mountpoint (%s)", strerror(errno));
+    }
 
     if (Devmapper::destroy(id) && errno != ENXIO) {
         LOGE("Failed to destroy devmapper instance (%s)", strerror(errno));
