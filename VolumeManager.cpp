@@ -537,9 +537,9 @@ int VolumeManager::shareEnabled(const char *label, const char *method, bool *ena
     }
 
     if (v->getState() != Volume::State_Shared) {
-        *enabled = true;
-    } else {
         *enabled = false;
+    } else {
+        *enabled = true;
     }
     return 0;
 }

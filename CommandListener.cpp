@@ -61,9 +61,9 @@ int CommandListener::VolumeCmd::runCommand(SocketClient *cli,
     } else if (!strcmp(argv[1], "format")) {
         rc = vm->formatVolume(argv[2]);
     } else if (!strcmp(argv[1], "share")) {
-        rc = vm->shareVolume(argv[1], argv[2]);
+        rc = vm->shareVolume(argv[2], argv[3]);
     } else if (!strcmp(argv[1], "unshare")) {
-        rc = vm->unshareVolume(argv[1], argv[2]);
+        rc = vm->unshareVolume(argv[2], argv[3]);
     } else if (!strcmp(argv[1], "shared")) {
         bool enabled = false;
 
@@ -74,6 +74,7 @@ int CommandListener::VolumeCmd::runCommand(SocketClient *cli,
             cli->sendMsg(ResponseCode::ShareEnabledResult,
                     (enabled ? "Share enabled" : "Share disabled"), false);
         }
+        return 0;
     } else {
         cli->sendMsg(ResponseCode::CommandSyntaxError, "Unknown volume cmd", false);
     }
@@ -93,6 +94,7 @@ int CommandListener::VolumeCmd::runCommand(SocketClient *cli,
         } else if (errno == EBUSY) {
             rc = ResponseCode::OpFailedVolBusy;
         } else {
+            LOGW("Returning OperationFailed - no handler for errno %d", errno);
             rc = ResponseCode::OperationFailed;
         }
         cli->sendMsg(rc, "volume operation failed", true);

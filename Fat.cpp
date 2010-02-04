@@ -164,15 +164,17 @@ int Fat::format(const char *fsPath) {
     }
     close(fd);
 
-    const char *args[7];
+    const char *args[9];
     int rc;
     args[0] = MKDOSFS_PATH;
     args[1] = "-F";
     args[2] = "32";
     args[3] = "-O";
     args[4] = "android";
-    args[5] = fsPath;
-    args[6] = NULL;
+    args[5] = "-c";
+    args[6] = "8";
+    args[7] = fsPath;
+    args[8] = NULL;
     rc = logwrap(7, args, 1);
 
     if (rc == 0) {
