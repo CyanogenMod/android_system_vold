@@ -156,7 +156,7 @@ int Volume::formatVol() {
     sprintf(devicePath, "/dev/block/vold/%d:%d",
             MAJOR(diskNode), MINOR(diskNode));
 
-    LOGI("Volume %s (%s) MBR being initialized", getLabel(), devicePath);
+    LOGI("Formatting volume %s (%s)", getLabel(), devicePath);
 
     if (initializeMbr(devicePath)) {
         LOGE("Failed to initialize MBR (%s)", strerror(errno));
@@ -166,14 +166,11 @@ int Volume::formatVol() {
     sprintf(devicePath, "/dev/block/vold/%d:%d",
             MAJOR(partNode), MINOR(partNode));
 
-    LOGI("Volume %s (%s) being formatted", getLabel(), devicePath);
-
     if (Fat::format(devicePath)) {
         LOGE("Failed to format (%s)", strerror(errno));
         goto err;
     }
 
-    LOGI("Volume %s (%s) formatted sucessfully", getLabel(), devicePath);
     return 0;
 err:
     return -1;
@@ -260,7 +257,6 @@ int Volume::mountVol() {
             return -1;
         }
 
-        LOGI("%s checks out - attempting to mount\n", devicePath);
         errno = 0;
         if (!(rc = Fat::doMount(devicePath, getMountpoint(), false, false,
                                 1000, 1015, 0702, true))) {
@@ -289,6 +285,7 @@ int Volume::unmountVol() {
     }
 
     setState(Volume::State_Unmounting);
+    usleep(1000 * 200); // Give the framework some time to react
     for (i = 0; i < 10; i++) {
         rc = umount(getMountpoint());
         if (!rc)
