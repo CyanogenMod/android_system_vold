@@ -175,7 +175,7 @@ int Fat::format(const char *fsPath) {
     args[6] = "8";
     args[7] = fsPath;
     args[8] = NULL;
-    rc = logwrap(7, args, 1);
+    rc = logwrap(9, args, 1);
 
     if (rc == 0) {
         LOGI("Filesystem formatted OK");
