@@ -167,6 +167,7 @@ int Devmapper::create(const char *name, const char *loopFile, const char *key,
 
     free(buffer);
 
+    close(fd);
     return 0;
 }
 

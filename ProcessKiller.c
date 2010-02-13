@@ -179,8 +179,14 @@ static int get_pid(const char* s)
     return result;
 }
 
+/*
+ * Hunt down processes that have files open at the given mount point.
+ * action = 0 to just warn,
+ * action = 1 to SIGHUP,
+ * action = 2 to SIGKILL
+ */
 // hunt down and kill processes that have files open on the given mount point
-void KillProcessesWithOpenFiles(const char* mountPoint, int sigkill, int *excluded, int num_excluded)
+void KillProcessesWithOpenFiles(const char* mountPoint, int action)
 {
     DIR*    dir;
     struct dirent* de;
@@ -202,28 +208,12 @@ void KillProcessesWithOpenFiles(const char* mountPoint, int sigkill, int *exclud
                 || CheckSymLink(pid, mountPoint, "exe", "executable path")      // check executable path
             ) 
         {
-            int i;
-            int hit = 0;
-
-            for (i = 0; i < num_excluded; i++) {
-                if (pid == excluded[i]) {
-                    LOGE("I just need a little more TIME captain!");
-                    hit = 1;
-                    break;
-                }
-            }
-
-            if (!hit) {
-                if (!sigkill) {
-                    kill(pid, SIGTERM);
-                } else {
-                    // Log this as an error since the app should
-                    // have released it's resources long before
-                    // this point.
-                 
-                    LOGE("Sending SIGKILL to process %d", pid);
-                    kill(pid, SIGKILL);
-                }
+            if (action == 1) {
+                LOGW("Sending SIGHUP to process %d", pid);
+                kill(pid, SIGTERM);
+            } else if (action == 2) {
+                LOGE("Sending SIGKILL to process %d", pid);
+                kill(pid, SIGKILL);
             }
         }
     }

@@ -41,7 +41,7 @@
 #include "ResponseCode.h"
 #include "Fat.h"
 
-extern "C" void KillProcessesWithOpenFiles(const char *, int, int, int);
+extern "C" void KillProcessesWithOpenFiles(const char *, int);
 extern "C" void dos_partition_dec(void const *pp, struct dos_partition *d);
 extern "C" void dos_partition_enc(void *pp, struct dos_partition *d);
 
@@ -286,7 +286,7 @@ int Volume::unmountVol() {
 
     setState(Volume::State_Unmounting);
     usleep(1000 * 200); // Give the framework some time to react
-    for (i = 0; i < 10; i++) {
+    for (i = 1; i <= 10; i++) {
         rc = umount(getMountpoint());
         if (!rc)
             break;
@@ -297,16 +297,19 @@ int Volume::unmountVol() {
         }
 
         LOGW("Volume %s unmount attempt %d failed (%s)",
-             getLabel(), i + 1, strerror(errno));
+             getLabel(), i, strerror(errno));
 
-        if (i < 5) {
-            usleep(1000 * 250);
-        } else {
-            KillProcessesWithOpenFiles(getMountpoint(),
-                                       (i < 7 ? 0 : 1),
-                                       NULL, 0);
-            usleep(1000 * 250);
-        }
+        int action;
+
+        if (i > 8) {
+            action = 2; // SIGKILL
+        } else if (i > 7) {
+            action = 1; // SIGHUP
+        } else
+            action = 0; // just complain
+
+        KillProcessesWithOpenFiles(getMountpoint(), action);
+        usleep(1000*250);
     }
 
     if (!rc) {

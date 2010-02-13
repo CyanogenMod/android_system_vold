@@ -119,6 +119,7 @@ int logwrap(int argc, const char* argv[], int background)
     if (grantpt(parent_ptty) || unlockpt(parent_ptty) ||
             ((child_devname = (char*)ptsname(parent_ptty)) == 0)) {
 	LOG(LOG_ERROR, "logwrapper", "Problem with /dev/ptmx");
+        close(parent_ptty);
 	return -1;
     }
 
@@ -127,6 +128,9 @@ int logwrap(int argc, const char* argv[], int background)
 	LOG(LOG_ERROR, "logwrapper", "Failed to fork");
         return -errno;
     } else if (pid == 0) {
+        /*
+         * Child
+         */
         child_ptty = open(child_devname, O_RDWR);
         if (child_ptty < 0) {
 	    LOG(LOG_ERROR, "logwrapper", "Problem with child ptty");
@@ -160,7 +164,12 @@ int logwrap(int argc, const char* argv[], int background)
 
         child(argc, argv);
     } else {
-        return parent(argv[0], parent_ptty);
+        /*
+         * Parent
+         */
+        int rc = parent(argv[0], parent_ptty);
+        close(parent_ptty);
+        return rc;
     }
 
     return 0;

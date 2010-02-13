@@ -38,7 +38,7 @@
 #include "Fat.h"
 #include "Devmapper.h"
 
-extern "C" void KillProcessesWithOpenFiles(const char *, int, int, int);
+extern "C" void KillProcessesWithOpenFiles(const char *, int);
 
 VolumeManager *VolumeManager::sInstance = NULL;
 
@@ -320,6 +320,7 @@ out_err:
     return -1;
 }
 
+#define ASEC_UNMOUNT_RETRIES 10
 int VolumeManager::unmountAsec(const char *id) {
     char asecFileName[255];
     char mountPoint[255];
@@ -335,7 +336,7 @@ int VolumeManager::unmountAsec(const char *id) {
     }
 
     int i, rc;
-    for (i = 0; i < 10; i++) {
+    for (i = 1; i <= ASEC_UNMOUNT_RETRIES; i++) {
         rc = umount(mountPoint);
         if (!rc) {
             break;
@@ -345,13 +346,18 @@ int VolumeManager::unmountAsec(const char *id) {
             break;
         }
         LOGW("ASEC %s unmount attempt %d failed (%s)",
-              id, i +1, strerror(errno));
+              id, i, strerror(errno));
 
-        if (i >= 5) {
-            KillProcessesWithOpenFiles(mountPoint, (i < 7 ? 0 : 1),
-                                       NULL, 0);
-        }
-        usleep(1000 * 250);
+        int action;
+        if (i > (ASEC_UNMOUNT_RETRIES - 2))
+            action = 2; // SIGKILL
+        else if (i > (ASEC_UNMOUNT_RETRIES - 3))
+            action = 1; // SIGHUP
+        else
+            action = 0; // Just complain
+
+        KillProcessesWithOpenFiles(mountPoint, action);
+        usleep(1000 * 1000);
     }
 
     if (rc) {
