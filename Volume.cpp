@@ -40,8 +40,8 @@
 #include "VolumeManager.h"
 #include "ResponseCode.h"
 #include "Fat.h"
+#include "Process.h"
 
-extern "C" void KillProcessesWithOpenFiles(const char *, int);
 extern "C" void dos_partition_dec(void const *pp, struct dos_partition *d);
 extern "C" void dos_partition_enc(void *pp, struct dos_partition *d);
 
@@ -308,7 +308,7 @@ int Volume::unmountVol() {
         } else
             action = 0; // just complain
 
-        KillProcessesWithOpenFiles(getMountpoint(), action);
+        Process::killProcessesWithOpenFiles(getMountpoint(), action);
         usleep(1000*250);
     }
 

@@ -20,7 +20,7 @@ LOCAL_SRC_FILES:=                                      \
                   Volume.cpp                           \
                   DirectVolume.cpp                     \
                   logwrapper.c                         \
-                  ProcessKiller.c                      \
+                  Process.cpp                          \
                   geom_mbr_enc.c                       \
                   Fat.cpp                              \
                   Loop.cpp                             \

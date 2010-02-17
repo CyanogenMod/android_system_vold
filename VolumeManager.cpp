@@ -37,8 +37,7 @@
 #include "Loop.h"
 #include "Fat.h"
 #include "Devmapper.h"
-
-extern "C" void KillProcessesWithOpenFiles(const char *, int);
+#include "Process.h"
 
 VolumeManager *VolumeManager::sInstance = NULL;
 
@@ -356,7 +355,7 @@ int VolumeManager::unmountAsec(const char *id) {
         else
             action = 0; // Just complain
 
-        KillProcessesWithOpenFiles(mountPoint, action);
+        Process::killProcessesWithOpenFiles(mountPoint, action);
         usleep(1000 * 1000);
     }
 

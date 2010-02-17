@@ -48,6 +48,12 @@ private:
         int runCommand(SocketClient *c, int argc, char ** argv);
     };
 
+    class StorageCmd : public VoldCommand {
+    public:
+        StorageCmd();
+        virtual ~StorageCmd() {}
+        int runCommand(SocketClient *c, int argc, char ** argv);
+    };
 };
 
 #endif

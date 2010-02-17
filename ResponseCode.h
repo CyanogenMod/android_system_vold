@@ -23,8 +23,9 @@ public:
     // before proceeding with a new command.
     static const int ActionInitiated  = 100;
 
-    static const int VolumeListResult = 110;
-    static const int AsecListResult   = 111;
+    static const int VolumeListResult         = 110;
+    static const int AsecListResult           = 111;
+    static const int StorageUsersListResult   = 112;
 
     // 200 series - Requested action has been successfully completed
     static const int CommandOkay              = 200;
