@@ -97,7 +97,8 @@ int Process::checkFileDescriptorSymLinks(int pid, const char *mountPoint, char *
 
     struct dirent* de;
     while ((de = readdir(dir))) {
-        if (!strcmp(de->d_name, ".") || !strcmp(de->d_name, ".."))
+        if (!strcmp(de->d_name, ".") || !strcmp(de->d_name, "..")
+                || strlen(de->d_name) + parent_length + 1 >= PATH_MAX)
             continue;
         
         // append the file name, after truncating to parent directory
