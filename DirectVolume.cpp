@@ -274,7 +274,7 @@ void DirectVolume::handlePartitionRemoved(const char *devpath, NetlinkEvent *evt
                  getLabel(), getMountpoint(), major, minor);
         mVm->getBroadcaster()->sendBroadcast(ResponseCode::VolumeBadRemoval,
                                              msg, false);
-        if (Volume::unmountVol()) {
+        if (Volume::unmountVol(true)) {
             LOGE("Failed to unmount volume on bad removal (%s)", 
                  strerror(errno));
             // XXX: At this point we're screwed for now

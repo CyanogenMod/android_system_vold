@@ -275,7 +275,7 @@ int Volume::mountVol() {
     return -1;
 }
 
-int Volume::unmountVol() {
+int Volume::unmountVol(bool force) {
     int i, rc;
 
     if (getState() != Volume::State_Mounted) {
@@ -285,7 +285,7 @@ int Volume::unmountVol() {
     }
 
     setState(Volume::State_Unmounting);
-    usleep(1000 * 200); // Give the framework some time to react
+    usleep(1000 * 1000); // Give the framework some time to react
     for (i = 1; i <= 10; i++) {
         rc = umount(getMountpoint());
         if (!rc)
@@ -299,17 +299,18 @@ int Volume::unmountVol() {
         LOGW("Volume %s unmount attempt %d failed (%s)",
              getLabel(), i, strerror(errno));
 
-        int action;
+        int action = 0;
 
-        if (i > 8) {
-            action = 2; // SIGKILL
-        } else if (i > 7) {
-            action = 1; // SIGHUP
-        } else
-            action = 0; // just complain
+        if (force) {
+            if (i > 8) {
+                action = 2; // SIGKILL
+            } else if (i > 7) {
+                action = 1; // SIGHUP
+            }
+        }
 
         Process::killProcessesWithOpenFiles(getMountpoint(), action);
-        usleep(1000*250);
+        usleep(1000*1000);
     }
 
     if (!rc) {
@@ -319,6 +320,7 @@ int Volume::unmountVol() {
         return 0;
     }
 
+    errno = EBUSY;
     LOGE("Volume %s failed to unmount (%s)\n", getLabel(), strerror(errno));
     setState(Volume::State_Mounted);
     return -1;

@@ -59,7 +59,11 @@ int CommandListener::VolumeCmd::runCommand(SocketClient *cli,
     } else if (!strcmp(argv[1], "mount")) {
         rc = vm->mountVolume(argv[2]);
     } else if (!strcmp(argv[1], "unmount")) {
-        rc = vm->unmountVolume(argv[2]);
+        bool force = false;
+        if (argc >= 4 && !strcmp(argv[3], "force")) {
+            force = true;
+        }
+        rc = vm->unmountVolume(argv[2], force);
     } else if (!strcmp(argv[1], "format")) {
         rc = vm->formatVolume(argv[2]);
     } else if (!strcmp(argv[1], "share")) {
@@ -244,11 +248,15 @@ int CommandListener::AsecCmd::runCommand(SocketClient *cli,
             cli->sendMsg(ResponseCode::CommandOkay, "Container finalized", false);
         }
     } else if (!strcmp(argv[1], "destroy")) {
-        if (argc != 3) {
-            cli->sendMsg(ResponseCode::CommandSyntaxError, "Usage: asec destroy <container-id>", false);
+        if (argc < 3) {
+            cli->sendMsg(ResponseCode::CommandSyntaxError, "Usage: asec destroy <container-id> [force]", false);
             return 0;
         }
-        if (vm->destroyAsec(argv[2])) {
+        bool force = false;
+        if (argc > 3 && !strcmp(argv[3], "force")) {
+            force = true;
+        }
+        if (vm->destroyAsec(argv[2], force)) {
             cli->sendMsg(ResponseCode::OperationFailed, "Container destroy failed", true);
         } else {
             cli->sendMsg(ResponseCode::CommandOkay, "Container destroyed", false);
@@ -267,13 +275,16 @@ int CommandListener::AsecCmd::runCommand(SocketClient *cli,
         } else {
             cli->sendMsg(ResponseCode::CommandOkay, "Mount succeeded", false);
         }
-
     } else if (!strcmp(argv[1], "unmount")) {
-        if (argc != 3) {
-            cli->sendMsg(ResponseCode::CommandSyntaxError, "Usage: asec unmount <container-id>", false);
+        if (argc < 3) {
+            cli->sendMsg(ResponseCode::CommandSyntaxError, "Usage: asec unmount <container-id> [force]", false);
             return 0;
         }
-        if (vm->unmountAsec(argv[2])) {
+        bool force = false;
+        if (argc > 3 && !strcmp(argv[3], "force")) {
+            force = true;
+        }
+        if (vm->unmountAsec(argv[2], force)) {
             cli->sendMsg(ResponseCode::OperationFailed, "Container unmount failed", true);
         } else {
             cli->sendMsg(ResponseCode::CommandOkay, "Container unmounted", false);

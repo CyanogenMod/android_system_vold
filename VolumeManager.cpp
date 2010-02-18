@@ -325,8 +325,8 @@ out_err:
     return -1;
 }
 
-#define ASEC_UNMOUNT_RETRIES 10
-int VolumeManager::unmountAsec(const char *id) {
+#define ASEC_UNMOUNT_RETRIES 5
+int VolumeManager::unmountAsec(const char *id, bool force) {
     char asecFileName[255];
     char mountPoint[255];
 
@@ -353,20 +353,22 @@ int VolumeManager::unmountAsec(const char *id) {
         LOGW("ASEC %s unmount attempt %d failed (%s)",
               id, i, strerror(errno));
 
-        int action;
-        if (i > (ASEC_UNMOUNT_RETRIES - 2))
-            action = 2; // SIGKILL
-        else if (i > (ASEC_UNMOUNT_RETRIES - 3))
-            action = 1; // SIGHUP
-        else
-            action = 0; // Just complain
+        int action = 0; // default is to just complain
+
+        if (force) {
+            if (i > (ASEC_UNMOUNT_RETRIES - 2))
+                action = 2; // SIGKILL
+            else if (i > (ASEC_UNMOUNT_RETRIES - 3))
+                action = 1; // SIGHUP
+        }
 
         Process::killProcessesWithOpenFiles(mountPoint, action);
         usleep(1000 * 1000);
     }
 
     if (rc) {
-        LOGE("Failed to unmount ASEC %s", id);
+        errno = EBUSY;
+        LOGE("Failed to unmount container %s (%s)", id, strerror(errno));
         return -1;
     }
 
@@ -397,7 +399,7 @@ int VolumeManager::unmountAsec(const char *id) {
     return 0;
 }
 
-int VolumeManager::destroyAsec(const char *id) {
+int VolumeManager::destroyAsec(const char *id, bool force) {
     char asecFileName[255];
     char mountPoint[255];
 
@@ -407,7 +409,7 @@ int VolumeManager::destroyAsec(const char *id) {
 
     if (isMountpointMounted(mountPoint)) {
         LOGD("Unmounting container before destroy");
-        if (unmountAsec(id)) {
+        if (unmountAsec(id, force)) {
             LOGE("Failed to unmount asec %s for destroy (%s)", id, strerror(errno));
             return -1;
         }
@@ -675,7 +677,7 @@ int VolumeManager::unshareVolume(const char *label, const char *method) {
     return 0;
 }
 
-int VolumeManager::unmountVolume(const char *label) {
+int VolumeManager::unmountVolume(const char *label, bool force) {
     Volume *v = lookupVolume(label);
 
     if (!v) {
@@ -698,13 +700,13 @@ int VolumeManager::unmountVolume(const char *label) {
     while(mActiveContainers->size()) {
         AsecIdCollection::iterator it = mActiveContainers->begin();
         LOGI("Unmounting ASEC %s (dependant on %s)", *it, v->getMountpoint());
-        if (unmountAsec(*it)) {
+        if (unmountAsec(*it, force)) {
             LOGE("Failed to unmount ASEC %s (%s) - unmount of %s may fail!", *it,
                  strerror(errno), v->getMountpoint());
         }
     }
 
-    return v->unmountVol();
+    return v->unmountVol(force);
 }
 
 /*

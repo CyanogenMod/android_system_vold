@@ -53,7 +53,7 @@ public:
     virtual ~Volume();
 
     int mountVol();
-    int unmountVol();
+    int unmountVol(bool force);
     int formatVol();
 
     const char *getLabel() { return mLabel; }
