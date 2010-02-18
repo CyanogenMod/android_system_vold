@@ -184,7 +184,7 @@ int Loop::destroyByFile(const char *loopFile) {
 int Loop::createImageFile(const char *file, unsigned int numSectors) {
     int fd;
 
-    LOGD("Creating ASEC image file %s (%u sectors)", file, numSectors);
+    LOGD("Creating image file %s (%u sectors)", file, numSectors);
 
     if ((fd = creat(file, 0600)) < 0) {
         LOGE("Error creating imagefile (%s)", strerror(errno));

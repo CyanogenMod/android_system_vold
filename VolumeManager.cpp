@@ -171,6 +171,12 @@ int VolumeManager::getAsecMountPath(const char *id, char *buffer, int maxlen) {
 int VolumeManager::createAsec(const char *id, unsigned int numSectors,
                               const char *fstype, const char *key, int ownerUid) {
 
+    if (numSectors < ((1024*1024)/512)) {
+        LOGE("Invalid container size specified (%d sectors)", numSectors);
+        errno = EINVAL;
+        return -1;
+    }
+
     mkdir("/sdcard/android_secure", 0777);
 
     if (lookupVolume(id)) {

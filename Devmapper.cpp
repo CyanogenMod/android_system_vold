@@ -71,7 +71,6 @@ int Devmapper::lookupActive(const char *name, char *ubuffer, size_t len) {
 
     unsigned minor = (io->dev & 0xff) | ((io->dev >> 12) & 0xfff00);
     free(buffer);
-    LOGD("Newly created devmapper instance minor = %d\n", minor);
     snprintf(ubuffer, len, "/dev/block/dm-%u", minor);
     return 0;
 }
@@ -128,7 +127,6 @@ int Devmapper::create(const char *name, const char *loopFile, const char *key,
     }
 
     unsigned minor = (io->dev & 0xff) | ((io->dev >> 12) & 0xfff00);
-    LOGD("Newly created devmapper instance minor = %d\n", minor);
     snprintf(ubuffer, len, "/dev/block/dm-%u", minor);
 
     // Load the table
