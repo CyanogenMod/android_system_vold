@@ -88,21 +88,8 @@ int CommandListener::VolumeCmd::runCommand(SocketClient *cli,
     if (!rc) {
         cli->sendMsg(ResponseCode::CommandOkay, "volume operation succeeded", false);
     } else {
-        /*
-         * Failed
-         */
-        if (errno == ENODEV) {
-            rc = ResponseCode::OpFailedNoMedia;
-        } else if (errno == ENODATA) {
-            rc = ResponseCode::OpFailedMediaBlank;
-        } else if (errno == EIO) {
-            rc = ResponseCode::OpFailedMediaCorrupt;
-        } else if (errno == EBUSY) {
-            rc = ResponseCode::OpFailedVolBusy;
-        } else {
-            LOGW("Returning OperationFailed - no handler for errno %d", errno);
-            rc = ResponseCode::OperationFailed;
-        }
+        int erno = errno;
+        rc = ResponseCode::convertFromErrno();
         cli->sendMsg(rc, "volume operation failed", true);
     }
 
@@ -223,7 +210,6 @@ int CommandListener::AsecCmd::runCommand(SocketClient *cli,
             }
         }
         closedir(d);
-        cli->sendMsg(ResponseCode::CommandOkay, "ASEC listing complete", false);
     } else if (!strcmp(argv[1], "create")) {
         if (argc != 7) {
             cli->sendMsg(ResponseCode::CommandSyntaxError,
@@ -232,21 +218,13 @@ int CommandListener::AsecCmd::runCommand(SocketClient *cli,
         }
 
         unsigned int numSectors = (atoi(argv[3]) * (1024 * 1024)) / 512;
-        if (vm->createAsec(argv[2], numSectors, argv[4], argv[5], atoi(argv[6]))) {
-            cli->sendMsg(ResponseCode::OperationFailed, "Container creation failed", true);
-        } else {
-            cli->sendMsg(ResponseCode::CommandOkay, "Container created", false);
-        }
+        rc = vm->createAsec(argv[2], numSectors, argv[4], argv[5], atoi(argv[6]));
     } else if (!strcmp(argv[1], "finalize")) {
         if (argc != 3) {
             cli->sendMsg(ResponseCode::CommandSyntaxError, "Usage: asec finalize <container-id>", false);
             return 0;
         }
-        if (vm->finalizeAsec(argv[2])) {
-            cli->sendMsg(ResponseCode::OperationFailed, "Container finalize failed", true);
-        } else {
-            cli->sendMsg(ResponseCode::CommandOkay, "Container finalized", false);
-        }
+        rc = vm->finalizeAsec(argv[2]);
     } else if (!strcmp(argv[1], "destroy")) {
         if (argc < 3) {
             cli->sendMsg(ResponseCode::CommandSyntaxError, "Usage: asec destroy <container-id> [force]", false);
@@ -256,25 +234,14 @@ int CommandListener::AsecCmd::runCommand(SocketClient *cli,
         if (argc > 3 && !strcmp(argv[3], "force")) {
             force = true;
         }
-        if (vm->destroyAsec(argv[2], force)) {
-            cli->sendMsg(ResponseCode::OperationFailed, "Container destroy failed", true);
-        } else {
-            cli->sendMsg(ResponseCode::CommandOkay, "Container destroyed", false);
-        }
+        rc = vm->destroyAsec(argv[2], force);
     } else if (!strcmp(argv[1], "mount")) {
         if (argc != 5) {
             cli->sendMsg(ResponseCode::CommandSyntaxError,
                     "Usage: asec mount <namespace-id> <key> <ownerUid>", false);
             return 0;
         }
-
-        int rc = vm->mountAsec(argv[2], argv[3], atoi(argv[4]));
-
-        if (rc < 0) {
-            cli->sendMsg(ResponseCode::OperationFailed, "Mount failed", true);
-        } else {
-            cli->sendMsg(ResponseCode::CommandOkay, "Mount succeeded", false);
-        }
+        rc = vm->mountAsec(argv[2], argv[3], atoi(argv[4]));
     } else if (!strcmp(argv[1], "unmount")) {
         if (argc < 3) {
             cli->sendMsg(ResponseCode::CommandSyntaxError, "Usage: asec unmount <container-id> [force]", false);
@@ -284,22 +251,14 @@ int CommandListener::AsecCmd::runCommand(SocketClient *cli,
         if (argc > 3 && !strcmp(argv[3], "force")) {
             force = true;
         }
-        if (vm->unmountAsec(argv[2], force)) {
-            cli->sendMsg(ResponseCode::OperationFailed, "Container unmount failed", true);
-        } else {
-            cli->sendMsg(ResponseCode::CommandOkay, "Container unmounted", false);
-        }
+        rc = vm->unmountAsec(argv[2], force);
     } else if (!strcmp(argv[1], "rename")) {
         if (argc != 4) {
             cli->sendMsg(ResponseCode::CommandSyntaxError,
                     "Usage: asec rename <old_id> <new_id>", false);
             return 0;
         }
-        if (vm->renameAsec(argv[2], argv[3])) {
-            cli->sendMsg(ResponseCode::OperationFailed, "Container rename failed", true);
-        } else {
-            cli->sendMsg(ResponseCode::CommandOkay, "Container renamed", false);
-        }
+        rc = vm->renameAsec(argv[2], argv[3]);
     } else if (!strcmp(argv[1], "path")) {
         if (argc != 3) {
             cli->sendMsg(ResponseCode::CommandSyntaxError, "Usage: asec path <container-id>", false);
@@ -312,8 +271,16 @@ int CommandListener::AsecCmd::runCommand(SocketClient *cli,
         } else {
             cli->sendMsg(ResponseCode::AsecPathResult, path, false);
         }
+        return 0;
     } else {
         cli->sendMsg(ResponseCode::CommandSyntaxError, "Unknown asec cmd", false);
+    }
+
+    if (!rc) {
+        cli->sendMsg(ResponseCode::CommandOkay, "asec operation succeeded", false);
+    } else {
+        rc = ResponseCode::convertFromErrno();
+        cli->sendMsg(rc, "asec operation failed", true);
     }
 
     return 0;

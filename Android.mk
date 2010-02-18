@@ -24,7 +24,8 @@ LOCAL_SRC_FILES:=                                      \
                   geom_mbr_enc.c                       \
                   Fat.cpp                              \
                   Loop.cpp                             \
-                  Devmapper.cpp
+                  Devmapper.cpp                        \
+                  ResponseCode.cpp
 
 LOCAL_MODULE:= vold
 

@@ -40,7 +40,7 @@ public:
     static const int OpFailedMediaBlank       = 402;
     static const int OpFailedMediaCorrupt     = 403;
     static const int OpFailedVolNotMounted    = 404;
-    static const int OpFailedVolBusy          = 405;
+    static const int OpFailedStorageBusy      = 405;
 
     // 500 series - The command was not accepted and the requested
     // action did not take place.
@@ -59,5 +59,7 @@ public:
     static const int VolumeDiskInserted            = 630;
     static const int VolumeDiskRemoved             = 631;
     static const int VolumeBadRemoval              = 632;
+
+    static int convertFromErrno();
 };
 #endif
