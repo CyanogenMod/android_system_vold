@@ -191,7 +191,7 @@ int CommandListener::AsecCmd::runCommand(SocketClient *cli,
     int rc = 0;
 
     if (!strcmp(argv[1], "list")) {
-        DIR *d = opendir("/sdcard/android_secure");
+        DIR *d = opendir(Volume::SEC_ASECDIR);
 
         if (!d) {
             cli->sendMsg(ResponseCode::OperationFailed, "Failed to open asec dir", true);

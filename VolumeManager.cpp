@@ -161,10 +161,8 @@ int VolumeManager::formatVolume(const char *label) {
 }
 
 int VolumeManager::getAsecMountPath(const char *id, char *buffer, int maxlen) {
-    char mountPoint[255];
 
-    snprintf(mountPoint, sizeof(mountPoint), "/asec/%s", id);
-    snprintf(buffer, maxlen, "/asec/%s", id);
+    snprintf(buffer, maxlen, "%s/%s", Volume::ASECDIR, id);
     return 0;
 }
 
@@ -177,17 +175,14 @@ int VolumeManager::createAsec(const char *id, unsigned int numSectors,
         return -1;
     }
 
-    mkdir("/sdcard/android_secure", 0777);
-
     if (lookupVolume(id)) {
-        LOGE("ASEC volume '%s' currently exists", id);
+        LOGE("ASEC id '%s' currently exists", id);
         errno = EADDRINUSE;
         return -1;
     }
 
     char asecFileName[255];
-    snprintf(asecFileName, sizeof(asecFileName),
-             "/sdcard/android_secure/%s.asec", id);
+    snprintf(asecFileName, sizeof(asecFileName), "%s/%s.asec", Volume::SEC_ASECDIR, id);
 
     if (!access(asecFileName, F_OK)) {
         LOGE("ASEC file '%s' currently exists - destroy it first! (%s)",
@@ -236,7 +231,7 @@ int VolumeManager::createAsec(const char *id, unsigned int numSectors,
 
     char mountPoint[255];
 
-    snprintf(mountPoint, sizeof(mountPoint), "/asec/%s", id);
+    snprintf(mountPoint, sizeof(mountPoint), "%s/%s", Volume::ASECDIR, id);
     if (mkdir(mountPoint, 0777)) {
         if (errno != EEXIST) {
             LOGE("Mountpoint creation failed (%s)", strerror(errno));
@@ -270,15 +265,14 @@ int VolumeManager::finalizeAsec(const char *id) {
     char loopDevice[255];
     char mountPoint[255];
 
-    snprintf(asecFileName, sizeof(asecFileName),
-             "/sdcard/android_secure/%s.asec", id);
+    snprintf(asecFileName, sizeof(asecFileName), "%s/%s.asec", Volume::SEC_ASECDIR, id);
 
     if (Loop::lookupActive(asecFileName, loopDevice, sizeof(loopDevice))) {
         LOGE("Unable to finalize %s (%s)", id, strerror(errno));
         return -1;
     }
 
-    snprintf(mountPoint, sizeof(mountPoint), "/asec/%s", id);
+    snprintf(mountPoint, sizeof(mountPoint), "%s/%s", Volume::ASECDIR, id);
     // XXX:
     if (Fat::doMount(loopDevice, mountPoint, true, true, 0, 0, 0227, false)) {
         LOGE("ASEC finalize mount failed (%s)", strerror(errno));
@@ -294,10 +288,10 @@ int VolumeManager::renameAsec(const char *id1, const char *id2) {
     char *asecFilename2;
     char mountPoint[255];
 
-    asprintf(&asecFilename1, "/sdcard/android_secure/%s.asec", id1);
-    asprintf(&asecFilename2, "/sdcard/android_secure/%s.asec", id2);
+    asprintf(&asecFilename1, "%s/%s.asec", Volume::SEC_ASECDIR, id1);
+    asprintf(&asecFilename2, "%s/%s.asec", Volume::SEC_ASECDIR, id2);
 
-    snprintf(mountPoint, sizeof(mountPoint), "/asec/%s", id1);
+    snprintf(mountPoint, sizeof(mountPoint), "%s/%s", Volume::ASECDIR, id1);
     if (isMountpointMounted(mountPoint)) {
         LOGW("Rename attempt when src mounted");
         errno = EBUSY;
@@ -330,9 +324,8 @@ int VolumeManager::unmountAsec(const char *id, bool force) {
     char asecFileName[255];
     char mountPoint[255];
 
-    snprintf(asecFileName, sizeof(asecFileName),
-             "/sdcard/android_secure/%s.asec", id);
-    snprintf(mountPoint, sizeof(mountPoint), "/asec/%s", id);
+    snprintf(asecFileName, sizeof(asecFileName), "%s/%s.asec", Volume::SEC_ASECDIR, id);
+    snprintf(mountPoint, sizeof(mountPoint), "%s/%s", Volume::ASECDIR, id);
 
     if (!isMountpointMounted(mountPoint)) {
         LOGE("Unmount request for ASEC %s when not mounted", id);
@@ -403,9 +396,7 @@ int VolumeManager::destroyAsec(const char *id, bool force) {
     char asecFileName[255];
     char mountPoint[255];
 
-    snprintf(asecFileName, sizeof(asecFileName),
-             "/sdcard/android_secure/%s.asec", id);
-    snprintf(mountPoint, sizeof(mountPoint), "/asec/%s", id);
+    snprintf(asecFileName, sizeof(asecFileName), "%s/%s.asec", Volume::SEC_ASECDIR, id);
 
     if (isMountpointMounted(mountPoint)) {
         LOGD("Unmounting container before destroy");
@@ -428,9 +419,8 @@ int VolumeManager::mountAsec(const char *id, const char *key, int ownerUid) {
     char asecFileName[255];
     char mountPoint[255];
 
-    snprintf(asecFileName, sizeof(asecFileName),
-             "/sdcard/android_secure/%s.asec", id);
-    snprintf(mountPoint, sizeof(mountPoint), "/asec/%s", id);
+    snprintf(asecFileName, sizeof(asecFileName), "%s/%s.asec", Volume::SEC_ASECDIR, id);
+    snprintf(mountPoint, sizeof(mountPoint), "%s/%s", Volume::ASECDIR, id);
 
     if (isMountpointMounted(mountPoint)) {
         LOGE("ASEC %s already mounted", id);

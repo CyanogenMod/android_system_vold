@@ -45,6 +45,34 @@
 extern "C" void dos_partition_dec(void const *pp, struct dos_partition *d);
 extern "C" void dos_partition_enc(void *pp, struct dos_partition *d);
 
+
+/*
+ * Secure directory - stuff that only root can see
+ */
+const char *Volume::SECDIR            = "/mnt/secure";
+
+/*
+ * Secure staging directory - where media is mounted for preparation
+ */
+const char *Volume::SEC_STGDIR        = "/mnt/secure/staging";
+
+/*
+ * Path to the directory on the media which contains publicly accessable
+ * asec imagefiles. This path will be obscured before the mount is
+ * exposed to non priviledged users.
+ */
+const char *Volume::SEC_STG_SECIMGDIR = "/mnt/secure/staging/android_secure";
+
+/*
+ * Path to where *only* root can access asec imagefiles
+ */
+const char *Volume::SEC_ASECDIR       = "/mnt/secure/asec";
+
+/*
+ * Path to where secure containers are mounted
+ */
+const char *Volume::ASECDIR           = "/mnt/asec";
+
 static const char *stateToStr(int state) {
     if (state == Volume::State_Init)
         return "Initializing";
@@ -245,7 +273,7 @@ int Volume::mountVol() {
         errno = 0;
         setState(Volume::State_Checking);
 
-        if ((rc = Fat::check(devicePath))) {
+        if (Fat::check(devicePath)) {
             if (errno == ENODATA) {
                 LOGW("%s does not contain a FAT filesystem\n", devicePath);
                 continue;
@@ -257,21 +285,158 @@ int Volume::mountVol() {
             return -1;
         }
 
+        /*
+         * Mount the device on our internal staging mountpoint so we can
+         * muck with it before exposing it to non priviledged users.
+         */
         errno = 0;
-        if (!(rc = Fat::doMount(devicePath, getMountpoint(), false, false,
-                                1000, 1015, 0702, true))) {
-            LOGI("%s sucessfully mounted for volume %s\n", devicePath, getLabel());
-            setState(Volume::State_Mounted);
-            mCurrentlyMountedKdev = deviceNodes[i];
-            return 0;
+        if (Fat::doMount(devicePath, "/mnt/secure/staging", false, false, 1000, 1015, 0702, true)) {
+            LOGE("%s failed to mount via VFAT (%s)\n", devicePath, strerror(errno));
+            continue;
         }
 
-        LOGW("%s failed to mount via VFAT (%s)\n", devicePath, strerror(errno));
+        LOGI("Device %s, target %s mounted @ /mnt/secure/staging", devicePath, getMountpoint());
+
+        if (createBindMounts()) {
+            LOGE("Failed to create bindmounts (%s)", strerror(errno));
+            umount("/mnt/secure/staging");
+            setState(Volume::State_Idle);
+            return -1;
+        }
+
+        /*
+         * Now that the bindmount trickery is done, atomically move the
+         * whole subtree to expose it to non priviledged users.
+         */
+        if (doMoveMount("/mnt/secure/staging", getMountpoint(), false)) {
+            LOGE("Failed to move mount (%s)", strerror(errno));
+            umount("/mnt/secure/staging");
+            setState(Volume::State_Idle);
+            return -1;
+        }
+        setState(Volume::State_Mounted);
+        mCurrentlyMountedKdev = deviceNodes[i];
+        return 0;
     }
 
     LOGE("Volume %s found no suitable devices for mounting :(\n", getLabel());
     setState(Volume::State_Idle);
 
+    return -1;
+}
+
+int Volume::createBindMounts() {
+    unsigned long flags;
+
+    /*
+     * Ensure that /android_secure exists and is a directory
+     */
+    if (access(SEC_STG_SECIMGDIR, R_OK | X_OK)) {
+        if (errno == ENOENT) {
+            if (mkdir(SEC_STG_SECIMGDIR, 0777)) {
+                LOGE("Failed to create %s (%s)", SEC_STG_SECIMGDIR, strerror(errno));
+                return -1;
+            }
+        } else {
+            LOGE("Failed to access %s (%s)", SEC_STG_SECIMGDIR, strerror(errno));
+            return -1;
+        }
+    } else {
+        struct stat sbuf;
+
+        if (stat(SEC_STG_SECIMGDIR, &sbuf)) {
+            LOGE("Failed to stat %s (%s)", SEC_STG_SECIMGDIR, strerror(errno));
+            return -1;
+        }
+        if (!S_ISDIR(sbuf.st_mode)) {
+            LOGE("%s is not a directory", SEC_STG_SECIMGDIR);
+            errno = ENOTDIR;
+            return -1;
+        }
+    }
+
+    /*
+     * Bind mount /mnt/secure/staging/android_secure -> /mnt/secure/asec so we'll
+     * have a root only accessable mountpoint for it.
+     */
+    if (mount(SEC_STG_SECIMGDIR, SEC_ASECDIR, "", MS_BIND, NULL)) {
+        LOGE("Failed to bind mount points %s -> %s (%s)",
+                SEC_STG_SECIMGDIR, SEC_ASECDIR, strerror(errno));
+        return -1;
+    }
+
+    /*
+     * Mount a read-only, zero-sized tmpfs  on <mountpoint>/android_secure to
+     * obscure the underlying directory from everybody - sneaky eh? ;)
+     */
+    if (mount("tmpfs", SEC_STG_SECIMGDIR, "tmpfs", MS_RDONLY, "size=0,mode=000,uid=0,gid=0")) {
+        LOGE("Failed to obscure %s (%s)", SEC_STG_SECIMGDIR, strerror(errno));
+        umount("/mnt/asec_secure");
+        return -1;
+    }
+
+    return 0;
+}
+
+int Volume::doMoveMount(const char *src, const char *dst, bool force) {
+    unsigned int flags = MS_MOVE;
+    int retries = 5;
+
+    while(retries--) {
+        if (!mount(src, dst, "", flags, NULL)) {
+            LOGD("Moved mount %s -> %s sucessfully", src, dst);
+            return 0;
+        } else if (errno != EBUSY) {
+            LOGE("Failed to move mount %s -> %s (%s)", src, dst, strerror(errno));
+            return -1;
+        }
+        int action = 0;
+
+        if (force) {
+            if (retries == 1) {
+                action = 2; // SIGKILL
+            } else if (retries == 2) {
+                action = 1; // SIGHUP
+            }
+        }
+        LOGW("Failed to move %s -> %s (%s, retries %d, action %d)",
+                src, dst, strerror(errno), retries, action);
+        Process::killProcessesWithOpenFiles(src, action);
+        usleep(1000*250);
+    }
+
+    errno = EBUSY;
+    LOGE("Giving up on move %s -> %s (%s)", src, dst, strerror(errno));
+    return -1;
+}
+
+int Volume::doUnmount(const char *path, bool force) {
+    int retries = 10;
+
+    while (retries--) {
+        if (!umount(path) || errno == EINVAL || errno == ENOENT) {
+            LOGI("%s sucessfully unmounted", path);
+            return 0;
+        }
+
+        int action = 0;
+
+        if (force) {
+            if (retries == 1) {
+                action = 2; // SIGKILL
+            } else if (retries == 2) {
+                action = 1; // SIGHUP
+            }
+        }
+
+        LOGW("Failed to unmount %s (%s, retries %d, action %d)",
+                path, strerror(errno), retries, action);
+
+        Process::killProcessesWithOpenFiles(path, action);
+        usleep(1000*1000);
+    }
+    errno = EBUSY;
+    LOGE("Giving up on unmount %s (%s)", path, strerror(errno));
     return -1;
 }
 
@@ -286,43 +451,75 @@ int Volume::unmountVol(bool force) {
 
     setState(Volume::State_Unmounting);
     usleep(1000 * 1000); // Give the framework some time to react
-    for (i = 1; i <= 10; i++) {
-        rc = umount(getMountpoint());
-        if (!rc)
-            break;
 
-        if (rc && (errno == EINVAL || errno == ENOENT)) {
-            rc = 0;
-            break;
-        }
-
-        LOGW("Volume %s unmount attempt %d failed (%s)",
-             getLabel(), i, strerror(errno));
-
-        int action = 0;
-
-        if (force) {
-            if (i > 8) {
-                action = 2; // SIGKILL
-            } else if (i > 7) {
-                action = 1; // SIGHUP
-            }
-        }
-
-        Process::killProcessesWithOpenFiles(getMountpoint(), action);
-        usleep(1000*1000);
+    /*
+     * First move the mountpoint back to our internal staging point
+     * so nobody else can muck with it while we work.
+     */
+    if (doMoveMount(getMountpoint(), SEC_STGDIR, force)) {
+        LOGE("Failed to move mount %s => %s (%s)", getMountpoint(), SEC_STGDIR, strerror(errno));
+        setState(Volume::State_Mounted);
+        return -1;
     }
 
-    if (!rc) {
-        LOGI("Volume %s unmounted sucessfully", getLabel());
-        setState(Volume::State_Idle);
-        mCurrentlyMountedKdev = -1;
-        return 0;
+    /*
+     * Unmount the tmpfs which was obscuring the asec image directory
+     * from non root users
+     */
+
+    if (doUnmount(Volume::SEC_STG_SECIMGDIR, force)) {
+        LOGE("Failed to unmount tmpfs on %s (%s)", SEC_STG_SECIMGDIR, strerror(errno));
+        goto fail_republish;
     }
 
-    errno = EBUSY;
-    LOGE("Volume %s failed to unmount (%s)\n", getLabel(), strerror(errno));
+    /*
+     * Remove the bindmount we were using to keep a reference to
+     * the previously obscured directory.
+     */
+
+    if (doUnmount(Volume::SEC_ASECDIR, force)) {
+        LOGE("Failed to remove bindmount on %s (%s)", SEC_ASECDIR, strerror(errno));
+        goto fail_remount_tmpfs;
+    }
+
+    /*
+     * Finally, unmount the actual block device from the staging dir
+     */
+    if (doUnmount(Volume::SEC_STGDIR, force)) {
+        LOGE("Failed to unmount %s (%s)", SEC_STGDIR, strerror(errno));
+        goto fail_recreate_bindmount;
+    }
+
+    LOGI("%s unmounted sucessfully", getMountpoint());
+
+    setState(Volume::State_Idle);
+    mCurrentlyMountedKdev = -1;
+    return 0;
+
+    /*
+     * Failure handling - try to restore everything back the way it was
+     */
+fail_recreate_bindmount:
+    if (mount(SEC_STG_SECIMGDIR, SEC_ASECDIR, "", MS_BIND, NULL)) {
+        LOGE("Failed to restore bindmount after failure! - Storage will appear offline!");
+        goto out_nomedia;
+    }
+fail_remount_tmpfs:
+    if (mount("tmpfs", SEC_STG_SECIMGDIR, "tmpfs", MS_RDONLY, "size=0,mode=0,uid=0,gid=0")) {
+        LOGE("Failed to restore tmpfs after failure! - Storage will appear offline!");
+        goto out_nomedia;
+    }
+fail_republish:
+    if (doMoveMount(SEC_STGDIR, getMountpoint(), force)) {
+        LOGE("Failed to republish mount after failure! - Storage will appear offline!");
+        goto out_nomedia;
+    }
+
     setState(Volume::State_Mounted);
+    return -1;
+
+out_nomedia:
+    setState(Volume::State_NoMedia);
     return -1;
 }
 

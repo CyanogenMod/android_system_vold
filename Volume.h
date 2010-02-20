@@ -38,6 +38,12 @@ public:
     static const int State_Shared     = 7;
     static const int State_SharedMnt  = 8;
 
+    static const char *SECDIR;
+    static const char *SEC_STGDIR;
+    static const char *SEC_STG_SECIMGDIR;
+    static const char *SEC_ASECDIR;
+    static const char *ASECDIR;
+
 protected:
     char *mLabel;
     char *mMountpoint;
@@ -75,6 +81,9 @@ protected:
 private:
     int initializeMbr(const char *deviceNode);
     bool isMountpointMounted(const char *path);
+    int createBindMounts();
+    int doUnmount(const char *path, bool force);
+    int doMoveMount(const char *src, const char *dst, bool force);
 };
 
 typedef android::List<Volume *> VolumeCollection;
