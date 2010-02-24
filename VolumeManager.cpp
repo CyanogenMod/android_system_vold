@@ -298,6 +298,13 @@ int VolumeManager::renameAsec(const char *id1, const char *id2) {
         goto out_err;
     }
 
+    snprintf(mountPoint, sizeof(mountPoint), "%s/%s", Volume::ASECDIR, id2);
+    if (isMountpointMounted(mountPoint)) {
+        LOGW("Rename attempt when dst mounted");
+        errno = EBUSY;
+        goto out_err;
+    }
+
     if (!access(asecFilename2, F_OK)) {
         LOGE("Rename attempt when dst exists");
         errno = EADDRINUSE;
