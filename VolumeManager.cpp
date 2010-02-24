@@ -347,6 +347,7 @@ int VolumeManager::unmountAsec(const char *id, bool force) {
             break;
         }
         if (rc && (errno == EINVAL || errno == ENOENT)) {
+            LOGI("Secure container %s unmounted OK", id);
             rc = 0;
             break;
         }
@@ -372,8 +373,19 @@ int VolumeManager::unmountAsec(const char *id, bool force) {
         return -1;
     }
 
-    if (rmdir(mountPoint)) {
-        LOGE("Failed to rmdir mountpoint (%s)", strerror(errno));
+    int retries = 10;
+
+    while(retries--) {
+        if (!rmdir(mountPoint)) {
+            break;
+        }
+
+        LOGW("Failed to rmdir %s (%s)", mountPoint, strerror(errno));
+        usleep(1000 * 1000);
+    }
+
+    if (!retries) {
+        LOGE("Timed out trying to rmdir %s (%s)", mountPoint, strerror(errno));
     }
 
     if (Devmapper::destroy(id) && errno != ENXIO) {
@@ -698,7 +710,7 @@ int VolumeManager::unmountVolume(const char *label, bool force) {
         AsecIdCollection::iterator it = mActiveContainers->begin();
         LOGI("Unmounting ASEC %s (dependant on %s)", *it, v->getMountpoint());
         if (unmountAsec(*it, force)) {
-            LOGE("Failed to unmount ASEC %s (%s)", *it, strerror(errno), v->getMountpoint());
+            LOGE("Failed to unmount ASEC %s (%s)", *it, strerror(errno));
             return -1;
         }
     }
