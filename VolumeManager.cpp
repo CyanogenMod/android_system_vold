@@ -416,6 +416,7 @@ int VolumeManager::destroyAsec(const char *id, bool force) {
     char mountPoint[255];
 
     snprintf(asecFileName, sizeof(asecFileName), "%s/%s.asec", Volume::SEC_ASECDIR, id);
+    snprintf(mountPoint, sizeof(mountPoint), "%s/%s", Volume::ASECDIR, id);
 
     if (isMountpointMounted(mountPoint)) {
         LOGD("Unmounting container before destroy");
