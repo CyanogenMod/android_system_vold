@@ -691,8 +691,8 @@ int VolumeManager::unmountVolume(const char *label, bool force) {
         AsecIdCollection::iterator it = mActiveContainers->begin();
         LOGI("Unmounting ASEC %s (dependant on %s)", *it, v->getMountpoint());
         if (unmountAsec(*it, force)) {
-            LOGE("Failed to unmount ASEC %s (%s) - unmount of %s may fail!", *it,
-                 strerror(errno), v->getMountpoint());
+            LOGE("Failed to unmount ASEC %s (%s)", *it, strerror(errno), v->getMountpoint());
+            return -1;
         }
     }
 
