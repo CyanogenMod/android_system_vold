@@ -61,7 +61,7 @@ const char *Volume::SEC_STGDIR        = "/mnt/secure/staging";
  * asec imagefiles. This path will be obscured before the mount is
  * exposed to non priviledged users.
  */
-const char *Volume::SEC_STG_SECIMGDIR = "/mnt/secure/staging/android_secure";
+const char *Volume::SEC_STG_SECIMGDIR = "/mnt/secure/staging/.android_secure";
 
 /*
  * Path to where *only* root can access asec imagefiles
@@ -327,6 +327,16 @@ int Volume::mountVol() {
 
 int Volume::createBindMounts() {
     unsigned long flags;
+
+    /*
+     * Rename old /android_secure -> /.android_secure
+     */
+    if (!access("/mnt/secure/staging/android_secure", R_OK | X_OK) &&
+         access(SEC_STG_SECIMGDIR, R_OK | X_OK)) {
+        if (rename("/mnt/secure/staging/android_secure", SEC_STG_SECIMGDIR)) {
+            LOGE("Failed to rename legacy asec dir (%s)", strerror(errno));
+        }
+    }
 
     /*
      * Ensure that /android_secure exists and is a directory
