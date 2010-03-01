@@ -219,22 +219,13 @@ int VolumeManager::createAsec(const char *id, unsigned int numSectors,
         strcpy(dmDevice, loopDevice);
     }
 
-    if (Fat::format(dmDevice)) {
-        LOGE("ASEC FAT format failed (%s)", strerror(errno));
-        if (cleanupDm) {
-            Devmapper::destroy(id);
+    if (strcmp(fstype, "none")) {
+        if (strcmp(fstype, "fat")) {
+            LOGW("Unknown fstype '%s' specified for container", fstype);
         }
-        Loop::destroyByDevice(loopDevice);
-        unlink(asecFileName);
-        return -1;
-    }
 
-    char mountPoint[255];
-
-    snprintf(mountPoint, sizeof(mountPoint), "%s/%s", Volume::ASECDIR, id);
-    if (mkdir(mountPoint, 0777)) {
-        if (errno != EEXIST) {
-            LOGE("Mountpoint creation failed (%s)", strerror(errno));
+        if (Fat::format(dmDevice)) {
+            LOGE("ASEC FAT format failed (%s)", strerror(errno));
             if (cleanupDm) {
                 Devmapper::destroy(id);
             }
@@ -242,18 +233,33 @@ int VolumeManager::createAsec(const char *id, unsigned int numSectors,
             unlink(asecFileName);
             return -1;
         }
-    }
+        char mountPoint[255];
 
-    if (Fat::doMount(dmDevice, mountPoint, false, false, ownerUid,
-                     0, 0000, false)) {
-//                     0, 0007, false)) {
-        LOGE("ASEC FAT mount failed (%s)", strerror(errno));
-        if (cleanupDm) {
-            Devmapper::destroy(id);
+        snprintf(mountPoint, sizeof(mountPoint), "%s/%s", Volume::ASECDIR, id);
+        if (mkdir(mountPoint, 0777)) {
+            if (errno != EEXIST) {
+                LOGE("Mountpoint creation failed (%s)", strerror(errno));
+                if (cleanupDm) {
+                    Devmapper::destroy(id);
+                }
+                Loop::destroyByDevice(loopDevice);
+                unlink(asecFileName);
+                return -1;
+            }
         }
-        Loop::destroyByDevice(loopDevice);
-        unlink(asecFileName);
-        return -1;
+
+        if (Fat::doMount(dmDevice, mountPoint, false, false, ownerUid,
+                         0, 0000, false)) {
+            LOGE("ASEC FAT mount failed (%s)", strerror(errno));
+            if (cleanupDm) {
+                Devmapper::destroy(id);
+            }
+            Loop::destroyByDevice(loopDevice);
+            unlink(asecFileName);
+            return -1;
+        }
+    } else {
+        LOGI("Created raw secure container %s (no filesystem)", id);
     }
 
     mActiveContainers->push_back(strdup(id));
