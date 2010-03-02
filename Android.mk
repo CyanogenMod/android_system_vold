@@ -25,7 +25,8 @@ LOCAL_SRC_FILES:=                                      \
                   Fat.cpp                              \
                   Loop.cpp                             \
                   Devmapper.cpp                        \
-                  ResponseCode.cpp
+                  ResponseCode.cpp                     \
+                  Xwarp.cpp
 
 LOCAL_MODULE:= vold
 
