@@ -42,7 +42,7 @@ int main() {
     CommandListener *cl;
     NetlinkManager *nm;
 
-    LOGI("Vold 2.0 (the revenge) firing up");
+    LOGI("Vold 2.1 (the revenge) firing up");
 
     mkdir("/dev/block/vold", 0755);
 
@@ -68,8 +68,7 @@ int main() {
     }
 
     if (process_config(vm)) {
-        LOGE("Error reading configuration (%s)", strerror(errno));
-        exit(1);
+        LOGE("Error reading configuration (%s)... continuing anyways", strerror(errno));
     }
 
     if (nm->start()) {
@@ -89,18 +88,16 @@ int main() {
 
         if ((fp = fopen("/sys/devices/virtual/switch/usb_mass_storage/state",
                          "r"))) {
-            if (!fgets(state, sizeof(state), fp)) {
-                LOGE("Failed to read switch state (%s)", strerror(errno));
-                fclose(fp);
-                exit(1);
-            }
-            if (!strncmp(state, "online", 6)) {
-                LOGD("Bootstrapped ums is connected");
-                vm->notifyUmsConnected(true);
+            if (fgets(state, sizeof(state), fp)) {
+                if (!strncmp(state, "online", 6)) {
+                    vm->notifyUmsConnected(true);
+                } else {
+                    vm->notifyUmsConnected(false);
+                }
             } else {
-                LOGD("Bootstrapped ums is disconnected");
-                vm->notifyUmsConnected(false);
+                LOGE("Failed to read switch state (%s)", strerror(errno));
             }
+
             fclose(fp);
         } else {
             LOGW("No UMS switch available");
