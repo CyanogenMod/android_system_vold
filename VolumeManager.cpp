@@ -38,6 +38,7 @@
 #include "Fat.h"
 #include "Devmapper.h"
 #include "Process.h"
+#include "Asec.h"
 
 VolumeManager *VolumeManager::sInstance = NULL;
 
@@ -168,6 +169,11 @@ int VolumeManager::getAsecMountPath(const char *id, char *buffer, int maxlen) {
 
 int VolumeManager::createAsec(const char *id, unsigned int numSectors,
                               const char *fstype, const char *key, int ownerUid) {
+    struct asec_superblock sb;
+    memset(&sb, 0, sizeof(sb));
+
+    sb.magic = ASEC_SB_MAGIC;
+    sb.ver = ASEC_SB_VER;
 
     if (numSectors < ((1024*1024)/512)) {
         LOGE("Invalid container size specified (%d sectors)", numSectors);
@@ -191,7 +197,18 @@ int VolumeManager::createAsec(const char *id, unsigned int numSectors,
         return -1;
     }
 
-    if (Loop::createImageFile(asecFileName, numSectors)) {
+    /*
+     * Add some headroom
+     */
+    unsigned fatSize = (((numSectors * 4) / 512) + 1) * 2;
+    unsigned numImgSectors = numSectors + fatSize + 2;
+
+    if (numImgSectors % 63) {
+        numImgSectors += (63 - (numImgSectors % 63));
+    }
+
+    // Add +1 for our superblock which is at the end
+    if (Loop::createImageFile(asecFileName, numImgSectors + 1)) {
         LOGE("ASEC image file creation failed (%s)", strerror(errno));
         return -1;
     }
@@ -207,7 +224,9 @@ int VolumeManager::createAsec(const char *id, unsigned int numSectors,
     bool cleanupDm = false;
 
     if (strcmp(key, "none")) {
-        if (Devmapper::create(id, loopDevice, key, numSectors, dmDevice,
+        // XXX: This is all we support for now
+        sb.c_cipher = ASEC_SB_C_CIPHER_TWOFISH;
+        if (Devmapper::create(id, loopDevice, key, numImgSectors, dmDevice,
                              sizeof(dmDevice))) {
             LOGE("ASEC device mapping failed (%s)", strerror(errno));
             Loop::destroyByDevice(loopDevice);
@@ -216,15 +235,54 @@ int VolumeManager::createAsec(const char *id, unsigned int numSectors,
         }
         cleanupDm = true;
     } else {
+        sb.c_cipher = ASEC_SB_C_CIPHER_NONE;
         strcpy(dmDevice, loopDevice);
     }
+
+    /*
+     * Drop down the superblock at the end of the file
+     */
+
+    int sbfd = open(loopDevice, O_RDWR);
+    if (sbfd < 0) {
+        LOGE("Failed to open new DM device for superblock write (%s)", strerror(errno));
+        if (cleanupDm) {
+            Devmapper::destroy(id);
+        }
+        Loop::destroyByDevice(loopDevice);
+        unlink(asecFileName);
+        return -1;
+    }
+
+    if (lseek(sbfd, (numImgSectors * 512), SEEK_SET) < 0) {
+        close(sbfd);
+        LOGE("Failed to lseek for superblock (%s)", strerror(errno));
+        if (cleanupDm) {
+            Devmapper::destroy(id);
+        }
+        Loop::destroyByDevice(loopDevice);
+        unlink(asecFileName);
+        return -1;
+    }
+
+    if (write(sbfd, &sb, sizeof(sb)) != sizeof(sb)) {
+        close(sbfd);
+        LOGE("Failed to write superblock (%s)", strerror(errno));
+        if (cleanupDm) {
+            Devmapper::destroy(id);
+        }
+        Loop::destroyByDevice(loopDevice);
+        unlink(asecFileName);
+        return -1;
+    }
+    close(sbfd);
 
     if (strcmp(fstype, "none")) {
         if (strcmp(fstype, "fat")) {
             LOGW("Unknown fstype '%s' specified for container", fstype);
         }
 
-        if (Fat::format(dmDevice)) {
+        if (Fat::format(dmDevice, numImgSectors)) {
             LOGE("ASEC FAT format failed (%s)", strerror(errno));
             if (cleanupDm) {
                 Devmapper::destroy(id);
@@ -467,24 +525,53 @@ int VolumeManager::mountAsec(const char *id, const char *key, int ownerUid) {
 
     char dmDevice[255];
     bool cleanupDm = false;
+    int fd;
+    unsigned int nr_sec = 0;
+
+    if ((fd = open(loopDevice, O_RDWR)) < 0) {
+        LOGE("Failed to open loopdevice (%s)", strerror(errno));
+        Loop::destroyByDevice(loopDevice);
+        return -1;
+    }
+
+    if (ioctl(fd, BLKGETSIZE, &nr_sec)) {
+        LOGE("Failed to get loop size (%s)", strerror(errno));
+        Loop::destroyByDevice(loopDevice);
+        close(fd);
+        return -1;
+    }
+
+    /*
+     * Validate superblock
+     */
+    struct asec_superblock sb;
+    memset(&sb, 0, sizeof(sb));
+    if (lseek(fd, ((nr_sec-1) * 512), SEEK_SET) < 0) {
+        LOGE("lseek failed (%s)", strerror(errno));
+        close(fd);
+        Loop::destroyByDevice(loopDevice);
+        return -1;
+    }
+    if (read(fd, &sb, sizeof(sb)) != sizeof(sb)) {
+        LOGE("superblock read failed (%s)", strerror(errno));
+        close(fd);
+        Loop::destroyByDevice(loopDevice);
+        return -1;
+    }
+
+    close(fd);
+
+    LOGD("Container sb magic/ver (%.8x/%.2x)", sb.magic, sb.ver);
+    if (sb.magic != ASEC_SB_MAGIC || sb.ver != ASEC_SB_VER) {
+        LOGE("Bad container magic/version (%.8x/%.2x)", sb.magic, sb.ver);
+        Loop::destroyByDevice(loopDevice);
+        errno = EMEDIUMTYPE;
+        return -1;
+    }
+    nr_sec--; // We don't want the devmapping to extend onto our superblock
+
     if (strcmp(key, "none")) {
         if (Devmapper::lookupActive(id, dmDevice, sizeof(dmDevice))) {
-            unsigned int nr_sec = 0;
-            int fd;
-
-            if ((fd = open(loopDevice, O_RDWR)) < 0) {
-                LOGE("Failed to open loopdevice (%s)", strerror(errno));
-                Loop::destroyByDevice(loopDevice);
-                return -1;
-            }
-
-            if (ioctl(fd, BLKGETSIZE, &nr_sec)) {
-                LOGE("Failed to get loop size (%s)", strerror(errno));
-                Loop::destroyByDevice(loopDevice);
-                close(fd);
-                return -1;
-            }
-            close(fd);
             if (Devmapper::create(id, loopDevice, key, nr_sec,
                                   dmDevice, sizeof(dmDevice))) {
                 LOGE("ASEC device mapping failed (%s)", strerror(errno));

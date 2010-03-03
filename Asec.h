@@ -14,18 +14,29 @@
  * limitations under the License.
  */
 
-#ifndef _FAT_H
-#define _FAT_H
+#ifndef _ASEC_H
+#define _ASEC_H
 
-#include <unistd.h>
+struct asec_superblock {
+#define ASEC_SB_MAGIC 0xc0def00d
+    unsigned int magic;
 
-class Fat {
-public:
-    static int check(const char *fsPath);
-    static int doMount(const char *fsPath, const char *mountPoint, bool ro,
-                       bool remount, int ownerUid, int ownerGid, int permMask,
-                       bool createLost);
-    static int format(const char *fsPath, unsigned int numSectors);
-};
+#define ASEC_SB_VER 1
+    unsigned char ver;
+
+#define ASEC_SB_C_CIPHER_NONE    0
+#define ASEC_SB_C_CIPHER_TWOFISH 1
+#define ASEC_SB_C_CIPHER_AES     2
+    unsigned char c_cipher;
+
+#define ASEC_SB_C_CHAIN_NONE 0
+    unsigned char c_chain;
+
+#define ASEC_SB_C_OPTS_NONE 0
+    unsigned char c_opts;
+
+#define ASEC_SB_C_MODE_NONE 0
+    unsigned char c_mode;
+} __attribute__((packed));
 
 #endif

@@ -194,7 +194,7 @@ int Volume::formatVol() {
     sprintf(devicePath, "/dev/block/vold/%d:%d",
             MAJOR(partNode), MINOR(partNode));
 
-    if (Fat::format(devicePath)) {
+    if (Fat::format(devicePath, 0)) {
         LOGE("Failed to format (%s)", strerror(errno));
         goto err;
     }

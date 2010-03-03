@@ -148,24 +148,11 @@ int Fat::doMount(const char *fsPath, const char *mountPoint,
     return rc;
 }
 
-int Fat::format(const char *fsPath) {
-    unsigned int nr_sec;
+int Fat::format(const char *fsPath, unsigned int numSectors) {
     int fd;
-
-    if ((fd = open(fsPath, O_RDWR)) < 0) {
-        LOGE("Error opening disk file (%s)", strerror(errno));
-        return -1;
-    }
-
-    if (ioctl(fd, BLKGETSIZE, &nr_sec)) {
-        LOGE("Unable to get device size (%s)", strerror(errno));
-        close(fd);
-        return -1;
-    }
-    close(fd);
-
-    const char *args[9];
+    const char *args[11];
     int rc;
+
     args[0] = MKDOSFS_PATH;
     args[1] = "-F";
     args[2] = "32";
@@ -173,9 +160,21 @@ int Fat::format(const char *fsPath) {
     args[4] = "android";
     args[5] = "-c";
     args[6] = "8";
-    args[7] = fsPath;
-    args[8] = NULL;
-    rc = logwrap(9, args, 1);
+
+    if (numSectors) {
+        char tmp[32];
+        snprintf(tmp, sizeof(tmp), "%u", numSectors);
+        const char *size = tmp;
+        args[7] = "-s";
+        args[8] = size;
+        args[9] = fsPath;
+        args[10] = NULL;
+        rc = logwrap(11, args, 1);
+    } else {
+        args[7] = fsPath;
+        args[8] = NULL;
+        rc = logwrap(9, args, 1);
+    }
 
     if (rc == 0) {
         LOGI("Filesystem formatted OK");

@@ -136,8 +136,10 @@ int Devmapper::create(const char *name, const char *loopFile, const char *key,
     ioctlInit(io, 4096, name, DM_STATUS_TABLE_FLAG);
     io->target_count = 1;
     tgt->status = 0;
+
     tgt->sector_start = 0;
     tgt->length = numSectors;
+
     strcpy(tgt->target_type, "crypt");
 
     char *cryptParams = buffer + sizeof(struct dm_ioctl) + sizeof(struct dm_target_spec);
