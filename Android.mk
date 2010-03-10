@@ -21,7 +21,6 @@ LOCAL_SRC_FILES:=                                      \
                   DirectVolume.cpp                     \
                   logwrapper.c                         \
                   Process.cpp                          \
-                  geom_mbr_enc.c                       \
                   Fat.cpp                              \
                   Loop.cpp                             \
                   Devmapper.cpp                        \
@@ -34,7 +33,7 @@ LOCAL_C_INCLUDES := $(KERNEL_HEADERS) -I../../frameworks/base/include/
 
 LOCAL_CFLAGS := 
 
-LOCAL_SHARED_LIBRARIES := libsysutils libcutils
+LOCAL_SHARED_LIBRARIES := libsysutils libcutils libdiskconfig
 
 include $(BUILD_EXECUTABLE)
 

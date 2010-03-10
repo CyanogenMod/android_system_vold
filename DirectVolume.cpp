@@ -178,6 +178,10 @@ void DirectVolume::handlePartitionAdded(const char *devpath, NetlinkEvent *evt) 
         part_num = 1;
     }
 
+    if (part_num > mDiskNumParts) {
+        mDiskNumParts = part_num;
+    }
+
     if (major != mDiskMajor) {
         LOGE("Partition '%s' has a different major than its disk!", devpath);
         return;
@@ -192,7 +196,9 @@ void DirectVolume::handlePartitionAdded(const char *devpath, NetlinkEvent *evt) 
 #ifdef PARTITION_DEBUG
         LOGD("Dv:partAdd: Got all partitions - ready to rock!");
 #endif
-        setState(Volume::State_Idle);
+        if (getState() != Volume::State_Formatting) {
+            setState(Volume::State_Idle);
+        }
     } else {
 #ifdef PARTITION_DEBUG
         LOGD("Dv:partAdd: pending mask now = 0x%x", mPendingPartMap);
@@ -224,15 +230,19 @@ void DirectVolume::handleDiskChanged(const char *devpath, NetlinkEvent *evt) {
     }
     mPendingPartMap = partmask;
 
-    if (mDiskNumParts == 0) {
-        setState(Volume::State_Idle);
-    } else {
-        setState(Volume::State_Pending);
+    if (getState() != Volume::State_Formatting) {
+        if (mDiskNumParts == 0) {
+            setState(Volume::State_Idle);
+        } else {
+            setState(Volume::State_Pending);
+        }
     }
-
 }
 
 void DirectVolume::handlePartitionChanged(const char *devpath, NetlinkEvent *evt) {
+    int major = atoi(evt->findParam("MAJOR"));
+    int minor = atoi(evt->findParam("MINOR"));
+    LOGD("Volume %s %s partition %d:%d changed\n", getLabel(), getMountpoint(), major, minor);
 }
 
 void DirectVolume::handleDiskRemoved(const char *devpath, NetlinkEvent *evt) {

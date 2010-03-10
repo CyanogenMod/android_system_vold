@@ -30,7 +30,7 @@
 
 #include <cutils/properties.h>
 
-#include "diskmbr.h"
+#include <diskconfig/diskconfig.h>
 
 #define LOG_TAG "Vold"
 
@@ -185,6 +185,7 @@ int Volume::formatVol() {
             MAJOR(diskNode), MINOR(diskNode));
 
     LOGI("Formatting volume %s (%s)", getLabel(), devicePath);
+    setState(Volume::State_Formatting);
 
     if (initializeMbr(devicePath)) {
         LOGE("Failed to initialize MBR (%s)", strerror(errno));
@@ -199,6 +200,7 @@ int Volume::formatVol() {
         goto err;
     }
 
+    setState(Volume::State_Idle);
     return 0;
 err:
     return -1;
@@ -423,6 +425,7 @@ int Volume::doMoveMount(const char *src, const char *dst, bool force) {
 int Volume::doUnmount(const char *path, bool force) {
     int retries = 10;
 
+    LOGD("Unmounting {%s}, force = %d", path, force);
     while (retries--) {
         if (!umount(path) || errno == EINVAL || errno == ENOENT) {
             LOGI("%s sucessfully unmounted", path);
@@ -534,45 +537,41 @@ out_nomedia:
 }
 
 int Volume::initializeMbr(const char *deviceNode) {
-    int fd, rc;
-    unsigned char block[512];
-    struct dos_partition part;
-    unsigned int nr_sec;
+    struct disk_info dinfo;
 
-    if ((fd = open(deviceNode, O_RDWR)) < 0) {
-        LOGE("Error opening disk file (%s)", strerror(errno));
+    memset(&dinfo, 0, sizeof(dinfo));
+
+    if (!(dinfo.part_lst = (struct part_info *) malloc(MAX_NUM_PARTS * sizeof(struct part_info)))) {
+        LOGE("Failed to malloc prt_lst");
         return -1;
     }
 
-    if (ioctl(fd, BLKGETSIZE, &nr_sec)) {
-        LOGE("Unable to get device size (%s)", strerror(errno));
-        close(fd);
-        return -1;
+    memset(dinfo.part_lst, 0, MAX_NUM_PARTS * sizeof(struct part_info));
+    dinfo.device = strdup(deviceNode);
+    dinfo.scheme = PART_SCHEME_MBR;
+    dinfo.sect_size = 512;
+    dinfo.skip_lba = 2048;
+    dinfo.num_lba = 0;
+    dinfo.num_parts = 1;
+
+    struct part_info *pinfo = &dinfo.part_lst[0];
+
+    pinfo->name = strdup("android_sdcard");
+    pinfo->flags |= PART_ACTIVE_FLAG;
+    pinfo->type = PC_PART_TYPE_FAT32;
+    pinfo->len_kb = -1;
+
+    int rc = apply_disk_config(&dinfo, 0);
+
+    if (rc) {
+        LOGE("Failed to apply disk configuration (%d)", rc);
+        goto out;
     }
 
-    memset(&part, 0, sizeof(part));
-    part.dp_flag = 0x80;
-    part.dp_typ = 0xc;
-    part.dp_start = ((1024 * 64) / 512) + 1;
-    part.dp_size = nr_sec - part.dp_start;
+ out:
+    free(pinfo->name);
+    free(dinfo.device);
+    free(dinfo.part_lst);
 
-    memset(block, 0, sizeof(block));
-    block[0x1fe] = 0x55;
-    block[0x1ff] = 0xaa;
-
-    dos_partition_enc(block + DOSPARTOFF, &part);
-
-    if (write(fd, block, sizeof(block)) < 0) {
-        LOGE("Error writing MBR (%s)", strerror(errno));
-        close(fd);
-        return -1;
-    }
-
-    if (ioctl(fd, BLKRRPART, NULL) < 0) {
-        LOGE("Error re-reading partition table (%s)", strerror(errno));
-        close(fd);
-        return -1;
-    }
-    close(fd);
-    return 0;
+    return rc;
 }
