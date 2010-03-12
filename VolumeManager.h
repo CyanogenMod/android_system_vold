@@ -38,6 +38,7 @@ private:
     VolumeCollection      *mVolumes;
     AsecIdCollection      *mActiveContainers;
     bool                   mUsbMassStorageConnected;
+    bool                   mDebug;
 
 public:
     virtual ~VolumeManager();
@@ -68,6 +69,8 @@ public:
     int renameAsec(const char *id1, const char *id2);
     int getAsecMountPath(const char *id, char *buffer, int maxlen);
 
+    void setDebug(bool enable);
+
     // XXX: This should be moved private once switch uevents are working
     void notifyUmsConnected(bool connected);
 
@@ -76,6 +79,7 @@ public:
 
     static VolumeManager *Instance();
 
+    static char *asecHash(const char *id, char *buffer, size_t len);
 private:
     VolumeManager();
     Volume *lookupVolume(const char *label);

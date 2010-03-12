@@ -48,6 +48,7 @@ protected:
     char *mLabel;
     char *mMountpoint;
     VolumeManager *mVm;
+    bool mDebug;
 
     /*
      * The major/minor tuple of the currently mounted filesystem.
@@ -70,6 +71,8 @@ public:
     virtual dev_t getDiskDevice();
     virtual void handleVolumeShared();
     virtual void handleVolumeUnshared();
+
+    void setDebug(bool enable);
 
 protected:
     void setState(int state);

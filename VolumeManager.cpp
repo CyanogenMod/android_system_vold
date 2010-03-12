@@ -39,6 +39,7 @@
 #include "Devmapper.h"
 #include "Process.h"
 #include "Asec.h"
+#include "md5.h"
 
 VolumeManager *VolumeManager::sInstance = NULL;
 
@@ -49,6 +50,7 @@ VolumeManager *VolumeManager::Instance() {
 }
 
 VolumeManager::VolumeManager() {
+    mDebug = false;
     mBlockDevices = new BlockDeviceCollection();
     mVolumes = new VolumeCollection();
     mActiveContainers = new AsecIdCollection();
@@ -60,6 +62,38 @@ VolumeManager::~VolumeManager() {
     delete mBlockDevices;
     delete mVolumes;
     delete mActiveContainers;
+}
+
+char *VolumeManager::asecHash(const char *id, char *buffer, size_t len) {
+    MD5_CTX ctx;
+    unsigned char sig[16];
+
+    if (len < 33) {
+        LOGE("Target hash buffer size < 33 bytes (%d)", len);
+        errno = ESPIPE;
+        return NULL;
+    }
+    MD5_Init(&ctx);
+    MD5_Update(&ctx, id, strlen(id));
+    MD5_Final(sig, &ctx);
+
+    memset(buffer, 0, len);
+
+    for (int i = 0; i < 16; i++) {
+        char tmp[3];
+        snprintf(tmp, 3, "%.02x", sig[i]);
+        strcat(buffer, tmp);
+    }
+
+    return buffer;
+}
+
+void VolumeManager::setDebug(bool enable) {
+    mDebug = enable;
+    VolumeCollection::iterator it;
+    for (it = mVolumes->begin(); it != mVolumes->end(); ++it) {
+        (*it)->setDebug(enable);
+    }
 }
 
 int VolumeManager::start() {
@@ -213,8 +247,15 @@ int VolumeManager::createAsec(const char *id, unsigned int numSectors,
         return -1;
     }
 
+    char idHash[33];
+    if (!asecHash(id, idHash, sizeof(idHash))) {
+        LOGE("Hash of '%s' failed (%s)", id, strerror(errno));
+        unlink(asecFileName);
+        return -1;
+    }
+
     char loopDevice[255];
-    if (Loop::create(asecFileName, loopDevice, sizeof(loopDevice))) {
+    if (Loop::create(idHash, asecFileName, loopDevice, sizeof(loopDevice))) {
         LOGE("ASEC loop device creation failed (%s)", strerror(errno));
         unlink(asecFileName);
         return -1;
@@ -226,7 +267,7 @@ int VolumeManager::createAsec(const char *id, unsigned int numSectors,
     if (strcmp(key, "none")) {
         // XXX: This is all we support for now
         sb.c_cipher = ASEC_SB_C_CIPHER_TWOFISH;
-        if (Devmapper::create(id, loopDevice, key, numImgSectors, dmDevice,
+        if (Devmapper::create(idHash, loopDevice, key, numImgSectors, dmDevice,
                              sizeof(dmDevice))) {
             LOGE("ASEC device mapping failed (%s)", strerror(errno));
             Loop::destroyByDevice(loopDevice);
@@ -247,7 +288,7 @@ int VolumeManager::createAsec(const char *id, unsigned int numSectors,
     if (sbfd < 0) {
         LOGE("Failed to open new DM device for superblock write (%s)", strerror(errno));
         if (cleanupDm) {
-            Devmapper::destroy(id);
+            Devmapper::destroy(idHash);
         }
         Loop::destroyByDevice(loopDevice);
         unlink(asecFileName);
@@ -258,7 +299,7 @@ int VolumeManager::createAsec(const char *id, unsigned int numSectors,
         close(sbfd);
         LOGE("Failed to lseek for superblock (%s)", strerror(errno));
         if (cleanupDm) {
-            Devmapper::destroy(id);
+            Devmapper::destroy(idHash);
         }
         Loop::destroyByDevice(loopDevice);
         unlink(asecFileName);
@@ -269,7 +310,7 @@ int VolumeManager::createAsec(const char *id, unsigned int numSectors,
         close(sbfd);
         LOGE("Failed to write superblock (%s)", strerror(errno));
         if (cleanupDm) {
-            Devmapper::destroy(id);
+            Devmapper::destroy(idHash);
         }
         Loop::destroyByDevice(loopDevice);
         unlink(asecFileName);
@@ -285,7 +326,7 @@ int VolumeManager::createAsec(const char *id, unsigned int numSectors,
         if (Fat::format(dmDevice, numImgSectors)) {
             LOGE("ASEC FAT format failed (%s)", strerror(errno));
             if (cleanupDm) {
-                Devmapper::destroy(id);
+                Devmapper::destroy(idHash);
             }
             Loop::destroyByDevice(loopDevice);
             unlink(asecFileName);
@@ -298,7 +339,7 @@ int VolumeManager::createAsec(const char *id, unsigned int numSectors,
             if (errno != EEXIST) {
                 LOGE("Mountpoint creation failed (%s)", strerror(errno));
                 if (cleanupDm) {
-                    Devmapper::destroy(id);
+                    Devmapper::destroy(idHash);
                 }
                 Loop::destroyByDevice(loopDevice);
                 unlink(asecFileName);
@@ -310,7 +351,7 @@ int VolumeManager::createAsec(const char *id, unsigned int numSectors,
                          0, 0000, false)) {
             LOGE("ASEC FAT mount failed (%s)", strerror(errno));
             if (cleanupDm) {
-                Devmapper::destroy(id);
+                Devmapper::destroy(idHash);
             }
             Loop::destroyByDevice(loopDevice);
             unlink(asecFileName);
@@ -331,7 +372,13 @@ int VolumeManager::finalizeAsec(const char *id) {
 
     snprintf(asecFileName, sizeof(asecFileName), "%s/%s.asec", Volume::SEC_ASECDIR, id);
 
-    if (Loop::lookupActive(asecFileName, loopDevice, sizeof(loopDevice))) {
+    char idHash[33];
+    if (!asecHash(id, idHash, sizeof(idHash))) {
+        LOGE("Hash of '%s' failed (%s)", id, strerror(errno));
+        return -1;
+    }
+
+    if (Loop::lookupActive(idHash, loopDevice, sizeof(loopDevice))) {
         LOGE("Unable to finalize %s (%s)", id, strerror(errno));
         return -1;
     }
@@ -343,7 +390,9 @@ int VolumeManager::finalizeAsec(const char *id) {
         return -1;
     }
 
-    LOGD("ASEC %s finalized", id);
+    if (mDebug) {
+        LOGD("ASEC %s finalized", id);
+    }
     return 0;
 }
 
@@ -397,6 +446,12 @@ int VolumeManager::unmountAsec(const char *id, bool force) {
 
     snprintf(asecFileName, sizeof(asecFileName), "%s/%s.asec", Volume::SEC_ASECDIR, id);
     snprintf(mountPoint, sizeof(mountPoint), "%s/%s", Volume::ASECDIR, id);
+
+    char idHash[33];
+    if (!asecHash(id, idHash, sizeof(idHash))) {
+        LOGE("Hash of '%s' failed (%s)", id, strerror(errno));
+        return -1;
+    }
 
     if (!isMountpointMounted(mountPoint)) {
         LOGE("Unmount request for ASEC %s when not mounted", id);
@@ -452,13 +507,15 @@ int VolumeManager::unmountAsec(const char *id, bool force) {
         LOGE("Timed out trying to rmdir %s (%s)", mountPoint, strerror(errno));
     }
 
-    if (Devmapper::destroy(id) && errno != ENXIO) {
+    if (Devmapper::destroy(idHash) && errno != ENXIO) {
         LOGE("Failed to destroy devmapper instance (%s)", strerror(errno));
     }
 
     char loopDevice[255];
-    if (!Loop::lookupActive(asecFileName, loopDevice, sizeof(loopDevice))) {
+    if (!Loop::lookupActive(idHash, loopDevice, sizeof(loopDevice))) {
         Loop::destroyByDevice(loopDevice);
+    } else {
+        LOGW("Failed to find loop device for {%s} (%s)", asecFileName, strerror(errno));
     }
 
     AsecIdCollection::iterator it;
@@ -483,7 +540,9 @@ int VolumeManager::destroyAsec(const char *id, bool force) {
     snprintf(mountPoint, sizeof(mountPoint), "%s/%s", Volume::ASECDIR, id);
 
     if (isMountpointMounted(mountPoint)) {
-        LOGD("Unmounting container before destroy");
+        if (mDebug) {
+            LOGD("Unmounting container before destroy");
+        }
         if (unmountAsec(id, force)) {
             LOGE("Failed to unmount asec %s for destroy (%s)", id, strerror(errno));
             return -1;
@@ -495,7 +554,9 @@ int VolumeManager::destroyAsec(const char *id, bool force) {
         return -1;
     }
 
-    LOGD("ASEC %s destroyed", id);
+    if (mDebug) {
+        LOGD("ASEC %s destroyed", id);
+    }
     return 0;
 }
 
@@ -512,15 +573,24 @@ int VolumeManager::mountAsec(const char *id, const char *key, int ownerUid) {
         return -1;
     }
 
+    char idHash[33];
+    if (!asecHash(id, idHash, sizeof(idHash))) {
+        LOGE("Hash of '%s' failed (%s)", id, strerror(errno));
+        return -1;
+    }
     char loopDevice[255];
-    if (Loop::lookupActive(asecFileName, loopDevice, sizeof(loopDevice))) {
-        if (Loop::create(asecFileName, loopDevice, sizeof(loopDevice))) {
+    if (Loop::lookupActive(idHash, loopDevice, sizeof(loopDevice))) {
+        if (Loop::create(idHash, asecFileName, loopDevice, sizeof(loopDevice))) {
             LOGE("ASEC loop device creation failed (%s)", strerror(errno));
             return -1;
         }
-        LOGD("New loop device created at %s", loopDevice);
+        if (mDebug) {
+            LOGD("New loop device created at %s", loopDevice);
+        }
     } else {
-        LOGD("Found active loopback for %s at %s", asecFileName, loopDevice);
+        if (mDebug) {
+            LOGD("Found active loopback for %s at %s", asecFileName, loopDevice);
+        }
     }
 
     char dmDevice[255];
@@ -561,7 +631,9 @@ int VolumeManager::mountAsec(const char *id, const char *key, int ownerUid) {
 
     close(fd);
 
-    LOGD("Container sb magic/ver (%.8x/%.2x)", sb.magic, sb.ver);
+    if (mDebug) {
+        LOGD("Container sb magic/ver (%.8x/%.2x)", sb.magic, sb.ver);
+    }
     if (sb.magic != ASEC_SB_MAGIC || sb.ver != ASEC_SB_VER) {
         LOGE("Bad container magic/version (%.8x/%.2x)", sb.magic, sb.ver);
         Loop::destroyByDevice(loopDevice);
@@ -571,16 +643,20 @@ int VolumeManager::mountAsec(const char *id, const char *key, int ownerUid) {
     nr_sec--; // We don't want the devmapping to extend onto our superblock
 
     if (strcmp(key, "none")) {
-        if (Devmapper::lookupActive(id, dmDevice, sizeof(dmDevice))) {
-            if (Devmapper::create(id, loopDevice, key, nr_sec,
+        if (Devmapper::lookupActive(idHash, dmDevice, sizeof(dmDevice))) {
+            if (Devmapper::create(idHash, loopDevice, key, nr_sec,
                                   dmDevice, sizeof(dmDevice))) {
                 LOGE("ASEC device mapping failed (%s)", strerror(errno));
                 Loop::destroyByDevice(loopDevice);
                 return -1;
             }
-            LOGD("New devmapper instance created at %s", dmDevice);
+            if (mDebug) {
+                LOGD("New devmapper instance created at %s", dmDevice);
+            }
         } else {
-            LOGD("Found active devmapper for %s at %s", asecFileName, dmDevice);
+            if (mDebug) {
+                LOGD("Found active devmapper for %s at %s", asecFileName, dmDevice);
+            }
         }
         cleanupDm = true;
     } else {
@@ -591,7 +667,7 @@ int VolumeManager::mountAsec(const char *id, const char *key, int ownerUid) {
         if (errno != EEXIST) {
             LOGE("Mountpoint creation failed (%s)", strerror(errno));
             if (cleanupDm) {
-                Devmapper::destroy(id);
+                Devmapper::destroy(idHash);
             }
             Loop::destroyByDevice(loopDevice);
             return -1;
@@ -603,14 +679,16 @@ int VolumeManager::mountAsec(const char *id, const char *key, int ownerUid) {
 //                     0227, false)) {
         LOGE("ASEC mount failed (%s)", strerror(errno));
         if (cleanupDm) {
-            Devmapper::destroy(id);
+            Devmapper::destroy(idHash);
         }
         Loop::destroyByDevice(loopDevice);
         return -1;
     }
 
     mActiveContainers->push_back(strdup(id));
-    LOGD("ASEC %s mounted", id);
+    if (mDebug) {
+        LOGD("ASEC %s mounted", id);
+    }
     return 0;
 }
 

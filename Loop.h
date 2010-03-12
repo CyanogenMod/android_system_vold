@@ -20,15 +20,19 @@
 #include <unistd.h>
 #include <linux/loop.h>
 
+class SocketClient;
+
 class Loop {
 public:
     static const int LOOP_MAX = 4096;
 public:
-    static int lookupActive(const char *loopFile, char *buffer, size_t len);
-    static int create(const char *loopFile, char *loopDeviceBuffer, size_t len);
+    static int lookupActive(const char *id, char *buffer, size_t len);
+    static int create(const char *id, const char *loopFile, char *loopDeviceBuffer, size_t len);
     static int destroyByDevice(const char *loopDevice);
     static int destroyByFile(const char *loopFile);
     static int createImageFile(const char *file, unsigned int numSectors);
+
+    static int dumpState(SocketClient *c);
 };
 
 #endif

@@ -100,6 +100,7 @@ static const char *stateToStr(int state) {
 
 Volume::Volume(VolumeManager *vm, const char *label, const char *mount_point) {
     mVm = vm;
+    mDebug = false;
     mLabel = strdup(label);
     mMountpoint = strdup(mount_point);
     mState = Volume::State_Init;
@@ -109,6 +110,10 @@ Volume::Volume(VolumeManager *vm, const char *label, const char *mount_point) {
 Volume::~Volume() {
     free(mLabel);
     free(mMountpoint);
+}
+
+void Volume::setDebug(bool enable) {
+    mDebug = enable;
 }
 
 dev_t Volume::getDiskDevice() {
@@ -184,7 +189,9 @@ int Volume::formatVol() {
     sprintf(devicePath, "/dev/block/vold/%d:%d",
             MAJOR(diskNode), MINOR(diskNode));
 
-    LOGI("Formatting volume %s (%s)", getLabel(), devicePath);
+    if (mDebug) {
+        LOGI("Formatting volume %s (%s)", getLabel(), devicePath);
+    }
     setState(Volume::State_Formatting);
 
     if (initializeMbr(devicePath)) {
@@ -396,7 +403,9 @@ int Volume::doMoveMount(const char *src, const char *dst, bool force) {
 
     while(retries--) {
         if (!mount(src, dst, "", flags, NULL)) {
-            LOGD("Moved mount %s -> %s sucessfully", src, dst);
+            if (mDebug) {
+                LOGD("Moved mount %s -> %s sucessfully", src, dst);
+            }
             return 0;
         } else if (errno != EBUSY) {
             LOGE("Failed to move mount %s -> %s (%s)", src, dst, strerror(errno));
@@ -425,7 +434,10 @@ int Volume::doMoveMount(const char *src, const char *dst, bool force) {
 int Volume::doUnmount(const char *path, bool force) {
     int retries = 10;
 
-    LOGD("Unmounting {%s}, force = %d", path, force);
+    if (mDebug) {
+        LOGD("Unmounting {%s}, force = %d", path, force);
+    }
+
     while (retries--) {
         if (!umount(path) || errno == EINVAL || errno == ENOENT) {
             LOGI("%s sucessfully unmounted", path);

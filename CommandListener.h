@@ -26,6 +26,14 @@ public:
     virtual ~CommandListener() {}
 
 private:
+    static void dumpArgs(int argc, char **argv, int argObscure);
+
+    class DumpCmd : public VoldCommand {
+    public:
+        DumpCmd();
+        virtual ~DumpCmd() {}
+        int runCommand(SocketClient *c, int argc, char ** argv);
+    };
 
     class VolumeCmd : public VoldCommand {
     public:

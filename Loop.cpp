@@ -23,13 +23,57 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 
+#include <linux/kdev_t.h>
+
 #define LOG_TAG "Vold"
 
 #include <cutils/log.h>
 
+#include <sysutils/SocketClient.h>
 #include "Loop.h"
 
-int Loop::lookupActive(const char *loopFile, char *buffer, size_t len) {
+int Loop::dumpState(SocketClient *c) {
+    int i;
+    int fd;
+    char filename[256];
+
+    for (i = 0; i < LOOP_MAX; i++) {
+        struct loop_info li;
+        int rc;
+
+        sprintf(filename, "/dev/block/loop%d", i);
+
+        if ((fd = open(filename, O_RDWR)) < 0) {
+            if (errno != ENOENT) {
+                LOGE("Unable to open %s (%s)", filename, strerror(errno));
+            } else {
+                continue;
+            }
+            return -1;
+        }
+
+        rc = ioctl(fd, LOOP_GET_STATUS, &li);
+        close(fd);
+        if (rc < 0 && errno == ENXIO) {
+            continue;
+        }
+
+        if (rc < 0) {
+            LOGE("Unable to get loop status for %s (%s)", filename,
+                 strerror(errno));
+            return -1;
+        }
+        char *tmp = NULL;
+        asprintf(&tmp, "%s %d %d:%d %lu %d:%d %d 0x%x {%s}", filename, li.lo_number,
+                MAJOR(li.lo_device), MINOR(li.lo_device), li.lo_inode, MAJOR(li.lo_rdevice),
+                        MINOR(li.lo_rdevice), li.lo_offset, li.lo_flags, li.lo_name);
+        c->sendMsg(0, tmp, false);
+        free(tmp);
+    }
+    return 0;
+}
+
+int Loop::lookupActive(const char *id, char *buffer, size_t len) {
     int i;
     int fd;
     char filename[256];
@@ -45,6 +89,8 @@ int Loop::lookupActive(const char *loopFile, char *buffer, size_t len) {
         if ((fd = open(filename, O_RDWR)) < 0) {
             if (errno != ENOENT) {
                 LOGE("Unable to open %s (%s)", filename, strerror(errno));
+            } else {
+                continue;
             }
             return -1;
         }
@@ -53,7 +99,6 @@ int Loop::lookupActive(const char *loopFile, char *buffer, size_t len) {
         close(fd);
         if (rc < 0 && errno == ENXIO) {
             continue;
-            break;
         }
 
         if (rc < 0) {
@@ -61,7 +106,7 @@ int Loop::lookupActive(const char *loopFile, char *buffer, size_t len) {
                  strerror(errno));
             return -1;
         }
-        if (!strncmp(li.lo_name, loopFile, LO_NAME_SIZE)) {
+        if (!strncmp(li.lo_name, id, LO_NAME_SIZE)) {
             break;
         }
     }
@@ -74,7 +119,7 @@ int Loop::lookupActive(const char *loopFile, char *buffer, size_t len) {
     return 0;
 }
 
-int Loop::create(const char *loopFile, char *loopDeviceBuffer, size_t len) {
+int Loop::create(const char *id, const char *loopFile, char *loopDeviceBuffer, size_t len) {
     int i;
     int fd;
     char filename[256];
@@ -142,7 +187,7 @@ int Loop::create(const char *loopFile, char *loopDeviceBuffer, size_t len) {
     struct loop_info li;
 
     memset(&li, 0, sizeof(li));
-    strncpy(li.lo_name, loopFile, LO_NAME_SIZE);
+    strncpy(li.lo_name, id, LO_NAME_SIZE);
 
     if (ioctl(fd, LOOP_SET_STATUS, &li) < 0) {
         LOGE("Error setting loopback status (%s)", strerror(errno));
@@ -183,8 +228,6 @@ int Loop::destroyByFile(const char *loopFile) {
 
 int Loop::createImageFile(const char *file, unsigned int numSectors) {
     int fd;
-
-    LOGD("Creating image file %s (%u sectors)", file, numSectors);
 
     if ((fd = creat(file, 0600)) < 0) {
         LOGE("Error creating imagefile (%s)", strerror(errno));
