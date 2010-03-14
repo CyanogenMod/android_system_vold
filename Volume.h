@@ -87,6 +87,7 @@ private:
     int createBindMounts();
     int doUnmount(const char *path, bool force);
     int doMoveMount(const char *src, const char *dst, bool force);
+    void protectFromAutorunStupidity();
 };
 
 typedef android::List<Volume *> VolumeCollection;

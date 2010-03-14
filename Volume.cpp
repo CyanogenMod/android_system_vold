@@ -112,6 +112,25 @@ Volume::~Volume() {
     free(mMountpoint);
 }
 
+void Volume::protectFromAutorunStupidity() {
+    char filename[255];
+
+    snprintf(filename, sizeof(filename), "%s/autorun.inf", SEC_STGDIR);
+    if (!access(filename, F_OK)) {
+        LOGW("Volume contains an autorun.inf! - removing");
+        /*
+         * Ensure the filename is all lower-case so
+         * the process killer can find the inode.
+         * Probably being paranoid here but meh.
+         */
+        rename(filename, filename);
+        Process::killProcessesWithOpenFiles(filename, 2);
+        if (unlink(filename)) {
+            LOGE("Failed to remove %s (%s)", filename, strerror(errno));
+        }
+    }
+}
+
 void Volume::setDebug(bool enable) {
     mDebug = enable;
 }
@@ -306,6 +325,8 @@ int Volume::mountVol() {
 
         LOGI("Device %s, target %s mounted @ /mnt/secure/staging", devicePath, getMountpoint());
 
+        protectFromAutorunStupidity();
+
         if (createBindMounts()) {
             LOGE("Failed to create bindmounts (%s)", strerror(errno));
             umount("/mnt/secure/staging");
@@ -486,6 +507,8 @@ int Volume::unmountVol(bool force) {
         setState(Volume::State_Mounted);
         return -1;
     }
+
+    protectFromAutorunStupidity();
 
     /*
      * Unmount the tmpfs which was obscuring the asec image directory
