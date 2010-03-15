@@ -51,7 +51,6 @@ VolumeManager *VolumeManager::Instance() {
 
 VolumeManager::VolumeManager() {
     mDebug = false;
-    mBlockDevices = new BlockDeviceCollection();
     mVolumes = new VolumeCollection();
     mActiveContainers = new AsecIdCollection();
     mBroadcaster = NULL;
@@ -59,7 +58,6 @@ VolumeManager::VolumeManager() {
 }
 
 VolumeManager::~VolumeManager() {
-    delete mBlockDevices;
     delete mVolumes;
     delete mActiveContainers;
 }

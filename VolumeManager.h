@@ -22,7 +22,6 @@
 #include <utils/List.h>
 #include <sysutils/SocketListener.h>
 
-#include "BlockDevice.h"
 #include "Volume.h"
 
 typedef android::List<char *> AsecIdCollection;
@@ -33,7 +32,6 @@ private:
 
 private:
     SocketListener        *mBroadcaster;
-    BlockDeviceCollection *mBlockDevices;
 
     VolumeCollection      *mVolumes;
     AsecIdCollection      *mActiveContainers;

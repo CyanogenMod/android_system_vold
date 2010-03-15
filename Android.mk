@@ -16,7 +16,6 @@ LOCAL_SRC_FILES:=                                      \
                   VoldCommand.cpp                      \
                   NetlinkManager.cpp                   \
                   NetlinkHandler.cpp                   \
-                  BlockDevice.cpp                      \
                   Volume.cpp                           \
                   DirectVolume.cpp                     \
                   logwrapper.c                         \
