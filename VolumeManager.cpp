@@ -27,6 +27,8 @@
 
 #define LOG_TAG "Vold"
 
+#include <openssl/md5.h>
+
 #include <cutils/log.h>
 
 #include <sysutils/NetlinkEvent.h>
@@ -39,7 +41,6 @@
 #include "Devmapper.h"
 #include "Process.h"
 #include "Asec.h"
-#include "md5.h"
 
 VolumeManager *VolumeManager::sInstance = NULL;
 
@@ -62,22 +63,22 @@ VolumeManager::~VolumeManager() {
     delete mActiveContainers;
 }
 
-char *VolumeManager::asecHash(const char *id, char *buffer, size_t len) {
-    MD5_CTX ctx;
-    unsigned char sig[16];
+#define MD5_ASCII_LENGTH ((MD5_DIGEST_LENGTH*2)+1)
 
-    if (len < 33) {
-        LOGE("Target hash buffer size < 33 bytes (%d)", len);
+char *VolumeManager::asecHash(const char *id, char *buffer, size_t len) {
+    unsigned char sig[MD5_DIGEST_LENGTH];
+
+    if (len < MD5_ASCII_LENGTH) {
+        LOGE("Target hash buffer size < %d bytes (%d)", MD5_ASCII_LENGTH, len);
         errno = ESPIPE;
         return NULL;
     }
-    MD5_Init(&ctx);
-    MD5_Update(&ctx, id, strlen(id));
-    MD5_Final(sig, &ctx);
+
+    MD5(reinterpret_cast<const unsigned char*>(id), strlen(id), sig);
 
     memset(buffer, 0, len);
 
-    for (int i = 0; i < 16; i++) {
+    for (int i = 0; i < MD5_DIGEST_LENGTH; i++) {
         char tmp[3];
         snprintf(tmp, 3, "%.02x", sig[i]);
         strcat(buffer, tmp);
@@ -576,6 +577,7 @@ int VolumeManager::mountAsec(const char *id, const char *key, int ownerUid) {
         LOGE("Hash of '%s' failed (%s)", id, strerror(errno));
         return -1;
     }
+
     char loopDevice[255];
     if (Loop::lookupActive(idHash, loopDevice, sizeof(loopDevice))) {
         if (Loop::create(idHash, asecFileName, loopDevice, sizeof(loopDevice))) {

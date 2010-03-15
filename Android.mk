@@ -11,8 +11,8 @@ include $(CLEAR_VARS)
 
 LOCAL_SRC_FILES:=                                      \
                   main.cpp                             \
-		  VolumeManager.cpp                    \
-		  CommandListener.cpp                  \
+                  VolumeManager.cpp                    \
+                  CommandListener.cpp                  \
                   VoldCommand.cpp                      \
                   NetlinkManager.cpp                   \
                   NetlinkHandler.cpp                   \
@@ -24,22 +24,27 @@ LOCAL_SRC_FILES:=                                      \
                   Loop.cpp                             \
                   Devmapper.cpp                        \
                   ResponseCode.cpp                     \
-                  Xwarp.cpp                            \
-                  md5.c
+                  Xwarp.cpp
 
 LOCAL_MODULE:= vold
 
-LOCAL_C_INCLUDES := $(KERNEL_HEADERS) -I../../frameworks/base/include/
+LOCAL_C_INCLUDES :=                          \
+                    $(KERNEL_HEADERS)        \
+                    external/openssl/include
 
 LOCAL_CFLAGS := 
 
-LOCAL_SHARED_LIBRARIES := libsysutils libcutils libdiskconfig
+LOCAL_SHARED_LIBRARIES :=               \
+                          libsysutils   \
+                          libcutils     \
+                          libdiskconfig \
+                          libcrypto
 
 include $(BUILD_EXECUTABLE)
 
 include $(CLEAR_VARS)
-LOCAL_SRC_FILES:=          \
-                  vdc.c \
+
+LOCAL_SRC_FILES:= vdc.c
 
 LOCAL_MODULE:= vdc
 
