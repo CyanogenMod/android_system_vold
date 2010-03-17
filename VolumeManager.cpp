@@ -928,7 +928,6 @@ bool VolumeManager::isMountpointMounted(const char *mp)
             fclose(fp);
             return true;
         }
-
     }
 
     fclose(fp);

@@ -88,6 +88,16 @@ int CommandListener::DumpCmd::runCommand(SocketClient *cli,
     if (Devmapper::dumpState(cli)) {
         cli->sendMsg(ResponseCode::CommandOkay, "Devmapper dump failed", true);
     }
+    cli->sendMsg(0, "Dumping mounted filesystems", false);
+    FILE *fp = fopen("/proc/mounts", "r");
+    if (fp) {
+        char line[1024];
+        while (fgets(line, sizeof(line), fp)) {
+            line[strlen(line)-1] = '\0';
+            cli->sendMsg(0, line, false);;
+        }
+        fclose(fp);
+    }
 
     cli->sendMsg(ResponseCode::CommandOkay, "dump complete", false);
     return 0;
