@@ -42,6 +42,7 @@ public:
     static const int OpFailedMediaCorrupt     = 403;
     static const int OpFailedVolNotMounted    = 404;
     static const int OpFailedStorageBusy      = 405;
+    static const int OpFailedStorageNotFound  = 406;
 
     // 500 series - The command was not accepted and the requested
     // action did not take place.

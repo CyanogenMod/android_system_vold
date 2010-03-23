@@ -33,6 +33,8 @@ int ResponseCode::convertFromErrno() {
         return(ResponseCode::OpFailedMediaCorrupt);
     } else if (errno == EBUSY) {
         return(ResponseCode::OpFailedStorageBusy);
+    } else if (errno == ENOENT) {
+        return(ResponseCode::OpFailedStorageNotFound);
     }
 
     LOGW("Returning OperationFailed - no handler for errno %d", errno);

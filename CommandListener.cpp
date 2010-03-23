@@ -378,12 +378,10 @@ int CommandListener::AsecCmd::runCommand(SocketClient *cli,
         }
         char path[255];
 
-        if (vm->getAsecMountPath(argv[2], path, sizeof(path))) {
-            cli->sendMsg(ResponseCode::OperationFailed, "Failed to get path", true);
-        } else {
+        if (!(rc = vm->getAsecMountPath(argv[2], path, sizeof(path)))) {
             cli->sendMsg(ResponseCode::AsecPathResult, path, false);
+            return 0;
         }
-        return 0;
     } else {
         dumpArgs(argc, argv, -1);
         cli->sendMsg(ResponseCode::CommandSyntaxError, "Unknown asec cmd", false);

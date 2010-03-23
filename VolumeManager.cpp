@@ -195,6 +195,14 @@ int VolumeManager::formatVolume(const char *label) {
 }
 
 int VolumeManager::getAsecMountPath(const char *id, char *buffer, int maxlen) {
+    char asecFileName[255];
+    snprintf(asecFileName, sizeof(asecFileName), "%s/%s.asec", Volume::SEC_ASECDIR, id);
+
+    memset(buffer, 0, maxlen);
+    if (access(asecFileName, F_OK)) {
+        errno = ENOENT;
+        return -1;
+    }
 
     snprintf(buffer, maxlen, "%s/%s", Volume::ASECDIR, id);
     return 0;
