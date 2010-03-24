@@ -18,12 +18,27 @@
 #define _DEVICEVOLUME_H
 
 #include <utils/List.h>
+#include <sysutils/NetlinkEvent.h>
 
 #include "Volume.h"
 
 #define MAX_PARTS 4
 
 typedef android::List<char *> PathCollection;
+
+inline bool getMajorMinorNum(NetlinkEvent *evt, int *major, int *minor) {
+    const char *major_str = evt->findParam("MAJOR");
+    const char *minor_str = evt->findParam("MINOR");
+
+    if (major_str == NULL || minor_str == NULL) {
+        return false;
+    }
+
+    *major = atoi(major_str);
+    *minor = atoi(minor_str);
+
+    return true;
+}
 
 class DirectVolume : public Volume {
 public:
