@@ -46,7 +46,7 @@ extern "C" int mount(const char *, const char *, const char *, unsigned long, co
 int Fat::check(const char *fsPath) {
     bool rw = true;
     if (access(FSCK_MSDOS_PATH, X_OK)) {
-        LOGW("Skipping fs checks\n");
+        SLOGW("Skipping fs checks\n");
         return 0;
     }
 
@@ -64,26 +64,26 @@ int Fat::check(const char *fsPath) {
 
         switch(rc) {
         case 0:
-            LOGI("Filesystem check completed OK");
+            SLOGI("Filesystem check completed OK");
             return 0;
 
         case 2:
-            LOGE("Filesystem check failed (not a FAT filesystem)");
+            SLOGE("Filesystem check failed (not a FAT filesystem)");
             errno = ENODATA;
             return -1;
 
         case 4:
             if (pass++ <= 3) {
-                LOGW("Filesystem modified - rechecking (pass %d)",
+                SLOGW("Filesystem modified - rechecking (pass %d)",
                         pass);
                 continue;
             }
-            LOGE("Failing check after too many rechecks");
+            SLOGE("Failing check after too many rechecks");
             errno = EIO;
             return -1;
 
         default:
-            LOGE("Filesystem check failed (unknown exit code %d)", rc);
+            SLOGE("Filesystem check failed (unknown exit code %d)", rc);
             errno = EIO;
             return -1;
         }
@@ -113,7 +113,7 @@ int Fat::doMount(const char *fsPath, const char *mountPoint,
     char value[PROPERTY_VALUE_MAX];
     property_get("persist.sampling_profiler", value, "");
     if (value[0] == '1') {
-        LOGW("The SD card is world-writable because the"
+        SLOGW("The SD card is world-writable because the"
             " 'persist.sampling_profiler' system property is set to '1'.");
         permMask = 0;
     }
@@ -125,7 +125,7 @@ int Fat::doMount(const char *fsPath, const char *mountPoint,
     rc = mount(fsPath, mountPoint, "vfat", flags, mountData);
 
     if (rc && errno == EROFS) {
-        LOGE("%s appears to be a read only filesystem - retrying mount RO", fsPath);
+        SLOGE("%s appears to be a read only filesystem - retrying mount RO", fsPath);
         flags |= MS_RDONLY;
         rc = mount(fsPath, mountPoint, "vfat", flags, mountData);
     }
@@ -139,7 +139,7 @@ int Fat::doMount(const char *fsPath, const char *mountPoint,
              * lost cluster chains (fsck_msdos doesn't currently do this)
              */
             if (mkdir(lost_path, 0755)) {
-                LOGE("Unable to create LOST.DIR (%s)", strerror(errno));
+                SLOGE("Unable to create LOST.DIR (%s)", strerror(errno));
             }
         }
         free(lost_path);
@@ -177,10 +177,10 @@ int Fat::format(const char *fsPath, unsigned int numSectors) {
     }
 
     if (rc == 0) {
-        LOGI("Filesystem formatted OK");
+        SLOGI("Filesystem formatted OK");
         return 0;
     } else {
-        LOGE("Format failed (unknown exit code %d)", rc);
+        SLOGE("Format failed (unknown exit code %d)", rc);
         errno = EIO;
         return -1;
     }

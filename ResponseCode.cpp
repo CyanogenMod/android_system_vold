@@ -37,6 +37,6 @@ int ResponseCode::convertFromErrno() {
         return(ResponseCode::OpFailedStorageNotFound);
     }
 
-    LOGW("Returning OperationFailed - no handler for errno %d", errno);
+    SLOGW("Returning OperationFailed - no handler for errno %d", errno);
     return(ResponseCode::OperationFailed);
 }

@@ -45,7 +45,7 @@ int Loop::dumpState(SocketClient *c) {
 
         if ((fd = open(filename, O_RDWR)) < 0) {
             if (errno != ENOENT) {
-                LOGE("Unable to open %s (%s)", filename, strerror(errno));
+                SLOGE("Unable to open %s (%s)", filename, strerror(errno));
             } else {
                 continue;
             }
@@ -59,7 +59,7 @@ int Loop::dumpState(SocketClient *c) {
         }
 
         if (rc < 0) {
-            LOGE("Unable to get loop status for %s (%s)", filename,
+            SLOGE("Unable to get loop status for %s (%s)", filename,
                  strerror(errno));
             return -1;
         }
@@ -88,7 +88,7 @@ int Loop::lookupActive(const char *id, char *buffer, size_t len) {
 
         if ((fd = open(filename, O_RDWR)) < 0) {
             if (errno != ENOENT) {
-                LOGE("Unable to open %s (%s)", filename, strerror(errno));
+                SLOGE("Unable to open %s (%s)", filename, strerror(errno));
             } else {
                 continue;
             }
@@ -102,7 +102,7 @@ int Loop::lookupActive(const char *id, char *buffer, size_t len) {
         }
 
         if (rc < 0) {
-            LOGE("Unable to get loop status for %s (%s)", filename,
+            SLOGE("Unable to get loop status for %s (%s)", filename,
                  strerror(errno));
             return -1;
         }
@@ -138,13 +138,13 @@ int Loop::create(const char *id, const char *loopFile, char *loopDeviceBuffer, s
         unsigned int dev = (0xff & i) | ((i << 12) & 0xfff00000) | (7 << 8);
         if (mknod(filename, mode, dev) < 0) {
             if (errno != EEXIST) {
-                LOGE("Error creating loop device node (%s)", strerror(errno));
+                SLOGE("Error creating loop device node (%s)", strerror(errno));
                 return -1;
             }
         }
 
         if ((fd = open(filename, O_RDWR)) < 0) {
-            LOGE("Unable to open %s (%s)", filename, strerror(errno));
+            SLOGE("Unable to open %s (%s)", filename, strerror(errno));
             return -1;
         }
 
@@ -155,14 +155,14 @@ int Loop::create(const char *id, const char *loopFile, char *loopDeviceBuffer, s
         close(fd);
 
         if (rc < 0) {
-            LOGE("Unable to get loop status for %s (%s)", filename,
+            SLOGE("Unable to get loop status for %s (%s)", filename,
                  strerror(errno));
             return -1;
         }
     }
 
     if (i == LOOP_MAX) {
-        LOGE("Exhausted all loop devices");
+        SLOGE("Exhausted all loop devices");
         errno = ENOSPC;
         return -1;
     }
@@ -172,13 +172,13 @@ int Loop::create(const char *id, const char *loopFile, char *loopDeviceBuffer, s
     int file_fd;
 
     if ((file_fd = open(loopFile, O_RDWR)) < 0) {
-        LOGE("Unable to open %s (%s)", loopFile, strerror(errno));
+        SLOGE("Unable to open %s (%s)", loopFile, strerror(errno));
         close(fd);
         return -1;
     }
 
     if (ioctl(fd, LOOP_SET_FD, file_fd) < 0) {
-        LOGE("Error setting up loopback interface (%s)", strerror(errno));
+        SLOGE("Error setting up loopback interface (%s)", strerror(errno));
         close(file_fd);
         close(fd);
         return -1;
@@ -190,7 +190,7 @@ int Loop::create(const char *id, const char *loopFile, char *loopDeviceBuffer, s
     strncpy(li.lo_name, id, LO_NAME_SIZE);
 
     if (ioctl(fd, LOOP_SET_STATUS, &li) < 0) {
-        LOGE("Error setting loopback status (%s)", strerror(errno));
+        SLOGE("Error setting loopback status (%s)", strerror(errno));
         close(file_fd);
         close(fd);
         return -1;
@@ -207,12 +207,12 @@ int Loop::destroyByDevice(const char *loopDevice) {
 
     device_fd = open(loopDevice, O_RDONLY);
     if (device_fd < 0) {
-        LOGE("Failed to open loop (%d)", errno);
+        SLOGE("Failed to open loop (%d)", errno);
         return -1;
     }
 
     if (ioctl(device_fd, LOOP_CLR_FD, 0) < 0) {
-        LOGE("Failed to destroy loop (%d)", errno);
+        SLOGE("Failed to destroy loop (%d)", errno);
         close(device_fd);
         return -1;
     }
@@ -230,12 +230,12 @@ int Loop::createImageFile(const char *file, unsigned int numSectors) {
     int fd;
 
     if ((fd = creat(file, 0600)) < 0) {
-        LOGE("Error creating imagefile (%s)", strerror(errno));
+        SLOGE("Error creating imagefile (%s)", strerror(errno));
         return -1;
     }
 
     if (ftruncate(fd, numSectors * 512) < 0) {
-        LOGE("Error truncating imagefile (%s)", strerror(errno));
+        SLOGE("Error truncating imagefile (%s)", strerror(errno));
         close(fd);
         return -1;
     }

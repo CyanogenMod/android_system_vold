@@ -42,18 +42,18 @@ int main() {
     CommandListener *cl;
     NetlinkManager *nm;
 
-    LOGI("Vold 2.1 (the revenge) firing up");
+    SLOGI("Vold 2.1 (the revenge) firing up");
 
     mkdir("/dev/block/vold", 0755);
 
     /* Create our singleton managers */
     if (!(vm = VolumeManager::Instance())) {
-        LOGE("Unable to create VolumeManager");
+        SLOGE("Unable to create VolumeManager");
         exit(1);
     };
 
     if (!(nm = NetlinkManager::Instance())) {
-        LOGE("Unable to create NetlinkManager");
+        SLOGE("Unable to create NetlinkManager");
         exit(1);
     };
 
@@ -63,16 +63,16 @@ int main() {
     nm->setBroadcaster((SocketListener *) cl);
 
     if (vm->start()) {
-        LOGE("Unable to start VolumeManager (%s)", strerror(errno));
+        SLOGE("Unable to start VolumeManager (%s)", strerror(errno));
         exit(1);
     }
 
     if (process_config(vm)) {
-        LOGE("Error reading configuration (%s)... continuing anyways", strerror(errno));
+        SLOGE("Error reading configuration (%s)... continuing anyways", strerror(errno));
     }
 
     if (nm->start()) {
-        LOGE("Unable to start NetlinkManager (%s)", strerror(errno));
+        SLOGE("Unable to start NetlinkManager (%s)", strerror(errno));
         exit(1);
     }
 
@@ -95,12 +95,12 @@ int main() {
                     vm->notifyUmsConnected(false);
                 }
             } else {
-                LOGE("Failed to read switch state (%s)", strerror(errno));
+                SLOGE("Failed to read switch state (%s)", strerror(errno));
             }
 
             fclose(fp);
         } else {
-            LOGW("No UMS switch available");
+            SLOGW("No UMS switch available");
         }
     }
 //    coldboot("/sys/class/switch");
@@ -109,7 +109,7 @@ int main() {
      * Now that we're up, we can respond to commands
      */
     if (cl->startListener()) {
-        LOGE("Unable to start CommandListener (%s)", strerror(errno));
+        SLOGE("Unable to start CommandListener (%s)", strerror(errno));
         exit(1);
     }
 
@@ -118,7 +118,7 @@ int main() {
         sleep(1000);
     }
 
-    LOGI("Vold exiting");
+    SLOGI("Vold exiting");
     exit(0);
 }
 
@@ -187,15 +187,15 @@ static int process_config(VolumeManager *vm) {
             continue;
 
         if (!(type = strsep(&next, " \t"))) {
-            LOGE("Error parsing type");
+            SLOGE("Error parsing type");
             goto out_syntax;
         }
         if (!(label = strsep(&next, " \t"))) {
-            LOGE("Error parsing label");
+            SLOGE("Error parsing label");
             goto out_syntax;
         }
         if (!(mount_point = strsep(&next, " \t"))) {
-            LOGE("Error parsing mount point");
+            SLOGE("Error parsing mount point");
             goto out_syntax;
         }
 
@@ -204,11 +204,11 @@ static int process_config(VolumeManager *vm) {
             char *part, *sysfs_path;
 
             if (!(part = strsep(&next, " \t"))) {
-                LOGE("Error parsing partition");
+                SLOGE("Error parsing partition");
                 goto out_syntax;
             }
             if (strcmp(part, "auto") && atoi(part) == 0) {
-                LOGE("Partition must either be 'auto' or 1 based index instead of '%s'", part);
+                SLOGE("Partition must either be 'auto' or 1 based index instead of '%s'", part);
                 goto out_syntax;
             }
 
@@ -220,7 +220,7 @@ static int process_config(VolumeManager *vm) {
 
             while((sysfs_path = strsep(&next, " \t"))) {
                 if (dv->addPath(sysfs_path)) {
-                    LOGE("Failed to add devpath %s to volume %s", sysfs_path,
+                    SLOGE("Failed to add devpath %s to volume %s", sysfs_path,
                          label);
                     goto out_fail;
                 }
@@ -228,7 +228,7 @@ static int process_config(VolumeManager *vm) {
             vm->addVolume(dv);
         } else if (!strcmp(type, "map_mount")) {
         } else {
-            LOGE("Unknown type '%s'", type);
+            SLOGE("Unknown type '%s'", type);
             goto out_syntax;
         }
     }
@@ -237,7 +237,7 @@ static int process_config(VolumeManager *vm) {
     return 0;
 
 out_syntax:
-    LOGE("Syntax error on config line %d", n);
+    SLOGE("Syntax error on config line %d", n);
     errno = -EINVAL;
 out_fail:
     fclose(fp);

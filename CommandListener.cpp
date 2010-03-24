@@ -71,7 +71,7 @@ void CommandListener::dumpArgs(int argc, char **argv, int argObscure) {
             }
         }
     }
-    LOGD("%s", buffer);
+    SLOGD("%s", buffer);
 }
 
 CommandListener::DumpCmd::DumpCmd() :

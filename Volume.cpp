@@ -117,7 +117,7 @@ void Volume::protectFromAutorunStupidity() {
 
     snprintf(filename, sizeof(filename), "%s/autorun.inf", SEC_STGDIR);
     if (!access(filename, F_OK)) {
-        LOGW("Volume contains an autorun.inf! - removing");
+        SLOGW("Volume contains an autorun.inf! - removing");
         /*
          * Ensure the filename is all lower-case so
          * the process killer can find the inode.
@@ -126,7 +126,7 @@ void Volume::protectFromAutorunStupidity() {
         rename(filename, filename);
         Process::killProcessesWithOpenFiles(filename, 2);
         if (unlink(filename)) {
-            LOGE("Failed to remove %s (%s)", filename, strerror(errno));
+            SLOGE("Failed to remove %s (%s)", filename, strerror(errno));
         }
     }
 }
@@ -155,13 +155,13 @@ void Volume::setState(int state) {
     int oldState = mState;
 
     if (oldState == state) {
-        LOGW("Duplicate state (%d)\n", state);
+        SLOGW("Duplicate state (%d)\n", state);
         return;
     }
 
     mState = state;
 
-    LOGD("Volume %s state changing %d (%s) -> %d (%s)", mLabel,
+    SLOGD("Volume %s state changing %d (%s) -> %d (%s)", mLabel,
          oldState, stateToStr(oldState), mState, stateToStr(mState));
     snprintf(msg, sizeof(msg),
              "Volume %s %s state changed from %d (%s) to %d (%s)", getLabel(),
@@ -194,7 +194,7 @@ int Volume::formatVol() {
     }
 
     if (isMountpointMounted(getMountpoint())) {
-        LOGW("Volume is idle but appears to be mounted - fixing");
+        SLOGW("Volume is idle but appears to be mounted - fixing");
         setState(Volume::State_Mounted);
         // mCurrentlyMountedKdev = XXX
         errno = EBUSY;
@@ -209,12 +209,12 @@ int Volume::formatVol() {
             MAJOR(diskNode), MINOR(diskNode));
 
     if (mDebug) {
-        LOGI("Formatting volume %s (%s)", getLabel(), devicePath);
+        SLOGI("Formatting volume %s (%s)", getLabel(), devicePath);
     }
     setState(Volume::State_Formatting);
 
     if (initializeMbr(devicePath)) {
-        LOGE("Failed to initialize MBR (%s)", strerror(errno));
+        SLOGE("Failed to initialize MBR (%s)", strerror(errno));
         goto err;
     }
 
@@ -222,7 +222,7 @@ int Volume::formatVol() {
             MAJOR(partNode), MINOR(partNode));
 
     if (Fat::format(devicePath, 0)) {
-        LOGE("Failed to format (%s)", strerror(errno));
+        SLOGE("Failed to format (%s)", strerror(errno));
         goto err;
     }
 
@@ -240,7 +240,7 @@ bool Volume::isMountpointMounted(const char *path) {
     char line[1024];
 
     if (!(fp = fopen("/proc/mounts", "r"))) {
-        LOGE("Error opening /proc/mounts (%s)", strerror(errno));
+        SLOGE("Error opening /proc/mounts (%s)", strerror(errno));
         return false;
     }
 
@@ -278,7 +278,7 @@ int Volume::mountVol() {
     }
 
     if (isMountpointMounted(getMountpoint())) {
-        LOGW("Volume is idle but appears to be mounted - fixing");
+        SLOGW("Volume is idle but appears to be mounted - fixing");
         setState(Volume::State_Mounted);
         // mCurrentlyMountedKdev = XXX
         return 0;
@@ -286,7 +286,7 @@ int Volume::mountVol() {
 
     n = getDeviceNodes((dev_t *) &deviceNodes, 4);
     if (!n) {
-        LOGE("Failed to get device nodes (%s)\n", strerror(errno));
+        SLOGE("Failed to get device nodes (%s)\n", strerror(errno));
         return -1;
     }
 
@@ -296,19 +296,19 @@ int Volume::mountVol() {
         sprintf(devicePath, "/dev/block/vold/%d:%d", MAJOR(deviceNodes[i]),
                 MINOR(deviceNodes[i]));
 
-        LOGI("%s being considered for volume %s\n", devicePath, getLabel());
+        SLOGI("%s being considered for volume %s\n", devicePath, getLabel());
 
         errno = 0;
         setState(Volume::State_Checking);
 
         if (Fat::check(devicePath)) {
             if (errno == ENODATA) {
-                LOGW("%s does not contain a FAT filesystem\n", devicePath);
+                SLOGW("%s does not contain a FAT filesystem\n", devicePath);
                 continue;
             }
             errno = EIO;
             /* Badness - abort the mount */
-            LOGE("%s failed FS checks (%s)", devicePath, strerror(errno));
+            SLOGE("%s failed FS checks (%s)", devicePath, strerror(errno));
             setState(Volume::State_Idle);
             return -1;
         }
@@ -319,16 +319,16 @@ int Volume::mountVol() {
          */
         errno = 0;
         if (Fat::doMount(devicePath, "/mnt/secure/staging", false, false, 1000, 1015, 0702, true)) {
-            LOGE("%s failed to mount via VFAT (%s)\n", devicePath, strerror(errno));
+            SLOGE("%s failed to mount via VFAT (%s)\n", devicePath, strerror(errno));
             continue;
         }
 
-        LOGI("Device %s, target %s mounted @ /mnt/secure/staging", devicePath, getMountpoint());
+        SLOGI("Device %s, target %s mounted @ /mnt/secure/staging", devicePath, getMountpoint());
 
         protectFromAutorunStupidity();
 
         if (createBindMounts()) {
-            LOGE("Failed to create bindmounts (%s)", strerror(errno));
+            SLOGE("Failed to create bindmounts (%s)", strerror(errno));
             umount("/mnt/secure/staging");
             setState(Volume::State_Idle);
             return -1;
@@ -339,7 +339,7 @@ int Volume::mountVol() {
          * whole subtree to expose it to non priviledged users.
          */
         if (doMoveMount("/mnt/secure/staging", getMountpoint(), false)) {
-            LOGE("Failed to move mount (%s)", strerror(errno));
+            SLOGE("Failed to move mount (%s)", strerror(errno));
             umount("/mnt/secure/staging");
             setState(Volume::State_Idle);
             return -1;
@@ -349,7 +349,7 @@ int Volume::mountVol() {
         return 0;
     }
 
-    LOGE("Volume %s found no suitable devices for mounting :(\n", getLabel());
+    SLOGE("Volume %s found no suitable devices for mounting :(\n", getLabel());
     setState(Volume::State_Idle);
 
     return -1;
@@ -364,7 +364,7 @@ int Volume::createBindMounts() {
     if (!access("/mnt/secure/staging/android_secure", R_OK | X_OK) &&
          access(SEC_STG_SECIMGDIR, R_OK | X_OK)) {
         if (rename("/mnt/secure/staging/android_secure", SEC_STG_SECIMGDIR)) {
-            LOGE("Failed to rename legacy asec dir (%s)", strerror(errno));
+            SLOGE("Failed to rename legacy asec dir (%s)", strerror(errno));
         }
     }
 
@@ -374,22 +374,22 @@ int Volume::createBindMounts() {
     if (access(SEC_STG_SECIMGDIR, R_OK | X_OK)) {
         if (errno == ENOENT) {
             if (mkdir(SEC_STG_SECIMGDIR, 0777)) {
-                LOGE("Failed to create %s (%s)", SEC_STG_SECIMGDIR, strerror(errno));
+                SLOGE("Failed to create %s (%s)", SEC_STG_SECIMGDIR, strerror(errno));
                 return -1;
             }
         } else {
-            LOGE("Failed to access %s (%s)", SEC_STG_SECIMGDIR, strerror(errno));
+            SLOGE("Failed to access %s (%s)", SEC_STG_SECIMGDIR, strerror(errno));
             return -1;
         }
     } else {
         struct stat sbuf;
 
         if (stat(SEC_STG_SECIMGDIR, &sbuf)) {
-            LOGE("Failed to stat %s (%s)", SEC_STG_SECIMGDIR, strerror(errno));
+            SLOGE("Failed to stat %s (%s)", SEC_STG_SECIMGDIR, strerror(errno));
             return -1;
         }
         if (!S_ISDIR(sbuf.st_mode)) {
-            LOGE("%s is not a directory", SEC_STG_SECIMGDIR);
+            SLOGE("%s is not a directory", SEC_STG_SECIMGDIR);
             errno = ENOTDIR;
             return -1;
         }
@@ -400,7 +400,7 @@ int Volume::createBindMounts() {
      * have a root only accessable mountpoint for it.
      */
     if (mount(SEC_STG_SECIMGDIR, SEC_ASECDIR, "", MS_BIND, NULL)) {
-        LOGE("Failed to bind mount points %s -> %s (%s)",
+        SLOGE("Failed to bind mount points %s -> %s (%s)",
                 SEC_STG_SECIMGDIR, SEC_ASECDIR, strerror(errno));
         return -1;
     }
@@ -410,7 +410,7 @@ int Volume::createBindMounts() {
      * obscure the underlying directory from everybody - sneaky eh? ;)
      */
     if (mount("tmpfs", SEC_STG_SECIMGDIR, "tmpfs", MS_RDONLY, "size=0,mode=000,uid=0,gid=0")) {
-        LOGE("Failed to obscure %s (%s)", SEC_STG_SECIMGDIR, strerror(errno));
+        SLOGE("Failed to obscure %s (%s)", SEC_STG_SECIMGDIR, strerror(errno));
         umount("/mnt/asec_secure");
         return -1;
     }
@@ -425,11 +425,11 @@ int Volume::doMoveMount(const char *src, const char *dst, bool force) {
     while(retries--) {
         if (!mount(src, dst, "", flags, NULL)) {
             if (mDebug) {
-                LOGD("Moved mount %s -> %s sucessfully", src, dst);
+                SLOGD("Moved mount %s -> %s sucessfully", src, dst);
             }
             return 0;
         } else if (errno != EBUSY) {
-            LOGE("Failed to move mount %s -> %s (%s)", src, dst, strerror(errno));
+            SLOGE("Failed to move mount %s -> %s (%s)", src, dst, strerror(errno));
             return -1;
         }
         int action = 0;
@@ -441,14 +441,14 @@ int Volume::doMoveMount(const char *src, const char *dst, bool force) {
                 action = 1; // SIGHUP
             }
         }
-        LOGW("Failed to move %s -> %s (%s, retries %d, action %d)",
+        SLOGW("Failed to move %s -> %s (%s, retries %d, action %d)",
                 src, dst, strerror(errno), retries, action);
         Process::killProcessesWithOpenFiles(src, action);
         usleep(1000*250);
     }
 
     errno = EBUSY;
-    LOGE("Giving up on move %s -> %s (%s)", src, dst, strerror(errno));
+    SLOGE("Giving up on move %s -> %s (%s)", src, dst, strerror(errno));
     return -1;
 }
 
@@ -456,12 +456,12 @@ int Volume::doUnmount(const char *path, bool force) {
     int retries = 10;
 
     if (mDebug) {
-        LOGD("Unmounting {%s}, force = %d", path, force);
+        SLOGD("Unmounting {%s}, force = %d", path, force);
     }
 
     while (retries--) {
         if (!umount(path) || errno == EINVAL || errno == ENOENT) {
-            LOGI("%s sucessfully unmounted", path);
+            SLOGI("%s sucessfully unmounted", path);
             return 0;
         }
 
@@ -475,14 +475,14 @@ int Volume::doUnmount(const char *path, bool force) {
             }
         }
 
-        LOGW("Failed to unmount %s (%s, retries %d, action %d)",
+        SLOGW("Failed to unmount %s (%s, retries %d, action %d)",
                 path, strerror(errno), retries, action);
 
         Process::killProcessesWithOpenFiles(path, action);
         usleep(1000*1000);
     }
     errno = EBUSY;
-    LOGE("Giving up on unmount %s (%s)", path, strerror(errno));
+    SLOGE("Giving up on unmount %s (%s)", path, strerror(errno));
     return -1;
 }
 
@@ -490,7 +490,7 @@ int Volume::unmountVol(bool force) {
     int i, rc;
 
     if (getState() != Volume::State_Mounted) {
-        LOGE("Volume %s unmount request when not mounted", getLabel());
+        SLOGE("Volume %s unmount request when not mounted", getLabel());
         errno = EINVAL;
         return -1;
     }
@@ -503,7 +503,7 @@ int Volume::unmountVol(bool force) {
      * so nobody else can muck with it while we work.
      */
     if (doMoveMount(getMountpoint(), SEC_STGDIR, force)) {
-        LOGE("Failed to move mount %s => %s (%s)", getMountpoint(), SEC_STGDIR, strerror(errno));
+        SLOGE("Failed to move mount %s => %s (%s)", getMountpoint(), SEC_STGDIR, strerror(errno));
         setState(Volume::State_Mounted);
         return -1;
     }
@@ -516,7 +516,7 @@ int Volume::unmountVol(bool force) {
      */
 
     if (doUnmount(Volume::SEC_STG_SECIMGDIR, force)) {
-        LOGE("Failed to unmount tmpfs on %s (%s)", SEC_STG_SECIMGDIR, strerror(errno));
+        SLOGE("Failed to unmount tmpfs on %s (%s)", SEC_STG_SECIMGDIR, strerror(errno));
         goto fail_republish;
     }
 
@@ -526,7 +526,7 @@ int Volume::unmountVol(bool force) {
      */
 
     if (doUnmount(Volume::SEC_ASECDIR, force)) {
-        LOGE("Failed to remove bindmount on %s (%s)", SEC_ASECDIR, strerror(errno));
+        SLOGE("Failed to remove bindmount on %s (%s)", SEC_ASECDIR, strerror(errno));
         goto fail_remount_tmpfs;
     }
 
@@ -534,11 +534,11 @@ int Volume::unmountVol(bool force) {
      * Finally, unmount the actual block device from the staging dir
      */
     if (doUnmount(Volume::SEC_STGDIR, force)) {
-        LOGE("Failed to unmount %s (%s)", SEC_STGDIR, strerror(errno));
+        SLOGE("Failed to unmount %s (%s)", SEC_STGDIR, strerror(errno));
         goto fail_recreate_bindmount;
     }
 
-    LOGI("%s unmounted sucessfully", getMountpoint());
+    SLOGI("%s unmounted sucessfully", getMountpoint());
 
     setState(Volume::State_Idle);
     mCurrentlyMountedKdev = -1;
@@ -549,17 +549,17 @@ int Volume::unmountVol(bool force) {
      */
 fail_recreate_bindmount:
     if (mount(SEC_STG_SECIMGDIR, SEC_ASECDIR, "", MS_BIND, NULL)) {
-        LOGE("Failed to restore bindmount after failure! - Storage will appear offline!");
+        SLOGE("Failed to restore bindmount after failure! - Storage will appear offline!");
         goto out_nomedia;
     }
 fail_remount_tmpfs:
     if (mount("tmpfs", SEC_STG_SECIMGDIR, "tmpfs", MS_RDONLY, "size=0,mode=0,uid=0,gid=0")) {
-        LOGE("Failed to restore tmpfs after failure! - Storage will appear offline!");
+        SLOGE("Failed to restore tmpfs after failure! - Storage will appear offline!");
         goto out_nomedia;
     }
 fail_republish:
     if (doMoveMount(SEC_STGDIR, getMountpoint(), force)) {
-        LOGE("Failed to republish mount after failure! - Storage will appear offline!");
+        SLOGE("Failed to republish mount after failure! - Storage will appear offline!");
         goto out_nomedia;
     }
 
@@ -577,7 +577,7 @@ int Volume::initializeMbr(const char *deviceNode) {
     memset(&dinfo, 0, sizeof(dinfo));
 
     if (!(dinfo.part_lst = (struct part_info *) malloc(MAX_NUM_PARTS * sizeof(struct part_info)))) {
-        LOGE("Failed to malloc prt_lst");
+        SLOGE("Failed to malloc prt_lst");
         return -1;
     }
 
@@ -599,7 +599,7 @@ int Volume::initializeMbr(const char *deviceNode) {
     int rc = apply_disk_config(&dinfo, 0);
 
     if (rc) {
-        LOGE("Failed to apply disk configuration (%d)", rc);
+        SLOGE("Failed to apply disk configuration (%d)", rc);
         goto out;
     }
 

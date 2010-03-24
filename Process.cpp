@@ -182,7 +182,7 @@ void Process::killProcessesWithOpenFiles(const char *path, int action) {
     struct dirent* de;
 
     if (!(dir = opendir("/proc"))) {
-        LOGE("opendir failed (%s)", strerror(errno));
+        SLOGE("opendir failed (%s)", strerror(errno));
         return;
     }
 
@@ -198,23 +198,23 @@ void Process::killProcessesWithOpenFiles(const char *path, int action) {
         char openfile[PATH_MAX];
 
         if (checkFileDescriptorSymLinks(pid, path, openfile, sizeof(openfile))) {
-            LOGE("Process %s (%d) has open file %s", name, pid, openfile);
+            SLOGE("Process %s (%d) has open file %s", name, pid, openfile);
         } else if (checkFileMaps(pid, path, openfile, sizeof(openfile))) {
-            LOGE("Process %s (%d) has open filemap for %s", name, pid, openfile);
+            SLOGE("Process %s (%d) has open filemap for %s", name, pid, openfile);
         } else if (checkSymLink(pid, path, "cwd")) {
-            LOGE("Process %s (%d) has cwd within %s", name, pid, path);
+            SLOGE("Process %s (%d) has cwd within %s", name, pid, path);
         } else if (checkSymLink(pid, path, "root")) {
-            LOGE("Process %s (%d) has chroot within %s", name, pid, path);
+            SLOGE("Process %s (%d) has chroot within %s", name, pid, path);
         } else if (checkSymLink(pid, path, "exe")) {
-            LOGE("Process %s (%d) has executable path within %s", name, pid, path);
+            SLOGE("Process %s (%d) has executable path within %s", name, pid, path);
         } else {
             continue;
         }
         if (action == 1) {
-            LOGW("Sending SIGHUP to process %d", pid);
+            SLOGW("Sending SIGHUP to process %d", pid);
             kill(pid, SIGTERM);
         } else if (action == 2) {
-            LOGE("Sending SIGKILL to process %d", pid);
+            SLOGE("Sending SIGKILL to process %d", pid);
             kill(pid, SIGKILL);
         }
     }

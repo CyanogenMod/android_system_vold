@@ -73,7 +73,7 @@ int Xwarp::doEnableDisable(bool enable) {
     tmp = (enable ? XWARP_BACKINGFILE : "");
 
     if (write(fd, tmp, strlen(tmp)+1) < 0) {
-        LOGE("Failed to write xwarp cfg (%s)", strerror(errno));
+        SLOGE("Failed to write xwarp cfg (%s)", strerror(errno));
         close(fd);
         return -1;
     }

@@ -92,7 +92,7 @@ int DirectVolume::handleBlockEvent(NetlinkEvent *evt) {
                          sizeof(nodepath), "/dev/block/vold/%d:%d",
                          major, minor);
                 if (createDeviceNode(nodepath, major, minor)) {
-                    LOGE("Error making device node '%s' (%s)", nodepath,
+                    SLOGE("Error making device node '%s' (%s)", nodepath,
                                                                strerror(errno));
                 }
                 if (!strcmp(devtype, "disk")) {
@@ -113,7 +113,7 @@ int DirectVolume::handleBlockEvent(NetlinkEvent *evt) {
                     handlePartitionChanged(dp, evt);
                 }
             } else {
-                    LOGW("Ignoring non add/remove/change event");
+                    SLOGW("Ignoring non add/remove/change event");
             }
 
             return 0;
@@ -131,7 +131,7 @@ void DirectVolume::handleDiskAdded(const char *devpath, NetlinkEvent *evt) {
     if (tmp) {
         mDiskNumParts = atoi(tmp);
     } else {
-        LOGW("Kernel block uevent missing 'NPARTS'");
+        SLOGW("Kernel block uevent missing 'NPARTS'");
         mDiskNumParts = 1;
     }
 
@@ -146,12 +146,12 @@ void DirectVolume::handleDiskAdded(const char *devpath, NetlinkEvent *evt) {
 
     if (mDiskNumParts == 0) {
 #ifdef PARTITION_DEBUG
-        LOGD("Dv::diskIns - No partitions - good to go son!");
+        SLOGD("Dv::diskIns - No partitions - good to go son!");
 #endif
         setState(Volume::State_Idle);
     } else {
 #ifdef PARTITION_DEBUG
-        LOGD("Dv::diskIns - waiting for %d partitions (mask 0x%x)",
+        SLOGD("Dv::diskIns - waiting for %d partitions (mask 0x%x)",
              mDiskNumParts, mPendingPartMap);
 #endif
         setState(Volume::State_Pending);
@@ -174,7 +174,7 @@ void DirectVolume::handlePartitionAdded(const char *devpath, NetlinkEvent *evt) 
     if (tmp) {
         part_num = atoi(tmp);
     } else {
-        LOGW("Kernel block uevent missing 'PARTN'");
+        SLOGW("Kernel block uevent missing 'PARTN'");
         part_num = 1;
     }
 
@@ -183,25 +183,25 @@ void DirectVolume::handlePartitionAdded(const char *devpath, NetlinkEvent *evt) 
     }
 
     if (major != mDiskMajor) {
-        LOGE("Partition '%s' has a different major than its disk!", devpath);
+        SLOGE("Partition '%s' has a different major than its disk!", devpath);
         return;
     }
 #ifdef PARTITION_DEBUG
-    LOGD("Dv:partAdd: part_num = %d, minor = %d\n", part_num, minor);
+    SLOGD("Dv:partAdd: part_num = %d, minor = %d\n", part_num, minor);
 #endif
     mPartMinors[part_num -1] = minor;
 
     mPendingPartMap &= ~(1 << part_num);
     if (!mPendingPartMap) {
 #ifdef PARTITION_DEBUG
-        LOGD("Dv:partAdd: Got all partitions - ready to rock!");
+        SLOGD("Dv:partAdd: Got all partitions - ready to rock!");
 #endif
         if (getState() != Volume::State_Formatting) {
             setState(Volume::State_Idle);
         }
     } else {
 #ifdef PARTITION_DEBUG
-        LOGD("Dv:partAdd: pending mask now = 0x%x", mPendingPartMap);
+        SLOGD("Dv:partAdd: pending mask now = 0x%x", mPendingPartMap);
 #endif
     }
 }
@@ -214,12 +214,12 @@ void DirectVolume::handleDiskChanged(const char *devpath, NetlinkEvent *evt) {
         return;
     }
 
-    LOGI("Volume %s disk has changed", getLabel());
+    SLOGI("Volume %s disk has changed", getLabel());
     const char *tmp = evt->findParam("NPARTS");
     if (tmp) {
         mDiskNumParts = atoi(tmp);
     } else {
-        LOGW("Kernel block uevent missing 'NPARTS'");
+        SLOGW("Kernel block uevent missing 'NPARTS'");
         mDiskNumParts = 1;
     }
 
@@ -242,7 +242,7 @@ void DirectVolume::handleDiskChanged(const char *devpath, NetlinkEvent *evt) {
 void DirectVolume::handlePartitionChanged(const char *devpath, NetlinkEvent *evt) {
     int major = atoi(evt->findParam("MAJOR"));
     int minor = atoi(evt->findParam("MINOR"));
-    LOGD("Volume %s %s partition %d:%d changed\n", getLabel(), getMountpoint(), major, minor);
+    SLOGD("Volume %s %s partition %d:%d changed\n", getLabel(), getMountpoint(), major, minor);
 }
 
 void DirectVolume::handleDiskRemoved(const char *devpath, NetlinkEvent *evt) {
@@ -250,7 +250,7 @@ void DirectVolume::handleDiskRemoved(const char *devpath, NetlinkEvent *evt) {
     int minor = atoi(evt->findParam("MINOR"));
     char msg[255];
 
-    LOGD("Volume %s %s disk %d:%d removed\n", getLabel(), getMountpoint(), major, minor);
+    SLOGD("Volume %s %s disk %d:%d removed\n", getLabel(), getMountpoint(), major, minor);
     snprintf(msg, sizeof(msg), "Volume %s %s disk removed (%d:%d)",
              getLabel(), getMountpoint(), major, minor);
     mVm->getBroadcaster()->sendBroadcast(ResponseCode::VolumeDiskRemoved,
@@ -263,7 +263,7 @@ void DirectVolume::handlePartitionRemoved(const char *devpath, NetlinkEvent *evt
     int minor = atoi(evt->findParam("MINOR"));
     char msg[255];
 
-    LOGD("Volume %s %s partition %d:%d removed\n", getLabel(), getMountpoint(), major, minor);
+    SLOGD("Volume %s %s partition %d:%d removed\n", getLabel(), getMountpoint(), major, minor);
 
     /*
      * The framework doesn't need to get notified of
@@ -285,11 +285,11 @@ void DirectVolume::handlePartitionRemoved(const char *devpath, NetlinkEvent *evt
         mVm->getBroadcaster()->sendBroadcast(ResponseCode::VolumeBadRemoval,
                                              msg, false);
         if (Volume::unmountVol(true)) {
-            LOGE("Failed to unmount volume on bad removal (%s)", 
+            SLOGE("Failed to unmount volume on bad removal (%s)", 
                  strerror(errno));
             // XXX: At this point we're screwed for now
         } else {
-            LOGD("Crisis averted");
+            SLOGD("Crisis averted");
         }
     }
 }
