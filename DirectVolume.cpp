@@ -124,11 +124,8 @@ int DirectVolume::handleBlockEvent(NetlinkEvent *evt) {
 }
 
 void DirectVolume::handleDiskAdded(const char *devpath, NetlinkEvent *evt) {
-    int major, minor;
-    if (!getMajorMinorNum(evt, &major, &minor)) {
-        LOGE("Could not determine major:minor in handleDiskAdded");
-        return;
-    }
+    mDiskMajor = atoi(evt->findParam("MAJOR"));
+    mDiskMinor = atoi(evt->findParam("MINOR"));
 
     const char *tmp = evt->findParam("NPARTS");
     if (tmp) {
@@ -167,11 +164,8 @@ void DirectVolume::handleDiskAdded(const char *devpath, NetlinkEvent *evt) {
 }
 
 void DirectVolume::handlePartitionAdded(const char *devpath, NetlinkEvent *evt) {
-    int major, minor;
-    if (!getMajorMinorNum(evt, &major, &minor)) {
-        LOGE("Could not determine major:minor in handlePartitionAdded");
-        return;
-    }
+    int major = atoi(evt->findParam("MAJOR"));
+    int minor = atoi(evt->findParam("MINOR"));
 
     int part_num;
 
@@ -213,11 +207,8 @@ void DirectVolume::handlePartitionAdded(const char *devpath, NetlinkEvent *evt) 
 }
 
 void DirectVolume::handleDiskChanged(const char *devpath, NetlinkEvent *evt) {
-    int major, minor;
-    if (!getMajorMinorNum(evt, &major, &minor)) {
-        LOGE("Could not determine major:minor in handleDiskChanged");
-        return;
-    }
+    int major = atoi(evt->findParam("MAJOR"));
+    int minor = atoi(evt->findParam("MINOR"));
 
     if ((major != mDiskMajor) || (minor != mDiskMinor)) {
         return;
@@ -249,22 +240,14 @@ void DirectVolume::handleDiskChanged(const char *devpath, NetlinkEvent *evt) {
 }
 
 void DirectVolume::handlePartitionChanged(const char *devpath, NetlinkEvent *evt) {
-    int major, minor;
-    if (!getMajorMinorNum(evt, &major, &minor)) {
-        LOGE("Could not determine major:minor in handlePartitionChanged");
-        return;
-    }
-
+    int major = atoi(evt->findParam("MAJOR"));
+    int minor = atoi(evt->findParam("MINOR"));
     LOGD("Volume %s %s partition %d:%d changed\n", getLabel(), getMountpoint(), major, minor);
 }
 
 void DirectVolume::handleDiskRemoved(const char *devpath, NetlinkEvent *evt) {
-    int major, minor;
-    if (!getMajorMinorNum(evt, &major, &minor)) {
-        LOGE("Could not determine major:minor in handleDiskRemoved");
-        return;
-    }
-
+    int major = atoi(evt->findParam("MAJOR"));
+    int minor = atoi(evt->findParam("MINOR"));
     char msg[255];
 
     LOGD("Volume %s %s disk %d:%d removed\n", getLabel(), getMountpoint(), major, minor);
@@ -276,12 +259,8 @@ void DirectVolume::handleDiskRemoved(const char *devpath, NetlinkEvent *evt) {
 }
 
 void DirectVolume::handlePartitionRemoved(const char *devpath, NetlinkEvent *evt) {
-    int major, minor;
-    if (!getMajorMinorNum(evt, &major, &minor)) {
-        LOGE("Could not determine major:minor in handlePartitionRemoved");
-        return;
-    }
-
+    int major = atoi(evt->findParam("MAJOR"));
+    int minor = atoi(evt->findParam("MINOR"));
     char msg[255];
 
     LOGD("Volume %s %s partition %d:%d removed\n", getLabel(), getMountpoint(), major, minor);
