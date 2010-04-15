@@ -71,6 +71,8 @@ public:
 
     // XXX: This should be moved private once switch uevents are working
     void notifyUmsConnected(bool connected);
+    // XXX: Post froyo this should be moved and cleaned up
+    int cleanupAsec(Volume *v, bool force);
 
     void setBroadcaster(SocketListener *sl) { mBroadcaster = sl; }
     SocketListener *getBroadcaster() { return mBroadcaster; }
@@ -78,6 +80,7 @@ public:
     static VolumeManager *Instance();
 
     static char *asecHash(const char *id, char *buffer, size_t len);
+
 private:
     VolumeManager();
     Volume *lookupVolume(const char *label);

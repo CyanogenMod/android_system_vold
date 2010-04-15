@@ -886,14 +886,7 @@ int VolumeManager::unmountVolume(const char *label, bool force) {
         return -1;
     }
 
-    while(mActiveContainers->size()) {
-        AsecIdCollection::iterator it = mActiveContainers->begin();
-        SLOGI("Unmounting ASEC %s (dependant on %s)", *it, v->getMountpoint());
-        if (unmountAsec(*it, force)) {
-            SLOGE("Failed to unmount ASEC %s (%s)", *it, strerror(errno));
-            return -1;
-        }
-    }
+    cleanupAsec(v, force);
 
     return v->unmountVol(force);
 }
@@ -940,5 +933,17 @@ bool VolumeManager::isMountpointMounted(const char *mp)
 
     fclose(fp);
     return false;
+}
+
+int VolumeManager::cleanupAsec(Volume *v, bool force) {
+    while(mActiveContainers->size()) {
+        AsecIdCollection::iterator it = mActiveContainers->begin();
+        SLOGI("Unmounting ASEC %s (dependant on %s)", *it, v->getMountpoint());
+        if (unmountAsec(*it, force)) {
+            SLOGE("Failed to unmount ASEC %s (%s)", *it, strerror(errno));
+            return -1;
+        }
+    }
+    return 0;
 }
 

@@ -284,6 +284,11 @@ void DirectVolume::handlePartitionRemoved(const char *devpath, NetlinkEvent *evt
                  getLabel(), getMountpoint(), major, minor);
         mVm->getBroadcaster()->sendBroadcast(ResponseCode::VolumeBadRemoval,
                                              msg, false);
+
+	if (mVm->cleanupAsec(this, true)) {
+            SLOGE("Failed to cleanup ASEC - unmount will probably fail!");
+        }
+
         if (Volume::unmountVol(true)) {
             SLOGE("Failed to unmount volume on bad removal (%s)", 
                  strerror(errno));
