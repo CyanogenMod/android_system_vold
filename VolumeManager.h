@@ -24,6 +24,9 @@
 
 #include "Volume.h"
 
+/* The length of an MD5 hash when encoded into ASCII hex characters */
+#define MD5_ASCII_LENGTH_PLUS_NULL ((MD5_DIGEST_LENGTH*2)+1)
+
 typedef android::List<char *> AsecIdCollection;
 
 class VolumeManager {

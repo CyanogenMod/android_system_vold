@@ -63,26 +63,34 @@ VolumeManager::~VolumeManager() {
     delete mActiveContainers;
 }
 
-#define MD5_ASCII_LENGTH ((MD5_DIGEST_LENGTH*2)+1)
-
 char *VolumeManager::asecHash(const char *id, char *buffer, size_t len) {
+    static const char* digits = "0123456789abcdef";
+
     unsigned char sig[MD5_DIGEST_LENGTH];
 
-    if (len < MD5_ASCII_LENGTH) {
-        SLOGE("Target hash buffer size < %d bytes (%d)", MD5_ASCII_LENGTH, len);
+    if (buffer == NULL) {
+        SLOGE("Destination buffer is NULL");
+        errno = ESPIPE;
+        return NULL;
+    } else if (id == NULL) {
+        SLOGE("Source buffer is NULL");
+        errno = ESPIPE;
+        return NULL;
+    } else if (len < MD5_ASCII_LENGTH_PLUS_NULL) {
+        SLOGE("Target hash buffer size < %d bytes (%d)",
+                MD5_ASCII_LENGTH_PLUS_NULL, len);
         errno = ESPIPE;
         return NULL;
     }
 
     MD5(reinterpret_cast<const unsigned char*>(id), strlen(id), sig);
 
-    memset(buffer, 0, len);
-
+    char *p = buffer;
     for (int i = 0; i < MD5_DIGEST_LENGTH; i++) {
-        char tmp[3];
-        snprintf(tmp, 3, "%.02x", sig[i]);
-        strcat(buffer, tmp);
+        *p++ = digits[sig[i] >> 4];
+        *p++ = digits[sig[i] & 0x0F];
     }
+    *p = '\0';
 
     return buffer;
 }

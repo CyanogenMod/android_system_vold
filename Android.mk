@@ -7,38 +7,59 @@ ifeq ($(BUILD_VOLD2),true)
 
 LOCAL_PATH:= $(call my-dir)
 
+common_src_files := \
+	VolumeManager.cpp \
+	CommandListener.cpp \
+	VoldCommand.cpp \
+	NetlinkManager.cpp \
+	NetlinkHandler.cpp \
+	Volume.cpp \
+	DirectVolume.cpp \
+	logwrapper.c \
+	Process.cpp \
+	Fat.cpp \
+	Loop.cpp \
+	Devmapper.cpp \
+	ResponseCode.cpp \
+	Xwarp.cpp
+
+common_c_includes := \
+	$(KERNEL_HEADERS) \
+	external/openssl/include
+
+common_shared_libraries := \
+	libsysutils \
+	libcutils \
+	libdiskconfig \
+	libcrypto
+
 include $(CLEAR_VARS)
 
-LOCAL_SRC_FILES:=                                      \
-                  main.cpp                             \
-                  VolumeManager.cpp                    \
-                  CommandListener.cpp                  \
-                  VoldCommand.cpp                      \
-                  NetlinkManager.cpp                   \
-                  NetlinkHandler.cpp                   \
-                  Volume.cpp                           \
-                  DirectVolume.cpp                     \
-                  logwrapper.c                         \
-                  Process.cpp                          \
-                  Fat.cpp                              \
-                  Loop.cpp                             \
-                  Devmapper.cpp                        \
-                  ResponseCode.cpp                     \
-                  Xwarp.cpp
+LOCAL_MODULE := libvold
+
+LOCAL_SRC_FILES := $(common_src_files)
+
+LOCAL_C_INCLUDES := $(common_c_includes)
+
+LOCAL_SHARED_LIBRARIES := $(common_shared_libraries)
+
+LOCAL_MODULE_TAGS := eng tests
+
+include $(BUILD_STATIC_LIBRARY)
+
+include $(CLEAR_VARS)
 
 LOCAL_MODULE:= vold
 
-LOCAL_C_INCLUDES :=                          \
-                    $(KERNEL_HEADERS)        \
-                    external/openssl/include
+LOCAL_SRC_FILES := \
+	main.cpp \
+	$(common_src_files)
+
+LOCAL_C_INCLUDES := $(common_c_includes)
 
 LOCAL_CFLAGS := 
 
-LOCAL_SHARED_LIBRARIES :=               \
-                          libsysutils   \
-                          libcutils     \
-                          libdiskconfig \
-                          libcrypto
+LOCAL_SHARED_LIBRARIES := $(common_shared_libraries)
 
 include $(BUILD_EXECUTABLE)
 
