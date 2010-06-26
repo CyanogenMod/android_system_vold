@@ -38,7 +38,8 @@ private:
 
     VolumeCollection      *mVolumes;
     AsecIdCollection      *mActiveContainers;
-    bool                   mUsbMassStorageConnected;
+    bool                   mUsbMassStorageEnabled;
+    bool                   mUsbConnected;
     bool                   mDebug;
 
 public:
@@ -49,6 +50,7 @@ public:
 
     void handleBlockEvent(NetlinkEvent *evt);
     void handleSwitchEvent(NetlinkEvent *evt);
+    void handleUsbCompositeEvent(NetlinkEvent *evt);
 
     int addVolume(Volume *v);
 
@@ -72,8 +74,6 @@ public:
 
     void setDebug(bool enable);
 
-    // XXX: This should be moved private once switch uevents are working
-    void notifyUmsConnected(bool connected);
     // XXX: Post froyo this should be moved and cleaned up
     int cleanupAsec(Volume *v, bool force);
 
@@ -86,7 +86,11 @@ public:
 
 private:
     VolumeManager();
+    void readInitialState();
     Volume *lookupVolume(const char *label);
     bool isMountpointMounted(const char *mp);
+
+    inline bool massStorageAvailable() const { return mUsbMassStorageEnabled && mUsbConnected; }
+    void notifyUmsAvailable(bool available);
 };
 #endif

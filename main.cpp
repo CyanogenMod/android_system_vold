@@ -77,32 +77,6 @@ int main() {
     }
 
     coldboot("/sys/block");
-    /*
-     * Switch uevents are broken.
-     * For now we manually bootstrap
-     * the ums switch
-     */
-    {
-        FILE *fp;
-        char state[255];
-
-        if ((fp = fopen("/sys/devices/virtual/switch/usb_mass_storage/state",
-                         "r"))) {
-            if (fgets(state, sizeof(state), fp)) {
-                if (!strncmp(state, "online", 6)) {
-                    vm->notifyUmsConnected(true);
-                } else {
-                    vm->notifyUmsConnected(false);
-                }
-            } else {
-                SLOGE("Failed to read switch state (%s)", strerror(errno));
-            }
-
-            fclose(fp);
-        } else {
-            SLOGW("No UMS switch available");
-        }
-    }
 //    coldboot("/sys/class/switch");
 
     /*

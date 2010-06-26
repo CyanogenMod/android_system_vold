@@ -55,7 +55,43 @@ VolumeManager::VolumeManager() {
     mVolumes = new VolumeCollection();
     mActiveContainers = new AsecIdCollection();
     mBroadcaster = NULL;
-    mUsbMassStorageConnected = false;
+    mUsbMassStorageEnabled = false;
+    mUsbConnected = false;
+
+    readInitialState();
+}
+
+void VolumeManager::readInitialState() {
+    FILE *fp;
+    char state[255];
+
+    /*
+     * Read the initial mass storage enabled state
+     */
+    if ((fp = fopen("/sys/devices/virtual/usb_composite/usb_mass_storage/enable", "r"))) {
+        if (fgets(state, sizeof(state), fp)) {
+            mUsbMassStorageEnabled = !strncmp(state, "1", 1);
+        } else {
+            SLOGE("Failed to read usb_mass_storage enabled state (%s)", strerror(errno));
+        }
+        fclose(fp);
+    } else {
+        SLOGD("USB mass storage support is not enabled in the kernel");
+    }
+
+    /*
+     * Read the initial USB connected state
+     */
+    if ((fp = fopen("/sys/devices/virtual/switch/usb_configuration/state", "r"))) {
+        if (fgets(state, sizeof(state), fp)) {
+            mUsbConnected = !strncmp(state, "1", 1);
+        } else {
+            SLOGE("Failed to read usb_configuration switch (%s)", strerror(errno));
+        }
+        fclose(fp);
+    } else {
+        SLOGD("usb_configuration switch is not enabled in the kernel");
+    }
 }
 
 VolumeManager::~VolumeManager() {
@@ -116,17 +152,12 @@ int VolumeManager::addVolume(Volume *v) {
     return 0;
 }
 
-void VolumeManager::notifyUmsConnected(bool connected) {
+void VolumeManager::notifyUmsAvailable(bool available) {
     char msg[255];
 
-    if (connected) {
-        mUsbMassStorageConnected = true;
-    } else {
-        mUsbMassStorageConnected = false;
-    }
     snprintf(msg, sizeof(msg), "Share method ums now %s",
-             (connected ? "available" : "unavailable"));
-
+             (available ? "available" : "unavailable"));
+    SLOGD(msg);
     getBroadcaster()->sendBroadcast(ResponseCode::ShareAvailabilityChange,
                                     msg, false);
 }
@@ -141,15 +172,35 @@ void VolumeManager::handleSwitchEvent(NetlinkEvent *evt) {
         return;
     }
 
-    if (!strcmp(name, "usb_mass_storage")) {
-
-        if (!strcmp(state, "online"))  {
-            notifyUmsConnected(true);
-        } else {
-            notifyUmsConnected(false);
+    bool oldAvailable = massStorageAvailable();
+    if (!strcmp(name, "usb_configuration")) {
+        mUsbConnected = !strcmp(state, "1");
+        SLOGD("USB %s", mUsbConnected ? "connected" : "disconnected");
+        bool newAvailable = massStorageAvailable();
+        if (newAvailable != oldAvailable) {
+            notifyUmsAvailable(newAvailable);
         }
     } else {
         SLOGW("Ignoring unknown switch '%s'", name);
+    }
+}
+void VolumeManager::handleUsbCompositeEvent(NetlinkEvent *evt) {
+    const char *function = evt->findParam("FUNCTION");
+    const char *enabled = evt->findParam("ENABLED");
+
+    if (!function || !enabled) {
+        SLOGW("usb_composite event missing function/enabled info");
+        return;
+    }
+
+    if (!strcmp(function, "usb_mass_storage")) {
+        bool oldAvailable = massStorageAvailable();
+        mUsbMassStorageEnabled = !strcmp(enabled, "1");
+        SLOGD("usb_mass_storage function %s", mUsbMassStorageEnabled ? "enabled" : "disabled");
+        bool newAvailable = massStorageAvailable();
+        if (newAvailable != oldAvailable) {
+            notifyUmsAvailable(newAvailable);
+        }
     }
 }
 
@@ -726,10 +777,7 @@ int VolumeManager::shareAvailable(const char *method, bool *avail) {
         return -1;
     }
 
-    if (mUsbMassStorageConnected)
-        *avail = true;
-    else
-        *avail = false;
+    *avail = massStorageAvailable();
     return 0;
 }
 
@@ -758,9 +806,9 @@ int VolumeManager::simulate(const char *cmd, const char *arg) {
 
     if (!strcmp(cmd, "ums")) {
         if (!strcmp(arg, "connect")) {
-            notifyUmsConnected(true);
+            notifyUmsAvailable(true);
         } else if (!strcmp(arg, "disconnect")) {
-            notifyUmsConnected(false);
+            notifyUmsAvailable(false);
         } else {
             errno = EINVAL;
             return -1;
