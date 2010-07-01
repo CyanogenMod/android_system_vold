@@ -41,6 +41,7 @@ CommandListener::CommandListener() :
     registerCmd(new DumpCmd());
     registerCmd(new VolumeCmd());
     registerCmd(new AsecCmd());
+    registerCmd(new ImageCmd());
     registerCmd(new ShareCmd());
     registerCmd(new StorageCmd());
     registerCmd(new XwarpCmd());
@@ -392,6 +393,54 @@ int CommandListener::AsecCmd::runCommand(SocketClient *cli,
     } else {
         rc = ResponseCode::convertFromErrno();
         cli->sendMsg(rc, "asec operation failed", true);
+    }
+
+    return 0;
+}
+
+CommandListener::ImageCmd::ImageCmd() :
+                 VoldCommand("image") {
+}
+
+int CommandListener::ImageCmd::runCommand(SocketClient *cli,
+                                                      int argc, char **argv) {
+    if (argc < 2) {
+        cli->sendMsg(ResponseCode::CommandSyntaxError, "Missing Argument", false);
+        return 0;
+    }
+
+    VolumeManager *vm = VolumeManager::Instance();
+    int rc = 0;
+
+    if (!strcmp(argv[1], "mount")) {
+            dumpArgs(argc, argv, 3);
+            if (argc != 5) {
+                cli->sendMsg(ResponseCode::CommandSyntaxError,
+                        "Usage: image mount <filename> <key> <ownerUid>", false);
+                return 0;
+            }
+            rc = vm->mountImage(argv[2], argv[3], atoi(argv[4]));
+    } else if (!strcmp(argv[1], "unmount")) {
+        dumpArgs(argc, argv, -1);
+        if (argc < 3) {
+            cli->sendMsg(ResponseCode::CommandSyntaxError, "Usage: image unmount <container-id> [force]", false);
+            return 0;
+        }
+        bool force = false;
+        if (argc > 3 && !strcmp(argv[3], "force")) {
+            force = true;
+        }
+        rc = vm->unmountImage(argv[2], force);
+    } else {
+        dumpArgs(argc, argv, -1);
+        cli->sendMsg(ResponseCode::CommandSyntaxError, "Unknown image cmd", false);
+    }
+
+    if (!rc) {
+        cli->sendMsg(ResponseCode::CommandOkay, "image operation succeeded", false);
+    } else {
+        rc = ResponseCode::convertFromErrno();
+        cli->sendMsg(rc, "image operation failed", true);
     }
 
     return 0;

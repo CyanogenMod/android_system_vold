@@ -63,6 +63,8 @@ public:
     int shareEnabled(const char *path, const char *method, bool *enabled);
     int simulate(const char *cmd, const char *arg);
     int formatVolume(const char *label);
+
+    /* ASEC */
     int createAsec(const char *id, unsigned numSectors, const char *fstype,
                    const char *key, int ownerUid);
     int finalizeAsec(const char *id);
@@ -71,6 +73,14 @@ public:
     int unmountAsec(const char *id, bool force);
     int renameAsec(const char *id1, const char *id2);
     int getAsecMountPath(const char *id, char *buffer, int maxlen);
+
+    /* Loopback images */
+    int mountImage(const char *fileName, const char *key, int ownerUid);
+    int unmountImage(const char *fileName, bool force);
+
+    /* Shared between ASEC and Loopback images */
+    int unmountLoopImage(const char *containerId, const char *loopId,
+            const char *fileName, const char *mountPoint, bool force);
 
     void setDebug(bool enable);
 

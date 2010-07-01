@@ -44,6 +44,8 @@ public:
     static const char *SEC_ASECDIR;
     static const char *ASECDIR;
 
+    static const char *LOOPDIR;
+
 protected:
     char *mLabel;
     char *mMountpoint;

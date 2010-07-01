@@ -505,7 +505,8 @@ out_err:
     return -1;
 }
 
-#define ASEC_UNMOUNT_RETRIES 5
+#define UNMOUNT_RETRIES 5
+#define UNMOUNT_SLEEP_BETWEEN_RETRY_MS (1000 * 1000)
 int VolumeManager::unmountAsec(const char *id, bool force) {
     char asecFileName[255];
     char mountPoint[255];
@@ -519,37 +520,56 @@ int VolumeManager::unmountAsec(const char *id, bool force) {
         return -1;
     }
 
+    return unmountLoopImage(id, idHash, asecFileName, mountPoint, force);
+}
+
+int VolumeManager::unmountImage(const char *fileName, bool force) {
+    char mountPoint[255];
+
+    char idHash[33];
+    if (!asecHash(fileName, idHash, sizeof(idHash))) {
+        SLOGE("Hash of '%s' failed (%s)", fileName, strerror(errno));
+        return -1;
+    }
+
+    snprintf(mountPoint, sizeof(mountPoint), "%s/%s", Volume::LOOPDIR, idHash);
+
+    return unmountLoopImage(fileName, idHash, fileName, mountPoint, force);
+}
+
+int VolumeManager::unmountLoopImage(const char *id, const char *idHash,
+        const char *fileName, const char *mountPoint, bool force) {
     if (!isMountpointMounted(mountPoint)) {
-        SLOGE("Unmount request for ASEC %s when not mounted", id);
+        SLOGE("Unmount request for %s when not mounted", id);
         errno = EINVAL;
         return -1;
     }
 
     int i, rc;
-    for (i = 1; i <= ASEC_UNMOUNT_RETRIES; i++) {
+    for (i = 1; i <= UNMOUNT_RETRIES; i++) {
         rc = umount(mountPoint);
         if (!rc) {
             break;
         }
         if (rc && (errno == EINVAL || errno == ENOENT)) {
-            SLOGI("Secure container %s unmounted OK", id);
+            SLOGI("Container %s unmounted OK", id);
             rc = 0;
             break;
         }
-        SLOGW("ASEC %s unmount attempt %d failed (%s)",
+        SLOGW("%s unmount attempt %d failed (%s)",
               id, i, strerror(errno));
 
         int action = 0; // default is to just complain
 
         if (force) {
-            if (i > (ASEC_UNMOUNT_RETRIES - 2))
+            if (i > (UNMOUNT_RETRIES - 2))
                 action = 2; // SIGKILL
-            else if (i > (ASEC_UNMOUNT_RETRIES - 3))
+            else if (i > (UNMOUNT_RETRIES - 3))
                 action = 1; // SIGHUP
         }
 
         Process::killProcessesWithOpenFiles(mountPoint, action);
-        usleep(1000 * 1000);
+        usleep(UNMOUNT_SLEEP_BETWEEN_RETRY_MS);
     }
 
     if (rc) {
@@ -566,7 +586,7 @@ int VolumeManager::unmountAsec(const char *id, bool force) {
         }
 
         SLOGW("Failed to rmdir %s (%s)", mountPoint, strerror(errno));
-        usleep(1000 * 1000);
+        usleep(UNMOUNT_SLEEP_BETWEEN_RETRY_MS);
     }
 
     if (!retries) {
@@ -581,7 +601,7 @@ int VolumeManager::unmountAsec(const char *id, bool force) {
     if (!Loop::lookupActive(idHash, loopDevice, sizeof(loopDevice))) {
         Loop::destroyByDevice(loopDevice);
     } else {
-        SLOGW("Failed to find loop device for {%s} (%s)", asecFileName, strerror(errno));
+        SLOGW("Failed to find loop device for {%s} (%s)", fileName, strerror(errno));
     }
 
     AsecIdCollection::iterator it;
@@ -755,6 +775,124 @@ int VolumeManager::mountAsec(const char *id, const char *key, int ownerUid) {
     mActiveContainers->push_back(strdup(id));
     if (mDebug) {
         SLOGD("ASEC %s mounted", id);
+    }
+    return 0;
+}
+
+/**
+ * Mounts an image file <code>img</code>.
+ */
+int VolumeManager::mountImage(const char *img, const char *key, int ownerUid) {
+    char mountPoint[255];
+
+#if 0
+    struct stat imgStat;
+    if (stat(img, &imgStat) != 0) {
+        SLOGE("Could not stat '%s': %s", img, strerror(errno));
+        return -1;
+    }
+
+    if (imgStat.st_uid != ownerUid) {
+        SLOGW("Image UID does not match requestor UID (%d != %d)",
+                imgStat.st_uid, ownerUid);
+        return -1;
+    }
+#endif
+
+    char idHash[33];
+    if (!asecHash(img, idHash, sizeof(idHash))) {
+        SLOGE("Hash of '%s' failed (%s)", img, strerror(errno));
+        return -1;
+    }
+
+    snprintf(mountPoint, sizeof(mountPoint), "%s/%s", Volume::LOOPDIR, idHash);
+
+    if (isMountpointMounted(mountPoint)) {
+        SLOGE("Image %s already mounted", img);
+        errno = EBUSY;
+        return -1;
+    }
+
+    char loopDevice[255];
+    if (Loop::lookupActive(idHash, loopDevice, sizeof(loopDevice))) {
+        if (Loop::create(idHash, img, loopDevice, sizeof(loopDevice))) {
+            SLOGE("Image loop device creation failed (%s)", strerror(errno));
+            return -1;
+        }
+        if (mDebug) {
+            SLOGD("New loop device created at %s", loopDevice);
+        }
+    } else {
+        if (mDebug) {
+            SLOGD("Found active loopback for %s at %s", img, loopDevice);
+        }
+    }
+
+    char dmDevice[255];
+    bool cleanupDm = false;
+    int fd;
+    unsigned int nr_sec = 0;
+
+    if ((fd = open(loopDevice, O_RDWR)) < 0) {
+        SLOGE("Failed to open loopdevice (%s)", strerror(errno));
+        Loop::destroyByDevice(loopDevice);
+        return -1;
+    }
+
+    if (ioctl(fd, BLKGETSIZE, &nr_sec)) {
+        SLOGE("Failed to get loop size (%s)", strerror(errno));
+        Loop::destroyByDevice(loopDevice);
+        close(fd);
+        return -1;
+    }
+
+    close(fd);
+
+    if (strcmp(key, "none")) {
+        if (Devmapper::lookupActive(idHash, dmDevice, sizeof(dmDevice))) {
+            if (Devmapper::create(idHash, loopDevice, key, nr_sec,
+                                  dmDevice, sizeof(dmDevice))) {
+                SLOGE("ASEC device mapping failed (%s)", strerror(errno));
+                Loop::destroyByDevice(loopDevice);
+                return -1;
+            }
+            if (mDebug) {
+                SLOGD("New devmapper instance created at %s", dmDevice);
+            }
+        } else {
+            if (mDebug) {
+                SLOGD("Found active devmapper for %s at %s", img, dmDevice);
+            }
+        }
+        cleanupDm = true;
+    } else {
+        strcpy(dmDevice, loopDevice);
+    }
+
+    if (mkdir(mountPoint, 0755)) {
+        if (errno != EEXIST) {
+            SLOGE("Mountpoint creation failed (%s)", strerror(errno));
+            if (cleanupDm) {
+                Devmapper::destroy(idHash);
+            }
+            Loop::destroyByDevice(loopDevice);
+            return -1;
+        }
+    }
+
+    if (Fat::doMount(dmDevice, mountPoint, true, false, ownerUid, 0,
+                     0227, false)) {
+        SLOGE("Image mount failed (%s)", strerror(errno));
+        if (cleanupDm) {
+            Devmapper::destroy(idHash);
+        }
+        Loop::destroyByDevice(loopDevice);
+        return -1;
+    }
+
+    mActiveContainers->push_back(strdup(img));
+    if (mDebug) {
+        SLOGD("Image %s mounted", img);
     }
     return 0;
 }
