@@ -841,14 +841,7 @@ int VolumeManager::unshareVolume(const char *label, const char *method) {
         return -1;
     }
 
-    dev_t d = v->getDiskDevice();
-
     int fd;
-    char nodepath[255];
-    snprintf(nodepath,
-             sizeof(nodepath), "/dev/block/vold/%d:%d",
-             MAJOR(d), MINOR(d));
-
     if ((fd = open("/sys/devices/platform/usb_mass_storage/lun0/file", O_WRONLY)) < 0) {
         SLOGE("Unable to open ums lunfile (%s)", strerror(errno));
         return -1;
