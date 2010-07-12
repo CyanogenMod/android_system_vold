@@ -75,8 +75,10 @@ public:
     int getAsecMountPath(const char *id, char *buffer, int maxlen);
 
     /* Loopback images */
-    int mountImage(const char *fileName, const char *key, int ownerUid);
-    int unmountImage(const char *fileName, bool force);
+    int listMountedObbs(SocketClient* cli);
+    int mountObb(const char *fileName, const char *key, int ownerUid);
+    int unmountObb(const char *fileName, bool force);
+    int getObbMountPath(const char *id, char *buffer, int maxlen);
 
     /* Shared between ASEC and Loopback images */
     int unmountLoopImage(const char *containerId, const char *loopId,

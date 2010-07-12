@@ -38,7 +38,7 @@ int Loop::dumpState(SocketClient *c) {
     char filename[256];
 
     for (i = 0; i < LOOP_MAX; i++) {
-        struct loop_info li;
+        struct loop_info64 li;
         int rc;
 
         sprintf(filename, "/dev/block/loop%d", i);
@@ -52,7 +52,7 @@ int Loop::dumpState(SocketClient *c) {
             return -1;
         }
 
-        rc = ioctl(fd, LOOP_GET_STATUS, &li);
+        rc = ioctl(fd, LOOP_GET_STATUS64, &li);
         close(fd);
         if (rc < 0 && errno == ENXIO) {
             continue;
@@ -64,9 +64,10 @@ int Loop::dumpState(SocketClient *c) {
             return -1;
         }
         char *tmp = NULL;
-        asprintf(&tmp, "%s %d %d:%d %lu %d:%d %d 0x%x {%s}", filename, li.lo_number,
+        asprintf(&tmp, "%s %d %lld:%lld %llu %lld:%lld %lld 0x%x {%s} {%s}", filename, li.lo_number,
                 MAJOR(li.lo_device), MINOR(li.lo_device), li.lo_inode, MAJOR(li.lo_rdevice),
-                        MINOR(li.lo_rdevice), li.lo_offset, li.lo_flags, li.lo_name);
+                        MINOR(li.lo_rdevice), li.lo_offset, li.lo_flags, li.lo_crypt_name,
+                        li.lo_file_name);
         c->sendMsg(0, tmp, false);
         free(tmp);
     }
@@ -81,7 +82,7 @@ int Loop::lookupActive(const char *id, char *buffer, size_t len) {
     memset(buffer, 0, len);
 
     for (i = 0; i < LOOP_MAX; i++) {
-        struct loop_info li;
+        struct loop_info64 li;
         int rc;
 
         sprintf(filename, "/dev/block/loop%d", i);
@@ -95,7 +96,7 @@ int Loop::lookupActive(const char *id, char *buffer, size_t len) {
             return -1;
         }
 
-        rc = ioctl(fd, LOOP_GET_STATUS, &li);
+        rc = ioctl(fd, LOOP_GET_STATUS64, &li);
         close(fd);
         if (rc < 0 && errno == ENXIO) {
             continue;
@@ -106,7 +107,7 @@ int Loop::lookupActive(const char *id, char *buffer, size_t len) {
                  strerror(errno));
             return -1;
         }
-        if (!strncmp(li.lo_name, id, LO_NAME_SIZE)) {
+        if (!strncmp((const char*) li.lo_crypt_name, id, LO_NAME_SIZE)) {
             break;
         }
     }
@@ -148,7 +149,7 @@ int Loop::create(const char *id, const char *loopFile, char *loopDeviceBuffer, s
             return -1;
         }
 
-        rc = ioctl(fd, LOOP_GET_STATUS, &li);
+        rc = ioctl(fd, LOOP_GET_STATUS64, &li);
         if (rc < 0 && errno == ENXIO)
             break;
 
@@ -184,12 +185,13 @@ int Loop::create(const char *id, const char *loopFile, char *loopDeviceBuffer, s
         return -1;
     }
 
-    struct loop_info li;
+    struct loop_info64 li;
 
     memset(&li, 0, sizeof(li));
-    strncpy(li.lo_name, id, LO_NAME_SIZE);
+    strncpy((char*) li.lo_crypt_name, id, LO_NAME_SIZE);
+    strncpy((char*) li.lo_file_name, loopFile, LO_NAME_SIZE);
 
-    if (ioctl(fd, LOOP_SET_STATUS, &li) < 0) {
+    if (ioctl(fd, LOOP_SET_STATUS64, &li) < 0) {
         SLOGE("Error setting loopback status (%s)", strerror(errno));
         close(file_fd);
         close(fd);

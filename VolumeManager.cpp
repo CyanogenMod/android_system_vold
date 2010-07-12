@@ -253,6 +253,24 @@ int VolumeManager::formatVolume(const char *label) {
     return v->formatVol();
 }
 
+int VolumeManager::getObbMountPath(const char *sourceFile, char *mountPath, int mountPathLen) {
+    char idHash[33];
+    if (!asecHash(sourceFile, idHash, sizeof(idHash))) {
+        SLOGE("Hash of '%s' failed (%s)", sourceFile, strerror(errno));
+        return -1;
+    }
+
+    memset(mountPath, 0, mountPathLen);
+    snprintf(mountPath, mountPathLen, "%s/%s", Volume::LOOPDIR, idHash);
+
+    if (access(mountPath, F_OK)) {
+        errno = ENOENT;
+        return -1;
+    }
+
+    return 0;
+}
+
 int VolumeManager::getAsecMountPath(const char *id, char *buffer, int maxlen) {
     char asecFileName[255];
     snprintf(asecFileName, sizeof(asecFileName), "%s/%s.asec", Volume::SEC_ASECDIR, id);
@@ -523,7 +541,7 @@ int VolumeManager::unmountAsec(const char *id, bool force) {
     return unmountLoopImage(id, idHash, asecFileName, mountPoint, force);
 }
 
-int VolumeManager::unmountImage(const char *fileName, bool force) {
+int VolumeManager::unmountObb(const char *fileName, bool force) {
     char mountPoint[255];
 
     char idHash[33];
@@ -782,22 +800,8 @@ int VolumeManager::mountAsec(const char *id, const char *key, int ownerUid) {
 /**
  * Mounts an image file <code>img</code>.
  */
-int VolumeManager::mountImage(const char *img, const char *key, int ownerUid) {
+int VolumeManager::mountObb(const char *img, const char *key, int ownerUid) {
     char mountPoint[255];
-
-#if 0
-    struct stat imgStat;
-    if (stat(img, &imgStat) != 0) {
-        SLOGE("Could not stat '%s': %s", img, strerror(errno));
-        return -1;
-    }
-
-    if (imgStat.st_uid != ownerUid) {
-        SLOGW("Image UID does not match requestor UID (%d != %d)",
-                imgStat.st_uid, ownerUid);
-        return -1;
-    }
-#endif
 
     char idHash[33];
     if (!asecHash(img, idHash, sizeof(idHash))) {
@@ -906,6 +910,51 @@ int VolumeManager::mountVolume(const char *label) {
     }
 
     return v->mountVol();
+}
+
+int VolumeManager::listMountedObbs(SocketClient* cli) {
+    char device[256];
+    char mount_path[256];
+    char rest[256];
+    FILE *fp;
+    char line[1024];
+
+    if (!(fp = fopen("/proc/mounts", "r"))) {
+        SLOGE("Error opening /proc/mounts (%s)", strerror(errno));
+        return -1;
+    }
+
+    // Create a string to compare against that has a trailing slash
+    int loopDirLen = sizeof(Volume::LOOPDIR);
+    char loopDir[loopDirLen + 2];
+    strcpy(loopDir, Volume::LOOPDIR);
+    loopDir[loopDirLen++] = '/';
+    loopDir[loopDirLen] = '\0';
+
+    while(fgets(line, sizeof(line), fp)) {
+        line[strlen(line)-1] = '\0';
+
+        /*
+         * Should look like:
+         * /dev/block/loop0 /mnt/obb/fc99df1323fd36424f864dcb76b76d65 ...
+         */
+        sscanf(line, "%255s %255s %255s\n", device, mount_path, rest);
+
+        if (!strncmp(mount_path, loopDir, loopDirLen)) {
+            int fd = open(device, O_RDONLY);
+            if (fd >= 0) {
+                struct loop_info64 li;
+                if (ioctl(fd, LOOP_GET_STATUS64, &li) >= 0) {
+                    cli->sendMsg(ResponseCode::AsecListResult,
+                            (const char*) li.lo_file_name, false);
+                }
+                close(fd);
+            }
+        }
+    }
+
+    fclose(fp);
+    return 0;
 }
 
 int VolumeManager::shareAvailable(const char *method, bool *avail) {

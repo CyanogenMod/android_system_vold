@@ -74,9 +74,9 @@ const char *Volume::SEC_ASECDIR       = "/mnt/secure/asec";
 const char *Volume::ASECDIR           = "/mnt/asec";
 
 /*
- * Path to where loop devices are mounted
+ * Path to where OBBs are mounted
  */
-const char *Volume::LOOPDIR           = "/mnt/loop";
+const char *Volume::LOOPDIR           = "/mnt/obb";
 
 static const char *stateToStr(int state) {
     if (state == Volume::State_Init)
