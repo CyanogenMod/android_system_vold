@@ -149,7 +149,7 @@ int Loop::create(const char *id, const char *loopFile, char *loopDeviceBuffer, s
             return -1;
         }
 
-        rc = ioctl(fd, LOOP_GET_STATUS64, &li);
+        rc = ioctl(fd, LOOP_GET_STATUS, &li);
         if (rc < 0 && errno == ENXIO)
             break;
 
