@@ -202,9 +202,13 @@ void DirectVolume::handlePartitionAdded(const char *devpath, NetlinkEvent *evt) 
 #ifdef PARTITION_DEBUG
     SLOGD("Dv:partAdd: part_num = %d, minor = %d\n", part_num, minor);
 #endif
-    mPartMinors[part_num -1] = minor;
-
+    if (part_num >= MAX_PARTITIONS) {
+        SLOGE("Dv:partAdd: ignoring part_num = %d (max: %d)\n", part_num, MAX_PARTITIONS-1);
+    } else {
+        mPartMinors[part_num -1] = minor;
+    }
     mPendingPartMap &= ~(1 << part_num);
+
     if (!mPendingPartMap) {
 #ifdef PARTITION_DEBUG
         SLOGD("Dv:partAdd: Got all partitions - ready to rock!");
