@@ -323,7 +323,8 @@ int Volume::mountVol() {
          * muck with it before exposing it to non priviledged users.
          */
         errno = 0;
-        if (Fat::doMount(devicePath, "/mnt/secure/staging", false, false, 1000, 1015, 0702, true)) {
+        if (Fat::doMount(devicePath, "/mnt/secure/staging", false, false, false,
+                1000, 1015, 0702, true)) {
             SLOGE("%s failed to mount via VFAT (%s)\n", devicePath, strerror(errno));
             continue;
         }

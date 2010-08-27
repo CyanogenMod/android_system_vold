@@ -93,14 +93,15 @@ int Fat::check(const char *fsPath) {
 }
 
 int Fat::doMount(const char *fsPath, const char *mountPoint,
-                 bool ro, bool remount, int ownerUid, int ownerGid,
-                 int permMask, bool createLost) {
+                 bool ro, bool remount, bool executable,
+                 int ownerUid, int ownerGid, int permMask, bool createLost) {
     int rc;
     unsigned long flags;
     char mountData[255];
 
-    flags = MS_NODEV | MS_NOEXEC | MS_NOSUID | MS_DIRSYNC;
+    flags = MS_NODEV | MS_NOSUID | MS_DIRSYNC;
 
+    flags |= (executable ? 0 : MS_NOEXEC);
     flags |= (ro ? MS_RDONLY : 0);
     flags |= (remount ? MS_REMOUNT : 0);
 
