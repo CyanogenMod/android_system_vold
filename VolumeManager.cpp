@@ -860,9 +860,19 @@ int VolumeManager::unshareVolume(const char *label, const char *method) {
              sizeof(nodepath), "/dev/block/vold/%d:%d",
              MAJOR(d), MINOR(d));
 
-    if ((fd = open("/sys/devices/platform/usb_mass_storage/lun0/file", O_WRONLY)) < 0) {
-        SLOGE("Unable to open ums lunfile (%s)", strerror(errno));
-        return -1;
+    // TODO: Currently only two mounts are supported, defaulting
+    // /mnt/sdcard to lun0 and anything else to lun1. Fix this.
+    if (0 == strcmp(label, "/mnt/sdcard")) {
+        if ((fd = open("/sys/devices/platform/usb_mass_storage/lun0/file", O_WRONLY)) < 0) {
+            SLOGE("Unable to open ums lunfile (%s)", strerror(errno));
+            return -1;
+        }
+    }
+    else {
+        if ((fd = open("/sys/devices/platform/usb_mass_storage/lun1/file", O_WRONLY)) < 0) {
+            SLOGE("Unable to open ums lunfile (%s)", strerror(errno));
+            return -1;
+        }
     }
 
     char ch = 0;
