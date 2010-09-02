@@ -431,7 +431,7 @@ int VolumeManager::createAsec(const char *id, unsigned int numSectors,
             }
         }
 
-        if (Fat::doMount(dmDevice, mountPoint, false, false, ownerUid,
+        if (Fat::doMount(dmDevice, mountPoint, false, false, false, ownerUid,
                          0, 0000, false)) {
             SLOGE("ASEC FAT mount failed (%s)", strerror(errno));
             if (cleanupDm) {
@@ -469,7 +469,7 @@ int VolumeManager::finalizeAsec(const char *id) {
 
     snprintf(mountPoint, sizeof(mountPoint), "%s/%s", Volume::ASECDIR, id);
     // XXX:
-    if (Fat::doMount(loopDevice, mountPoint, true, true, 0, 0, 0227, false)) {
+    if (Fat::doMount(loopDevice, mountPoint, true, true, true, 0, 0, 0227, false)) {
         SLOGE("ASEC finalize mount failed (%s)", strerror(errno));
         return -1;
     }
@@ -779,7 +779,7 @@ int VolumeManager::mountAsec(const char *id, const char *key, int ownerUid) {
         }
     }
 
-    if (Fat::doMount(dmDevice, mountPoint, true, false, ownerUid, 0,
+    if (Fat::doMount(dmDevice, mountPoint, true, false, true, ownerUid, 0,
                      0222, false)) {
 //                     0227, false)) {
         SLOGE("ASEC mount failed (%s)", strerror(errno));
@@ -884,7 +884,7 @@ int VolumeManager::mountObb(const char *img, const char *key, int ownerUid) {
         }
     }
 
-    if (Fat::doMount(dmDevice, mountPoint, true, false, ownerUid, 0,
+    if (Fat::doMount(dmDevice, mountPoint, true, false, true, ownerUid, 0,
                      0227, false)) {
         SLOGE("Image mount failed (%s)", strerror(errno));
         if (cleanupDm) {
