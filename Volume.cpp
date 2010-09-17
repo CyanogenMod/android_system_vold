@@ -144,6 +144,10 @@ dev_t Volume::getDiskDevice() {
     return MKDEV(0, 0);
 };
 
+dev_t Volume::getShareDevice() {
+    return getDiskDevice();
+}
+
 void Volume::handleVolumeShared() {
 }
 
@@ -220,7 +224,9 @@ int Volume::formatVol() {
 
     if (initializeMbr(devicePath)) {
         SLOGE("Failed to initialize MBR (%s)", strerror(errno));
-        goto err;
+//        goto err;
+// don't treat this as a fatal error
+// lets continue on and format the partition
     }
 
     sprintf(devicePath, "/dev/block/vold/%d:%d",

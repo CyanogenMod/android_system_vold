@@ -1036,7 +1036,7 @@ int VolumeManager::shareVolume(const char *label, const char *method) {
         return -1;
     }
 
-    dev_t d = v->getDiskDevice();
+    dev_t d = v->getShareDevice();
     if ((MAJOR(d) == 0) && (MINOR(d) == 0)) {
         // This volume does not support raw disk access
         errno = EINVAL;
