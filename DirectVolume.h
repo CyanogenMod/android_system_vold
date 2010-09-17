@@ -45,6 +45,7 @@ public:
 
     int handleBlockEvent(NetlinkEvent *evt);
     dev_t getDiskDevice();
+    dev_t getShareDevice();
     void handleVolumeShared();
     void handleVolumeUnshared();
 
