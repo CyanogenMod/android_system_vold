@@ -72,8 +72,10 @@ int parent(const char *tag, int parent_read) {
     status = 0xAAAA;
     if (wait(&status) != -1) {  // Wait for child
         if (WIFEXITED(status)) {
-            LOG(LOG_INFO, "logwrapper", "%s terminated by exit(%d)", tag,
-                    WEXITSTATUS(status));
+            if (WEXITSTATUS(status) != 0) {
+                LOG(LOG_INFO, "logwrapper", "%s terminated by exit(%d)", tag,
+                        WEXITSTATUS(status));
+            }
             return WEXITSTATUS(status);
         } else if (WIFSIGNALED(status))
             LOG(LOG_INFO, "logwrapper", "%s terminated by signal %d", tag,
@@ -118,13 +120,14 @@ int logwrap(int argc, const char* argv[], int background)
 
     if (grantpt(parent_ptty) || unlockpt(parent_ptty) ||
             ((child_devname = (char*)ptsname(parent_ptty)) == 0)) {
-	LOG(LOG_ERROR, "logwrapper", "Problem with /dev/ptmx");
         close(parent_ptty);
+	LOG(LOG_ERROR, "logwrapper", "Problem with /dev/ptmx");
 	return -1;
     }
 
     pid = fork();
     if (pid < 0) {
+        close(parent_ptty);
 	LOG(LOG_ERROR, "logwrapper", "Failed to fork");
         return -errno;
     } else if (pid == 0) {
@@ -133,6 +136,7 @@ int logwrap(int argc, const char* argv[], int background)
          */
         child_ptty = open(child_devname, O_RDWR);
         if (child_ptty < 0) {
+            close(parent_ptty);
 	    LOG(LOG_ERROR, "logwrapper", "Problem with child ptty");
             return -errno;
         }
@@ -145,10 +149,8 @@ int logwrap(int argc, const char* argv[], int background)
 
         if (background) {
             int fd = open("/dev/cpuctl/bg_non_interactive/tasks", O_WRONLY);
-      
-            if (fd >=0 ) {
+            if (fd >= 0) {
                 char text[64];
-
                 sprintf(text, "%d", getpid());
                 if (write(fd, text, strlen(text)) < 0) {
                     LOG(LOG_WARN, "logwrapper",
