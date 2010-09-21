@@ -30,7 +30,6 @@ public:
     static const int MAX_PARTITIONS = 4;
 protected:
     PathCollection *mPaths;
-    int            mPartIdx;
     int            mDiskMajor;
     int            mDiskMinor;
     int            mPartMinors[MAX_PARTITIONS];

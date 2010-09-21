@@ -51,6 +51,7 @@ protected:
     char *mMountpoint;
     VolumeManager *mVm;
     bool mDebug;
+    int mPartIdx;
 
     /*
      * The major/minor tuple of the currently mounted filesystem.
