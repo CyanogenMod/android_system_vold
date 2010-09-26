@@ -27,7 +27,27 @@
 /* The length of an MD5 hash when encoded into ASCII hex characters */
 #define MD5_ASCII_LENGTH_PLUS_NULL ((MD5_DIGEST_LENGTH*2)+1)
 
-typedef android::List<char *> AsecIdCollection;
+typedef enum { ASEC, OBB } container_type_t;
+
+class ContainerData {
+public:
+    ContainerData(char* _id, container_type_t _type)
+            : id(_id)
+            , type(_type)
+    {}
+
+    ~ContainerData() {
+        if (id != NULL) {
+            free(id);
+            id = NULL;
+        }
+    }
+
+    char *id;
+    container_type_t type;
+};
+
+typedef android::List<ContainerData*> AsecIdCollection;
 
 class VolumeManager {
 private:

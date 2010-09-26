@@ -445,7 +445,7 @@ int VolumeManager::createAsec(const char *id, unsigned int numSectors,
         SLOGI("Created raw secure container %s (no filesystem)", id);
     }
 
-    mActiveContainers->push_back(strdup(id));
+    mActiveContainers->push_back(new ContainerData(strdup(id), ASEC));
     return 0;
 }
 
@@ -624,7 +624,8 @@ int VolumeManager::unmountLoopImage(const char *id, const char *idHash,
 
     AsecIdCollection::iterator it;
     for (it = mActiveContainers->begin(); it != mActiveContainers->end(); ++it) {
-        if (!strcmp(*it, id)) {
+        ContainerData* cd = *it;
+        if (!strcmp(cd->id, id)) {
             free(*it);
             mActiveContainers->erase(it);
             break;
@@ -790,7 +791,7 @@ int VolumeManager::mountAsec(const char *id, const char *key, int ownerUid) {
         return -1;
     }
 
-    mActiveContainers->push_back(strdup(id));
+    mActiveContainers->push_back(new ContainerData(strdup(id), ASEC));
     if (mDebug) {
         SLOGD("ASEC %s mounted", id);
     }
@@ -894,7 +895,7 @@ int VolumeManager::mountObb(const char *img, const char *key, int ownerUid) {
         return -1;
     }
 
-    mActiveContainers->push_back(strdup(img));
+    mActiveContainers->push_back(new ContainerData(strdup(img), OBB));
     if (mDebug) {
         SLOGD("Image %s mounted", img);
     }
@@ -1174,9 +1175,20 @@ bool VolumeManager::isMountpointMounted(const char *mp)
 int VolumeManager::cleanupAsec(Volume *v, bool force) {
     while(mActiveContainers->size()) {
         AsecIdCollection::iterator it = mActiveContainers->begin();
-        SLOGI("Unmounting ASEC %s (dependant on %s)", *it, v->getMountpoint());
-        if (unmountAsec(*it, force)) {
-            SLOGE("Failed to unmount ASEC %s (%s)", *it, strerror(errno));
+        ContainerData* cd = *it;
+        SLOGI("Unmounting ASEC %s (dependant on %s)", cd->id, v->getMountpoint());
+        if (cd->type == ASEC) {
+            if (unmountAsec(cd->id, force)) {
+                SLOGE("Failed to unmount ASEC %s (%s)", cd->id, strerror(errno));
+                return -1;
+            }
+        } else if (cd->type == OBB) {
+            if (unmountObb(cd->id, force)) {
+                SLOGE("Failed to unmount OBB %s (%s)", cd->id, strerror(errno));
+                return -1;
+            }
+        } else {
+            SLOGE("Unknown container type %d!", cd->type);
             return -1;
         }
     }
