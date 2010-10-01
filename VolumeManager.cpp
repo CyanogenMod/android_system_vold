@@ -559,7 +559,7 @@ int VolumeManager::unmountLoopImage(const char *id, const char *idHash,
         const char *fileName, const char *mountPoint, bool force) {
     if (!isMountpointMounted(mountPoint)) {
         SLOGE("Unmount request for %s when not mounted", id);
-        errno = EINVAL;
+        errno = ENOENT;
         return -1;
     }
 
