@@ -105,6 +105,7 @@ Volume::Volume(VolumeManager *vm, const char *label, const char *mount_point) {
     mMountpoint = strdup(mount_point);
     mState = Volume::State_Init;
     mCurrentlyMountedKdev = -1;
+    mPreviouslyMountedKdev = -1;
 }
 
 Volume::~Volume() {
@@ -137,6 +138,15 @@ void Volume::setDebug(bool enable) {
 
 dev_t Volume::getDiskDevice() {
     return MKDEV(0, 0);
+};
+
+dev_t Volume::getPartitionDevice() {
+    if (mCurrentlyMountedKdev != -1) {
+        return mCurrentlyMountedKdev;
+    } else if (mPreviouslyMountedKdev != -1) {
+        return mPreviouslyMountedKdev;
+    }
+    return getDiskDevice();
 };
 
 void Volume::handleVolumeShared() {
@@ -541,6 +551,7 @@ int Volume::unmountVol(bool force) {
     SLOGI("%s unmounted sucessfully", getMountpoint());
 
     setState(Volume::State_Idle);
+    mPreviouslyMountedKdev = mCurrentlyMountedKdev;
     mCurrentlyMountedKdev = -1;
     return 0;
 
