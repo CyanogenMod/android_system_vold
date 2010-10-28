@@ -57,6 +57,10 @@ VolumeManager::VolumeManager() {
     mBroadcaster = NULL;
     mUsbMassStorageEnabled = false;
     mUsbConnected = false;
+    mUmsSharingCount = 0;
+    mSavedDirtyRatio = -1;
+    // set dirty ratio to 0 when UMS is active
+    mUmsDirtyRatio = 0;
 
     readInitialState();
 }
@@ -1064,6 +1068,21 @@ int VolumeManager::shareVolume(const char *label, const char *method) {
 
     close(fd);
     v->handleVolumeShared();
+    if (mUmsSharingCount++ == 0) {
+        FILE* fp;
+        mSavedDirtyRatio = -1; // in case we fail
+        if ((fp = fopen("/proc/sys/vm/dirty_ratio", "r+"))) {
+            char line[16];
+            if (fgets(line, sizeof(line), fp) && sscanf(line, "%d", &mSavedDirtyRatio)) {
+                fprintf(fp, "%d\n", mUmsDirtyRatio);
+            } else {
+                SLOGE("Failed to read dirty_ratio (%s)", strerror(errno));
+            }
+            fclose(fp);
+        } else {
+            SLOGE("Failed to open /proc/sys/vm/dirty_ratio (%s)", strerror(errno));
+        }
+    }
     return 0;
 }
 
@@ -1100,6 +1119,16 @@ int VolumeManager::unshareVolume(const char *label, const char *method) {
 
     close(fd);
     v->handleVolumeUnshared();
+    if (--mUmsSharingCount == 0 && mSavedDirtyRatio != -1) {
+        FILE* fp;
+        if ((fp = fopen("/proc/sys/vm/dirty_ratio", "r+"))) {
+            fprintf(fp, "%d\n", mSavedDirtyRatio);
+            fclose(fp);
+        } else {
+            SLOGE("Failed to open /proc/sys/vm/dirty_ratio (%s)", strerror(errno));
+        }
+        mSavedDirtyRatio = -1;
+    }
     return 0;
 }
 
