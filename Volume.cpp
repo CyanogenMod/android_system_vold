@@ -337,7 +337,10 @@ int Volume::mountVol() {
 
         protectFromAutorunStupidity();
 
-        if (createBindMounts()) {
+        /* There can be only one SEC_ASECDIR, so let it be /mnt/sdcard */
+        if (0 != strcmp(getMountpoint(), "/mnt/sdcard")) {
+            SLOGI("Skipping bindmounts for alternate volume (%s)", getMountpoint());
+        } else if (createBindMounts()) {
             SLOGE("Failed to create bindmounts (%s)", strerror(errno));
             umount("/mnt/secure/staging");
             setState(Volume::State_Idle);
@@ -520,24 +523,27 @@ int Volume::unmountVol(bool force) {
 
     protectFromAutorunStupidity();
 
-    /*
-     * Unmount the tmpfs which was obscuring the asec image directory
-     * from non root users
-     */
+    /* Undo createBindMounts(), which is only called for /mnt/sdcard */
+    if (0 == strcmp(getMountpoint(), "/mnt/sdcard")) {
+        /*
+         * Unmount the tmpfs which was obscuring the asec image directory
+         * from non root users
+         */
 
-    if (doUnmount(Volume::SEC_STG_SECIMGDIR, force)) {
-        SLOGE("Failed to unmount tmpfs on %s (%s)", SEC_STG_SECIMGDIR, strerror(errno));
-        goto fail_republish;
-    }
+        if (doUnmount(Volume::SEC_STG_SECIMGDIR, force)) {
+            SLOGE("Failed to unmount tmpfs on %s (%s)", SEC_STG_SECIMGDIR, strerror(errno));
+            goto fail_republish;
+        }
 
-    /*
-     * Remove the bindmount we were using to keep a reference to
-     * the previously obscured directory.
-     */
+        /*
+         * Remove the bindmount we were using to keep a reference to
+         * the previously obscured directory.
+         */
 
-    if (doUnmount(Volume::SEC_ASECDIR, force)) {
-        SLOGE("Failed to remove bindmount on %s (%s)", SEC_ASECDIR, strerror(errno));
-        goto fail_remount_tmpfs;
+        if (doUnmount(Volume::SEC_ASECDIR, force)) {
+            SLOGE("Failed to remove bindmount on %s (%s)", SEC_ASECDIR, strerror(errno));
+            goto fail_remount_tmpfs;
+        }
     }
 
     /*
