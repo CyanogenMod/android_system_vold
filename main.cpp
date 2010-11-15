@@ -177,7 +177,8 @@ static int process_config(VolumeManager *vm) {
     }
 
     while(fgets(line, sizeof(line), fp)) {
-        char *next = line;
+        const char *delim = " \t";
+        char *save_ptr;
         char *type, *label, *mount_point;
 
         n++;
@@ -186,24 +187,24 @@ static int process_config(VolumeManager *vm) {
         if (line[0] == '#' || line[0] == '\0')
             continue;
 
-        if (!(type = strsep(&next, " \t"))) {
+        if (!(type = strtok_r(line, delim, &save_ptr))) {
             SLOGE("Error parsing type");
             goto out_syntax;
         }
-        if (!(label = strsep(&next, " \t"))) {
+        if (!(label = strtok_r(NULL, delim, &save_ptr))) {
             SLOGE("Error parsing label");
             goto out_syntax;
         }
-        if (!(mount_point = strsep(&next, " \t"))) {
+        if (!(mount_point = strtok_r(NULL, delim, &save_ptr))) {
             SLOGE("Error parsing mount point");
             goto out_syntax;
         }
 
         if (!strcmp(type, "dev_mount")) {
             DirectVolume *dv = NULL;
-            char *part, *sysfs_path;
+            char *part;
 
-            if (!(part = strsep(&next, " \t"))) {
+            if (!(part = strtok_r(NULL, delim, &save_ptr))) {
                 SLOGE("Error parsing partition");
                 goto out_syntax;
             }
@@ -218,7 +219,7 @@ static int process_config(VolumeManager *vm) {
                 dv = new DirectVolume(vm, label, mount_point, atoi(part));
             }
 
-            while((sysfs_path = strsep(&next, " \t"))) {
+            while (char *sysfs_path = strtok_r(NULL, delim, &save_ptr)) {
                 if (dv->addPath(sysfs_path)) {
                     SLOGE("Failed to add devpath %s to volume %s", sysfs_path,
                          label);
