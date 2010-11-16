@@ -22,6 +22,7 @@
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <string.h>
 
 #define LOG_TAG "VoldCmdListener"
 #include <cutils/log.h>
@@ -504,4 +505,3 @@ int CommandListener::XwarpCmd::runCommand(SocketClient *cli,
 
     return 0;
 }
-

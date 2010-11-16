@@ -15,6 +15,7 @@
  */
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <fcntl.h>
 #include <unistd.h>
 #include <errno.h>
@@ -292,4 +293,3 @@ void *Devmapper::_align(void *ptr, unsigned int a)
 
         return (void *) (((unsigned long) ptr + agn) & ~agn);
 }
-

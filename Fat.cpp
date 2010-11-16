@@ -15,6 +15,7 @@
  */
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <fcntl.h>
 #include <unistd.h>
 #include <errno.h>
@@ -30,6 +31,7 @@
 #include <sys/mount.h>
 
 #include <linux/kdev_t.h>
+#include <linux/fs.h>
 
 #define LOG_TAG "Vold"
 
