@@ -31,7 +31,7 @@
 #include "VolumeManager.h"
 #include "CommandListener.h"
 #include "NetlinkManager.h"
-#include "DirectVolume.h"
+#include "AutoVolume.h"
 
 static int process_config(VolumeManager *vm);
 static void coldboot(const char *path);
@@ -177,7 +177,20 @@ static int process_config(VolumeManager *vm) {
     char line[255];
 
     if (!(fp = fopen("/etc/vold.fstab", "r"))) {
-        return -1;
+        const char *sdcard = 0;
+        if ((fp = fopen("/proc/cmdline", "r"))) {
+            while (fscanf(fp, "%s", line) > 0) {
+                if (!strncmp(line, "SDCARD=", 7)) {
+                    sdcard = line + 7;
+                    break;
+                }
+            }
+            fclose(fp);
+        }
+        // FIXME: should not hardcode the label and mount_point
+        AutoVolume *dv = new AutoVolume(vm, "sdcard", "/mnt/sdcard", sdcard);
+        vm->addVolume(dv);
+        return 0;
     }
 
     while(fgets(line, sizeof(line), fp)) {

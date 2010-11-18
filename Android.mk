@@ -15,6 +15,7 @@ common_src_files := \
 	NetlinkHandler.cpp \
 	Volume.cpp \
 	DirectVolume.cpp \
+	AutoVolume.cpp \
 	logwrapper.c \
 	Process.cpp \
 	Fat.cpp \
