@@ -219,6 +219,7 @@ int Volume::formatVol() {
 
     setState(Volume::State_Formatting);
 
+    int ret = -1;
     // Only initialize the MBR if we are formatting the entire device
     if (formatEntireDevice) {
         sprintf(devicePath, "/dev/block/vold/%d:%d",
@@ -242,10 +243,11 @@ int Volume::formatVol() {
         goto err;
     }
 
-    setState(Volume::State_Idle);
-    return 0;
+    ret = 0;
+
 err:
-    return -1;
+    setState(Volume::State_Idle);
+    return ret;
 }
 
 bool Volume::isMountpointMounted(const char *path) {
