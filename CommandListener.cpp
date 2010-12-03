@@ -36,6 +36,7 @@
 #include "Xwarp.h"
 #include "Loop.h"
 #include "Devmapper.h"
+#include "cryptfs.h"
 
 CommandListener::CommandListener() :
                  FrameworkListener("vold") {
@@ -46,6 +47,7 @@ CommandListener::CommandListener() :
     registerCmd(new ShareCmd());
     registerCmd(new StorageCmd());
     registerCmd(new XwarpCmd());
+    registerCmd(new CryptfsCmd());
 }
 
 void CommandListener::dumpArgs(int argc, char **argv, int argObscure) {
@@ -55,7 +57,7 @@ void CommandListener::dumpArgs(int argc, char **argv, int argObscure) {
     memset(buffer, 0, sizeof(buffer));
     int i;
     for (i = 0; i < argc; i++) {
-        int len = strlen(argv[i]) + 1; // Account for space
+        unsigned int len = strlen(argv[i]) + 1; // Account for space
         if (i == argObscure) {
             len += 2; // Account for {}
         }
@@ -505,3 +507,46 @@ int CommandListener::XwarpCmd::runCommand(SocketClient *cli,
 
     return 0;
 }
+
+CommandListener::CryptfsCmd::CryptfsCmd() :
+                 VoldCommand("cryptfs") {
+}
+
+int CommandListener::CryptfsCmd::runCommand(SocketClient *cli,
+                                                      int argc, char **argv) {
+    dumpArgs(argc, argv, -1);
+
+    if (argc < 2) {
+        cli->sendMsg(ResponseCode::CommandSyntaxError, "Missing Argument", false);
+        return 0;
+    }
+
+    int rc = 0;
+
+    if (!strcmp(argv[1], "checkpw")) {
+        if (argc != 3) {
+            cli->sendMsg(ResponseCode::CommandSyntaxError, "Usage: cryptfs checkpw <passwd>", false);
+            return 0;
+        }
+        rc = cryptfs_check_passwd(argv[2]);
+    } else if (!strcmp(argv[1], "enablecrypto")) {
+        if ( (argc != 4) || (strcmp(argv[2], "wipe") && strcmp(argv[2], "inplace")) ) {
+            cli->sendMsg(ResponseCode::CommandSyntaxError, "Usage: cryptfs enablecrypto <wipe|inplace> <passwd>", false);
+            return 0;
+        }
+        rc = cryptfs_enable(argv[2], argv[3]);
+    } else {
+        cli->sendMsg(ResponseCode::CommandSyntaxError, "Unknown cryptfs cmd", false);
+    }
+
+    if (!rc) {
+        cli->sendMsg(ResponseCode::CommandOkay, "cryptfs operation succeeded", false);
+    } else {
+        int erno = errno;
+        rc = ResponseCode::convertFromErrno();
+        cli->sendMsg(rc, "cryptfs operation failed", true);
+    }
+
+    return 0;
+}
+

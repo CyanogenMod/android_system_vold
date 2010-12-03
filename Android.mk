@@ -21,7 +21,8 @@ common_src_files := \
 	Loop.cpp \
 	Devmapper.cpp \
 	ResponseCode.cpp \
-	Xwarp.cpp
+	Xwarp.cpp \
+	cryptfs.c
 
 common_c_includes := \
 	$(KERNEL_HEADERS) \
