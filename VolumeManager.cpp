@@ -184,8 +184,6 @@ void VolumeManager::handleSwitchEvent(NetlinkEvent *evt) {
         if (newAvailable != oldAvailable) {
             notifyUmsAvailable(newAvailable);
         }
-    } else {
-        SLOGW("Ignoring unknown switch '%s'", name);
     }
 }
 void VolumeManager::handleUsbCompositeEvent(NetlinkEvent *evt) {
