@@ -54,8 +54,10 @@ void NetlinkHandler::onEvent(NetlinkEvent *evt) {
         vm->handleBlockEvent(evt);
     } else if (!strcmp(subsys, "switch")) {
         vm->handleSwitchEvent(evt);
+#ifndef USE_USB_MASS_STORAGE_SWITCH
     } else if (!strcmp(subsys, "usb_composite")) {
         vm->handleUsbCompositeEvent(evt);
+#endif
     } else if (!strcmp(subsys, "battery")) {
     } else if (!strcmp(subsys, "power_supply")) {
     }
