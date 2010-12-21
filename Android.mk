@@ -36,7 +36,9 @@ common_shared_libraries := \
 include $(CLEAR_VARS)
 
 LOCAL_MODULE := libvold
-
+ifeq ($(BOARD_USE_USB_MASS_STORAGE_SWITCH), true)
+LOCAL_CFLAGS += -DUSE_USB_MASS_STORAGE_SWITCH
+endif
 LOCAL_SRC_FILES := $(common_src_files)
 
 LOCAL_C_INCLUDES := $(common_c_includes)
@@ -51,13 +53,15 @@ include $(CLEAR_VARS)
 
 LOCAL_MODULE:= vold
 
+ifeq ($(BOARD_USE_USB_MASS_STORAGE_SWITCH), true)
+LOCAL_CFLAGS += -DUSE_USB_MASS_STORAGE_SWITCH
+endif
+
 LOCAL_SRC_FILES := \
 	main.cpp \
 	$(common_src_files)
 
 LOCAL_C_INCLUDES := $(common_c_includes)
-
-LOCAL_CFLAGS := 
 
 LOCAL_SHARED_LIBRARIES := $(common_shared_libraries)
 
@@ -70,8 +74,6 @@ LOCAL_SRC_FILES:= vdc.c
 LOCAL_MODULE:= vdc
 
 LOCAL_C_INCLUDES := $(KERNEL_HEADERS)
-
-LOCAL_CFLAGS := 
 
 LOCAL_SHARED_LIBRARIES := libcutils
 

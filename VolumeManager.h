@@ -58,8 +58,13 @@ private:
 
     VolumeCollection      *mVolumes;
     AsecIdCollection      *mActiveContainers;
+
+#ifdef USE_USB_MASS_STORAGE_SWITCH
+    bool                   mUsbMassStorageConnected;
+#else
     bool                   mUsbMassStorageEnabled;
     bool                   mUsbConnected;
+#endif
     bool                   mDebug;
 
     // for adjusting /proc/sys/vm/dirty_ratio when UMS is active
@@ -75,7 +80,9 @@ public:
 
     void handleBlockEvent(NetlinkEvent *evt);
     void handleSwitchEvent(NetlinkEvent *evt);
+#ifndef USE_USB_MASS_STORAGE_SWITCH
     void handleUsbCompositeEvent(NetlinkEvent *evt);
+#endif
 
     int addVolume(Volume *v);
 
@@ -111,6 +118,9 @@ public:
 
     void setDebug(bool enable);
 
+#ifdef USE_USB_MASS_STORAGE_SWITCH
+    void notifyUmsConnected(bool connected);
+#endif
     // XXX: Post froyo this should be moved and cleaned up
     int cleanupAsec(Volume *v, bool force);
 
@@ -123,11 +133,13 @@ public:
 
 private:
     VolumeManager();
-    void readInitialState();
+
     Volume *lookupVolume(const char *label);
     bool isMountpointMounted(const char *mp);
-
+#ifndef USE_USB_MASS_STORAGE_SWITCH
+    void readInitialState();
     inline bool massStorageAvailable() const { return mUsbMassStorageEnabled && mUsbConnected; }
     void notifyUmsAvailable(bool available);
+#endif
 };
 #endif
