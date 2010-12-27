@@ -18,6 +18,7 @@ common_src_files := \
 	logwrapper.c \
 	Process.cpp \
 	Fat.cpp \
+        Ext4.cpp \
 	Loop.cpp \
 	Devmapper.cpp \
 	ResponseCode.cpp \
