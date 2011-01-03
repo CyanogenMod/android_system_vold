@@ -1162,12 +1162,6 @@ int VolumeManager::unshareVolume(const char *label, const char *method) {
 
     int fd;
 
-    char nodepath[255];
-    snprintf(nodepath,
-             sizeof(nodepath), "/dev/block/vold/%d:%d",
-             MAJOR(d), MINOR(d));
-
-    // TODO: Currently only two mounts are supported, defaulting
     // /mnt/sdcard to lun0 and anything else to lun1. Fix this.
     if (0 == strcmp(label, "/mnt/sdcard")) {
         if ((fd = open("/sys/devices/platform/usb_mass_storage/lun0/file", O_WRONLY)) < 0) {
