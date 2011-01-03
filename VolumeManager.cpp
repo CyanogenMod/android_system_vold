@@ -1162,6 +1162,14 @@ int VolumeManager::unshareVolume(const char *label, const char *method) {
 
     int fd;
 
+    dev_t d = v->getShareDevice();
+    if ((MAJOR(d) == 0) && (MINOR(d) == 0)) {
+        // This volume does not support raw disk access
+        errno = EINVAL;
+        return -1;
+    }
+
+
     char nodepath[255];
     snprintf(nodepath,
              sizeof(nodepath), "/dev/block/vold/%d:%d",
