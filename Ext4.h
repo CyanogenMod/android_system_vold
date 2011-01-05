@@ -14,18 +14,18 @@
  * limitations under the License.
  */
 
-#ifndef _FAT_H
-#define _FAT_H
+#ifndef _EXT4_H
+#define _EXT4_H
 
 #include <unistd.h>
 
-class Fat {
+class Ext4 {
 public:
     static int check(const char *fsPath);
     static int doMount(const char *fsPath, const char *mountPoint,
-                       bool ro, bool remount, bool executable,
-                       int ownerUid, int ownerGid, int permMask,
-                       bool createLost);
+                                   bool ro, bool remount, bool executable,
+                                   int ownerUid, int ownerGid, int permMask,
+                                   bool createLost);
     static int format(const char *fsPath, unsigned int numSectors);
     static void cleanupUnmount(const char *path);
 };

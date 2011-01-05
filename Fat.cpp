@@ -149,6 +149,12 @@ int Fat::doMount(const char *fsPath, const char *mountPoint,
     return rc;
 }
 
+void Fat::cleanupUnmount(const char *path)
+{
+}
+
+    
+
 int Fat::format(const char *fsPath, unsigned int numSectors) {
     int fd;
     const char *args[11];
