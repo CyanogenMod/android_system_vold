@@ -28,7 +28,7 @@
 #include "VolumeManager.h"
 
 NetlinkHandler::NetlinkHandler(int listenerSocket) :
-  NetlinkListener(listenerSocket, NetlinkListener::NETLINK_FORMAT_ASCII) {
+                NetlinkListener(listenerSocket) {
 }
 
 NetlinkHandler::~NetlinkHandler() {
