@@ -285,7 +285,7 @@ static int create_crypto_blk_dev(struct crypt_mnt_ftr *crypt_ftr, unsigned char 
   convert_key_to_hex_ascii(master_key, crypt_ftr->keysize, master_key_ascii);
   sprintf(crypt_params, "%s %s 0 %s 0", crypt_ftr->crypto_type_name,
           master_key_ascii, real_blk_name);
-  SLOGD("crypt_params = %s\n", crypt_params);
+  //SLOGD("crypt_params = %s\n", crypt_params);  // Only for debugging, prints the master key!
   crypt_params += strlen(crypt_params) + 1;
   crypt_params = (char *) (((unsigned long)crypt_params + 7) & ~8); /* Align to an 8 byte boundary */
   tgt->next = crypt_params - buffer;
@@ -459,7 +459,7 @@ static int get_orig_mount_parms(char *mount_point, char *fs_type, char *real_blk
 static int wait_and_unmount(char *mountpoint)
 {
     int i, rc;
-#define WAIT_UNMOUNT_COUNT 100
+#define WAIT_UNMOUNT_COUNT 20
 
     /*  Now umount the tmpfs filesystem */
     for (i=0; i<WAIT_UNMOUNT_COUNT; i++) {
@@ -786,9 +786,9 @@ int cryptfs_enable(char *howarg, char *passwd)
     property_set("vold.decrypt", "trigger_shutdown_framework");
     SLOGD("Just asked init to shut down class main\n");
 
-    /* Temporary hack FIX ME!*/
-    sleep(30);
-    umount("/mnt/sdcard");
+    if (wait_and_unmount("/mnt/sdcard")) {
+        return -1;
+    }
 
     /* Now unmount the /data partition. */
     if (! (rc = wait_and_unmount("/data")) ) {
