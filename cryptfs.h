@@ -53,6 +53,7 @@ struct crypt_mnt_ftr {
 extern "C" {
 #endif
   int cryptfs_check_passwd(char *pw);
+  int cryptfs_restart(void);
   int cryptfs_enable(char *flag, char *passwd);
 #ifdef __cplusplus
 }
