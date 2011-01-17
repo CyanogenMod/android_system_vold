@@ -514,8 +514,6 @@ CommandListener::CryptfsCmd::CryptfsCmd() :
 
 int CommandListener::CryptfsCmd::runCommand(SocketClient *cli,
                                                       int argc, char **argv) {
-    dumpArgs(argc, argv, -1);
-
     if (argc < 2) {
         cli->sendMsg(ResponseCode::CommandSyntaxError, "Missing Argument", false);
         return 0;
@@ -528,20 +526,31 @@ int CommandListener::CryptfsCmd::runCommand(SocketClient *cli,
             cli->sendMsg(ResponseCode::CommandSyntaxError, "Usage: cryptfs checkpw <passwd>", false);
             return 0;
         }
+        dumpArgs(argc, argv, 2);
         rc = cryptfs_check_passwd(argv[2]);
     } else if (!strcmp(argv[1], "restart")) {
         if (argc != 2) {
             cli->sendMsg(ResponseCode::CommandSyntaxError, "Usage: cryptfs restart", false);
             return 0;
         }
+        dumpArgs(argc, argv, -1);
         rc = cryptfs_restart();
     } else if (!strcmp(argv[1], "enablecrypto")) {
         if ( (argc != 4) || (strcmp(argv[2], "wipe") && strcmp(argv[2], "inplace")) ) {
             cli->sendMsg(ResponseCode::CommandSyntaxError, "Usage: cryptfs enablecrypto <wipe|inplace> <passwd>", false);
             return 0;
         }
+        dumpArgs(argc, argv, 3);
         rc = cryptfs_enable(argv[2], argv[3]);
+    } else if (!strcmp(argv[1], "changepw")) {
+        if (argc != 4) {
+            cli->sendMsg(ResponseCode::CommandSyntaxError, "Usage: cryptfs changepw <oldpasswd> <newpasswd>", false);
+            return 0;
+        } 
+        SLOGD("cryptfs changepw <oldpw> <newpw>");
+        rc = cryptfs_changepw(argv[2], argv[3]);
     } else {
+        dumpArgs(argc, argv, -1);
         cli->sendMsg(ResponseCode::CommandSyntaxError, "Unknown cryptfs cmd", false);
     }
 

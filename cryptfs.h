@@ -55,6 +55,7 @@ extern "C" {
   int cryptfs_check_passwd(char *pw);
   int cryptfs_restart(void);
   int cryptfs_enable(char *flag, char *passwd);
+  int cryptfs_changepw(char *oldpw, char *newpw);
 #ifdef __cplusplus
 }
 #endif
