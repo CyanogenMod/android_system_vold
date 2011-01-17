@@ -33,6 +33,7 @@
 #include <string.h>
 #include <sys/mount.h>
 #include <openssl/evp.h>
+#include <openssl/sha.h>
 #include <errno.h>
 #include <sys/reboot.h>
 #include "cryptfs.h"
@@ -41,8 +42,12 @@
 #include "cutils/properties.h"
 
 #define DM_CRYPT_BUF_SIZE 4096
+#define DATA_MNT_POINT "/data"
 
 char *me = "cryptfs";
+
+static unsigned char saved_key_sha1[20] = { '\0' };
+static int  key_sha1_saved = 0;
 
 static void ioctl_init(struct dm_ioctl *io, size_t dataSize, const char *name, unsigned flags)
 {
@@ -150,13 +155,7 @@ static int get_crypt_ftr_and_key(char *real_blk_name, struct crypt_mnt_ftr *cryp
    * encryption info footer and key, and plenty of bytes to spare for future
    * growth.
    */
-#if 1 /* The real location, use when the enable code works */
   off = ((off64_t)nr_sec * 512) - CRYPT_FOOTER_OFFSET;
-#else
-  /* For testing, I'm slapping a handbuild header after my 200 megabyte
-   * /data partition.  So my offset if 200 megabytes */
-  off = 200*1024*1024;
-#endif
 
   if (lseek64(fd, off, SEEK_SET) == -1) {
     SLOGE("Cannot seek to real block device footer\n");
@@ -343,36 +342,31 @@ errout:
 
 }
 
-/* If we need to debug this, look at Devmapper.cpp:dumpState(),
- * It does DM_LIST_DEVICES, then iterates on each device and
- * calls DM_DEV_STATUS.
- */
-
 #define HASH_COUNT 2000
 #define KEY_LEN_BYTES 16
 #define IV_LEN_BYTES 16
 
-static int create_encrypted_random_key(char *passwd, unsigned char *master_key)
+static void pbkdf2(char *passwd, unsigned char *ikey)
 {
-    int fd;
-    unsigned char buf[KEY_LEN_BYTES];
-    unsigned char ikey[32+32] = { 0 }; /* Big enough to hold a 256 bit key and 256 bit IV */
-    unsigned char salt[32] = { 0 };
-    EVP_CIPHER_CTX e_ctx;
-    int encrypted_len, final_len;
+    unsigned char salt[32] =  { 0 };
 
-    /* Get some random bits for a key */
-    fd = open("/dev/urandom", O_RDONLY);
-    read(fd, buf, sizeof(buf));
-    close(fd);
-
-    /* Now encrypt it with the password */
     /* To Do: Make a salt based on some immutable data about this device.
      * IMEI, or MEID, or CPU serial number, or whatever we can find
      */
     /* Turn the password into a key and IV that can decrypt the master key */
     PKCS5_PBKDF2_HMAC_SHA1(passwd, strlen(passwd), salt, sizeof(salt),
                            HASH_COUNT, KEY_LEN_BYTES+IV_LEN_BYTES, ikey);
+}
+
+static int encrypt_master_key(char *passwd, unsigned char *decrypted_master_key,
+                              unsigned char *encrypted_master_key)
+{
+    unsigned char ikey[32+32] = { 0 }; /* Big enough to hold a 256 bit key and 256 bit IV */
+    EVP_CIPHER_CTX e_ctx;
+    int encrypted_len, final_len;
+
+    /* Turn the password into a key and IV that can decrypt the master key */
+    pbkdf2(passwd, ikey);
   
     /* Initialize the decryption engine */
     if (! EVP_EncryptInit(&e_ctx, EVP_aes_128_cbc(), ikey, ikey+KEY_LEN_BYTES)) {
@@ -380,13 +374,14 @@ static int create_encrypted_random_key(char *passwd, unsigned char *master_key)
         return -1;
     }
     EVP_CIPHER_CTX_set_padding(&e_ctx, 0); /* Turn off padding as our data is block aligned */
+
     /* Encrypt the master key */
-    if (! EVP_EncryptUpdate(&e_ctx, master_key, &encrypted_len,
-                              buf, KEY_LEN_BYTES)) {
+    if (! EVP_EncryptUpdate(&e_ctx, encrypted_master_key, &encrypted_len,
+                              decrypted_master_key, KEY_LEN_BYTES)) {
         SLOGE("EVP_EncryptUpdate failed\n");
         return -1;
     }
-    if (! EVP_EncryptFinal(&e_ctx, master_key + encrypted_len, &final_len)) {
+    if (! EVP_EncryptFinal(&e_ctx, encrypted_master_key + encrypted_len, &final_len)) {
         SLOGE("EVP_EncryptFinal failed\n");
         return -1;
     }
@@ -403,16 +398,11 @@ static int decrypt_master_key(char *passwd, unsigned char *encrypted_master_key,
                               unsigned char *decrypted_master_key)
 {
   unsigned char ikey[32+32] = { 0 }; /* Big enough to hold a 256 bit key and 256 bit IV */
-  unsigned char salt[32] = { 0 };
   EVP_CIPHER_CTX d_ctx;
   int decrypted_len, final_len;
 
-  /* To Do: Make a salt based on some immutable data about this device.
-   * IMEI, or MEID, or CPU serial number, or whatever we can find
-   */
   /* Turn the password into a key and IV that can decrypt the master key */
-  PKCS5_PBKDF2_HMAC_SHA1(passwd, strlen(passwd), salt, sizeof(salt),
-                         HASH_COUNT, KEY_LEN_BYTES+IV_LEN_BYTES, ikey);
+  pbkdf2(passwd, ikey);
 
   /* Initialize the decryption engine */
   if (! EVP_DecryptInit(&d_ctx, EVP_aes_128_cbc(), ikey, ikey+KEY_LEN_BYTES)) {
@@ -433,6 +423,24 @@ static int decrypt_master_key(char *passwd, unsigned char *encrypted_master_key,
   } else {
     return 0;
   }
+}
+
+static int create_encrypted_random_key(char *passwd, unsigned char *master_key)
+{
+    int fd;
+    unsigned char buf[KEY_LEN_BYTES];
+    unsigned char ikey[32+32] = { 0 }; /* Big enough to hold a 256 bit key and 256 bit IV */
+    unsigned char salt[32] = { 0 };
+    EVP_CIPHER_CTX e_ctx;
+    int encrypted_len, final_len;
+
+    /* Get some random bits for a key */
+    fd = open("/dev/urandom", O_RDONLY);
+    read(fd, buf, sizeof(buf));
+    close(fd);
+
+    /* Now encrypt it with the password */
+    return encrypt_master_key(passwd, buf, master_key);
 }
 
 static int get_orig_mount_parms(char *mount_point, char *fs_type, char *real_blkdev,
@@ -482,6 +490,36 @@ static int wait_and_unmount(char *mountpoint)
     return rc;
 }
 
+#define DATA_PREP_TIMEOUT 100
+static int prep_data_fs(void)
+{
+    int i;
+
+    /* Do the prep of the /data filesystem */
+    property_set("vold.post_fs_data_done", "0");
+    property_set("vold.decrypt", "trigger_post_fs_data");
+    SLOGD("Just triggered post_fs_data\n");
+
+    /* Wait a max of 25 seconds, hopefully it takes much less */
+    for (i=0; i<DATA_PREP_TIMEOUT; i++) {
+        char p[16];;
+
+        property_get("vold.post_fs_data_done", p, "0");
+        if (*p == '1') {
+            break;
+        } else {
+            usleep(250000);
+        }
+    }
+    if (i == DATA_PREP_TIMEOUT) {
+        /* Ugh, we failed to prep /data in time.  Bail. */
+        return -1;
+    } else {
+        SLOGD("post_fs_data done\n");
+        return 0;
+    }
+}
+
 int cryptfs_restart(void)
 {
     char fs_type[32];
@@ -491,7 +529,6 @@ int cryptfs_restart(void)
     unsigned long mnt_flags;
     struct stat statbuf;
     int rc = -1, i;
-#define DATA_PREP_TIMEOUT 100
 
     /* Here is where we shut down the framework.  The init scripts
      * start all services in one of three classes: core, main or late_start.
@@ -523,31 +560,15 @@ int cryptfs_restart(void)
         return -1;
     }
 
-    if (! get_orig_mount_parms("/data", fs_type, real_blkdev, &mnt_flags, fs_options)) {
+    if (! get_orig_mount_parms(DATA_MNT_POINT, fs_type, real_blkdev, &mnt_flags, fs_options)) {
         SLOGD("Just got orig mount parms\n");
 
-        if (! (rc = wait_and_unmount("/data")) ) {
+        if (! (rc = wait_and_unmount(DATA_MNT_POINT)) ) {
             /* If that succeeded, then mount the decrypted filesystem */
-            mount(crypto_blkdev, "/data", fs_type, mnt_flags, fs_options);
+            mount(crypto_blkdev, DATA_MNT_POINT, fs_type, mnt_flags, fs_options);
 
-            /* Do the prep of the /data filesystem */
-            property_set("vold.post_fs_data_done", "0");
-            property_set("vold.decrypt", "trigger_post_fs_data");
-            SLOGD("Just triggered post_fs_data\n");
-
-            /* Wait a max of 25 seconds, hopefully it takes much less */
-            for (i=0; i<DATA_PREP_TIMEOUT; i++) {
-                char p[16];;
-
-                property_get("vold.post_fs_data_done", p, "0");
-                if (*p == '1') {
-                    break;
-                } else {
-                    usleep(250000);
-                }
-            }
-            if (i == DATA_PREP_TIMEOUT) {
-                /* Ugh, we failed to prep /data in time.  Bail. */
+            /* Create necessary paths on /data */
+            if (prep_data_fs()) {
                 return -1;
             }
 
@@ -633,6 +654,12 @@ static int test_mount_encrypted_fs(char *passwd, char *mount_point)
      * so we can mount it when restarting the framework.
      */
     property_set("ro.crypto.fs_crypto_blkdev", crypto_blkdev);
+    /* Also save a SHA1 of the master key so we can know if we
+     * successfully decrypted the key when we want to change the
+     * password on it.
+     */
+    SHA1(decrypted_master_key, KEY_LEN_BYTES, saved_key_sha1);
+    key_sha1_saved = 1;
     rc = 0;
   }
 
@@ -643,7 +670,7 @@ int cryptfs_check_passwd(char *passwd)
 {
     int rc = -1;
 
-    rc = test_mount_encrypted_fs(passwd, "/data");
+    rc = test_mount_encrypted_fs(passwd, DATA_MNT_POINT);
 
     return rc;
 }
@@ -707,7 +734,8 @@ static int cryptfs_enable_inplace(char *crypto_blkdev, char *real_blkdev, off64_
     char *buf[CRYPT_INPLACE_BUFSIZE];
     int rc = -1;
     off64_t numblocks, i, remainder;
-   
+    off64_t one_pct, cur_pct, new_pct;
+
     if ( (realfd = open(real_blkdev, O_RDONLY)) < 0) { 
         SLOGE("Error opening real_blkdev %s for inplace encrypt\n", real_blkdev);
         return -1;
@@ -729,11 +757,18 @@ static int cryptfs_enable_inplace(char *crypto_blkdev, char *real_blkdev, off64_
 
     SLOGE("Encrypting filesystem in place...");
 
+    one_pct = numblocks / 100;
+    cur_pct = 0;
     /* process the majority of the filesystem in blocks */
     for (i=0; i<numblocks; i++) {
-        if ( ! (i % 65536)) { //KEN
-            SLOGE("|"); //KEN
-        } //KEN
+        new_pct = i / one_pct;
+        if (new_pct > cur_pct) {
+            char buf[8];
+
+            cur_pct = new_pct;
+            snprintf(buf, sizeof(buf), "%lld", cur_pct);
+            property_set("vold.encrypt_progress", buf);
+        }
         if (unix_read(realfd, buf, CRYPT_INPLACE_BUFSIZE) <= 0) {
             SLOGE("Error reading real_blkdev %s for inplace encrypt\n", crypto_blkdev);
             goto errout;
@@ -756,6 +791,8 @@ static int cryptfs_enable_inplace(char *crypto_blkdev, char *real_blkdev, off64_
         }
     }
 
+    property_set("vold.encrypt_progress", "100");
+
     rc = 0;
 
 errout:
@@ -767,6 +804,9 @@ errout:
 
 #define CRYPTO_ENABLE_WIPE 1
 #define CRYPTO_ENABLE_INPLACE 2
+
+#define FRAMEWORK_BOOT_WAIT 60
+
 int cryptfs_enable(char *howarg, char *passwd)
 {
     int how = 0;
@@ -774,8 +814,9 @@ int cryptfs_enable(char *howarg, char *passwd)
     char fs_type[32], fs_options[256], mount_point[32];
     unsigned long mnt_flags, nr_sec;
     unsigned char master_key[16], decrypted_master_key[16];
-    int rc, fd;
+    int rc=-1, fd, i;
     struct crypt_mnt_ftr crypt_ftr;
+    char tmpfs_options[80];
 
     if (!strcmp(howarg, "wipe")) {
       how = CRYPTO_ENABLE_WIPE;
@@ -789,7 +830,7 @@ int cryptfs_enable(char *howarg, char *passwd)
     get_orig_mount_parms(mount_point, fs_type, real_blkdev, &mnt_flags, fs_options);
 
     /* The init files are setup to stop the class main and late start when
-     * set to 4.  They also unmount the fuse filesystem /mnt/sdcard on stingray.
+     * vold sets trigger_shutdown_framework.
      */
     property_set("vold.decrypt", "trigger_shutdown_framework");
     SLOGD("Just asked init to shut down class main\n");
@@ -799,52 +840,142 @@ int cryptfs_enable(char *howarg, char *passwd)
     }
 
     /* Now unmount the /data partition. */
-    if (! (rc = wait_and_unmount("/data")) ) {
-        /* OK, we've unmounted /data, time to setup an encrypted
-         * mapping, and either write a new filesystem or encrypt
-         * in place.
+    if (wait_and_unmount(DATA_MNT_POINT)) {
+        return -1;
+    }
+
+    /* Do extra work for a better UX when doing the long inplace encryption */
+    if (how == CRYPTO_ENABLE_INPLACE) {
+        /* Now that /data is unmounted, we need to mount a tmpfs
+         * /data, set a property saying we're doing inplace encryption,
+         * and restart the framework.
          */
-
-        fd = open(real_blkdev, O_RDONLY);
-        if ( (nr_sec = get_blkdev_size(fd)) == 0) {
-            SLOGE("Cannot get size of block device %s\n", real_blkdev);
+        property_get("ro.crypto.tmpfs_options", tmpfs_options, "");
+        if (mount("tmpfs", DATA_MNT_POINT, "tmpfs", MS_NOATIME | MS_NOSUID | MS_NODEV,
+            tmpfs_options) < 0) {
             return -1;
         }
-        close(fd);
+        /* Tells the framework that inplace encryption is starting */
+        property_set("vold.encrypt_progress", "startup");
 
-        /* Initialize a crypt_mnt_ftr for the partition */
-        cryptfs_init_crypt_mnt_ftr(&crypt_ftr);
-        crypt_ftr.fs_size = nr_sec - (CRYPT_FOOTER_OFFSET / 512);
-        strcpy((char *)crypt_ftr.crypto_type_name, "aes-cbc-essiv:sha256");
-
-        /* Make an encrypted master key */
-        if (create_encrypted_random_key(passwd, master_key)) {
-            SLOGE("Cannot create encrypted master key\n");
+        /* restart the framework. */
+        /* Create necessary paths on /data */
+        if (prep_data_fs()) {
             return -1;
         }
 
-        /* Write the key to the end of the partition */
-        put_crypt_ftr_and_key(real_blkdev, &crypt_ftr, master_key);
+        /* startup service classes main and late_start */
+        property_set("vold.decrypt", "trigger_restart_min_framework");
+        SLOGD("Just triggered restart_min_framework\n");
 
-        decrypt_master_key(passwd, master_key, decrypted_master_key);
-        create_crypto_blk_dev(&crypt_ftr, decrypted_master_key, real_blkdev, crypto_blkdev);
+        /* Wait till the framework is ready */
+        for (i=0; i<FRAMEWORK_BOOT_WAIT; i++) {
+            char progress_state[32];
 
-        if (how == CRYPTO_ENABLE_WIPE) {
-            rc = cryptfs_enable_wipe(crypto_blkdev, crypt_ftr.fs_size);
-        } else if (how == CRYPTO_ENABLE_INPLACE) {
-            rc = cryptfs_enable_inplace(crypto_blkdev, real_blkdev, crypt_ftr.fs_size);
-        } else {
-            /* Shouldn't happen */
-            SLOGE("cryptfs_enable: internal error, unknown option\n");
+            sleep(1);
+            property_get("vold.encrypt_progress", progress_state, "");
+            if (! strcmp(progress_state, "ready")) {
+                break;
+            }
+        }
+        if (i == FRAMEWORK_BOOT_WAIT) {
+            /* The framework never rebooted, so abort */
             return -1;
         }
+        /* OK, the framework is restarted and displaying a progress bar,
+         * time to setup an encrypted mapping, and either write a new
+         * filesystem or encrypt in place, updating the progress bar
+         * as we work.
+         */
+    }
 
-        if (! rc) {
-            delete_crypto_blk_dev(crypto_blkdev);
-            sync();
-            reboot(LINUX_REBOOT_CMD_RESTART);
-        }
+    /* Start the actual work of making an encrypted filesystem */
+    fd = open(real_blkdev, O_RDONLY);
+    if ( (nr_sec = get_blkdev_size(fd)) == 0) {
+        SLOGE("Cannot get size of block device %s\n", real_blkdev);
+        return -1;
+    }
+    close(fd);
+
+    /* Initialize a crypt_mnt_ftr for the partition */
+    cryptfs_init_crypt_mnt_ftr(&crypt_ftr);
+    crypt_ftr.fs_size = nr_sec - (CRYPT_FOOTER_OFFSET / 512);
+    strcpy((char *)crypt_ftr.crypto_type_name, "aes-cbc-essiv:sha256");
+
+    /* Make an encrypted master key */
+    if (create_encrypted_random_key(passwd, master_key)) {
+        SLOGE("Cannot create encrypted master key\n");
+        return -1;
+    }
+
+    /* Write the key to the end of the partition */
+    put_crypt_ftr_and_key(real_blkdev, &crypt_ftr, master_key);
+
+    decrypt_master_key(passwd, master_key, decrypted_master_key);
+    create_crypto_blk_dev(&crypt_ftr, decrypted_master_key, real_blkdev, crypto_blkdev);
+
+    if (how == CRYPTO_ENABLE_WIPE) {
+        rc = cryptfs_enable_wipe(crypto_blkdev, crypt_ftr.fs_size);
+    } else if (how == CRYPTO_ENABLE_INPLACE) {
+        rc = cryptfs_enable_inplace(crypto_blkdev, real_blkdev, crypt_ftr.fs_size);
     } else {
+        /* Shouldn't happen */
+        SLOGE("cryptfs_enable: internal error, unknown option\n");
+        return -1;
+    }
+
+    /* Undo the dm-crypt mapping whether we succeed or not */
+    delete_crypto_blk_dev(crypto_blkdev);
+
+    if (! rc) {
+        /* Success */
+        sleep(2); /* Give the UI a change to show 100% progress */
+        sync();
+        reboot(LINUX_REBOOT_CMD_RESTART);
+    }
+
+    /* Only returns on error */
+    return rc;
+}
+
+int cryptfs_changepw(char *oldpw, char *newpw)
+{
+    struct crypt_mnt_ftr crypt_ftr;
+    unsigned char encrypted_master_key[32], decrypted_master_key[32];
+    unsigned char new_key_sha1[20];
+    char real_blkdev[MAXPATHLEN];
+
+    /* This is only allowed after we've successfully decrypted the master key */
+    if (! key_sha1_saved) {
+        return -1;
+    }
+
+    property_get("ro.crypto.fs_real_blkdev", real_blkdev, "");
+    if (strlen(real_blkdev) == 0) {
+        return -1;
+    }
+
+    /* get key */
+    if (get_crypt_ftr_and_key(real_blkdev, &crypt_ftr, encrypted_master_key)) {
+      SLOGE("Error getting crypt footer and key\n");
+      return -1;
+    }
+
+    /* decrypt key with old passwd */
+    decrypt_master_key(oldpw, encrypted_master_key, decrypted_master_key);
+
+    /* compute sha1 of decrypted key */
+    SHA1(decrypted_master_key, KEY_LEN_BYTES, new_key_sha1);
+
+    /* If computed sha1 and saved sha1 match, encrypt key with new passwd */
+    if (! memcmp(saved_key_sha1, new_key_sha1, sizeof(saved_key_sha1))) {
+        /* they match, it's safe to re-encrypt the key */
+        encrypt_master_key(newpw, decrypted_master_key, encrypted_master_key);
+
+        /* save the key */
+        put_crypt_ftr_and_key(real_blkdev, &crypt_ftr, encrypted_master_key);
+    } else {
+        SLOGE("SHA1 mismatch");
         return -1;
     }
 
