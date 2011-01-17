@@ -482,10 +482,11 @@ static int wait_and_unmount(char *mountpoint)
     return rc;
 }
 
-static int cryptfs_restart(char *crypto_blkdev)
+int cryptfs_restart(void)
 {
     char fs_type[32];
     char real_blkdev[MAXPATHLEN];
+    char crypto_blkdev[MAXPATHLEN];
     char fs_options[256];
     unsigned long mnt_flags;
     struct stat statbuf;
@@ -515,6 +516,12 @@ static int cryptfs_restart(char *crypto_blkdev)
     /* Now that the framework is shutdown, we should be able to umount()
      * the tmpfs filesystem, and mount the real one.
      */
+
+    property_get("ro.crypto.fs_crypto_blkdev", crypto_blkdev, "");
+    if (strlen(crypto_blkdev) == 0) {
+        SLOGE("fs_crypto_blkdev not set\n");
+        return -1;
+    }
 
     if (! get_orig_mount_parms("/data", fs_type, real_blkdev, &mnt_flags, fs_options)) {
         SLOGD("Just got orig mount parms\n");
@@ -622,10 +629,11 @@ static int test_mount_encrypted_fs(char *passwd, char *mount_point)
     rc = crypt_ftr.failed_decrypt_count;
 
   } else {
-    /* Woot!  Success!  Time to do the magic of unmounting the tmpfs
-     * disk and mounting the encrypted one.
+    /* Woot!  Success!  Save the name of the crypto block device
+     * so we can mount it when restarting the framework.
      */
-    rc = cryptfs_restart(crypto_blkdev);
+    property_set("ro.crypto.fs_crypto_blkdev", crypto_blkdev);
+    rc = 0;
   }
 
   return rc;
