@@ -855,7 +855,7 @@ int cryptfs_enable(char *howarg, char *passwd)
             return -1;
         }
         /* Tells the framework that inplace encryption is starting */
-        property_set("vold.encrypt_progress", "startup");
+        property_set("vold.encrypt_progress", "0");
 
         /* restart the framework. */
         /* Create necessary paths on /data */
@@ -867,24 +867,10 @@ int cryptfs_enable(char *howarg, char *passwd)
         property_set("vold.decrypt", "trigger_restart_min_framework");
         SLOGD("Just triggered restart_min_framework\n");
 
-        /* Wait till the framework is ready */
-        for (i=0; i<FRAMEWORK_BOOT_WAIT; i++) {
-            char progress_state[32];
-
-            sleep(1);
-            property_get("vold.encrypt_progress", progress_state, "");
-            if (! strcmp(progress_state, "ready")) {
-                break;
-            }
-        }
-        if (i == FRAMEWORK_BOOT_WAIT) {
-            /* The framework never rebooted, so abort */
-            return -1;
-        }
-        /* OK, the framework is restarted and displaying a progress bar,
-         * time to setup an encrypted mapping, and either write a new
-         * filesystem or encrypt in place, updating the progress bar
-         * as we work.
+        /* OK, the framework is restarted and will soon be showing a
+         * progress bar.  Time to setup an encrypted mapping, and
+         * either write a new filesystem, or encrypt in place updating
+         * the progress bar as we work.
          */
     }
 
