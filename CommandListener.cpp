@@ -547,7 +547,7 @@ int CommandListener::CryptfsCmd::runCommand(SocketClient *cli,
             cli->sendMsg(ResponseCode::CommandSyntaxError, "Usage: cryptfs changepw <oldpasswd> <newpasswd>", false);
             return 0;
         } 
-        SLOGD("cryptfs changepw <oldpw> <newpw>");
+        SLOGD("cryptfs changepw {} {}");
         rc = cryptfs_changepw(argv[2], argv[3]);
     } else {
         dumpArgs(argc, argv, -1);

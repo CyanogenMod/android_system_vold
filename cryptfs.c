@@ -284,7 +284,6 @@ static int create_crypto_blk_dev(struct crypt_mnt_ftr *crypt_ftr, unsigned char 
   convert_key_to_hex_ascii(master_key, crypt_ftr->keysize, master_key_ascii);
   sprintf(crypt_params, "%s %s 0 %s 0", crypt_ftr->crypto_type_name,
           master_key_ascii, real_blk_name);
-  //SLOGD("crypt_params = %s\n", crypt_params);  // Only for debugging, prints the master key!
   crypt_params += strlen(crypt_params) + 1;
   crypt_params = (char *) (((unsigned long)crypt_params + 7) & ~8); /* Align to an 8 byte boundary */
   tgt->next = crypt_params - buffer;
@@ -947,17 +946,19 @@ int cryptfs_changepw(char *oldpw, char *newpw)
 
     /* This is only allowed after we've successfully decrypted the master key */
     if (! key_sha1_saved) {
+        SLOGE("Key not saved");
         return -1;
     }
 
     property_get("ro.crypto.fs_real_blkdev", real_blkdev, "");
     if (strlen(real_blkdev) == 0) {
+        SLOGE("Can't find real blkdev");
         return -1;
     }
 
     /* get key */
     if (get_crypt_ftr_and_key(real_blkdev, &crypt_ftr, encrypted_master_key)) {
-      SLOGE("Error getting crypt footer and key\n");
+      SLOGE("Error getting crypt footer and key");
       return -1;
     }
 
