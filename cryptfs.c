@@ -528,6 +528,18 @@ int cryptfs_restart(void)
     unsigned long mnt_flags;
     struct stat statbuf;
     int rc = -1, i;
+    static int restart_successful = 0;
+
+    /* Validate that it's OK to call this routine */
+    if (! key_sha1_saved) {
+        SLOGE("Encrypted filesystem not validated, aborting");
+        return -1;
+    }
+
+    if (restart_successful) {
+        SLOGE("System already restarted with encrypted disk, aborting");
+        return -1;
+    }
 
     /* Here is where we shut down the framework.  The init scripts
      * start all services in one of three classes: core, main or late_start.
@@ -580,6 +592,10 @@ int cryptfs_restart(void)
         }
     }
 
+    if (rc == 0) {
+        restart_successful = 1;
+    }
+
     return rc;
 }
 
@@ -595,7 +611,14 @@ static int test_mount_encrypted_fs(char *passwd, char *mount_point)
   char tmp_mount_point[64];
   unsigned long mnt_flags;
   unsigned int orig_failed_decrypt_count;
+  char encrypted_state[32];
   int rc;
+
+  property_get("ro.crypto.state", encrypted_state, "");
+  if ( key_sha1_saved || strcmp(encrypted_state, "encrypted") ) {
+    SLOGE("encrypted fs already validated or not running with encryption, aborting");
+    return -1;
+  }
 
   if (get_orig_mount_parms(mount_point, fs_type, real_blkdev, &mnt_flags, fs_options)) {
     SLOGE("Error reading original mount parms for mount point %s\n", mount_point);
@@ -816,6 +839,13 @@ int cryptfs_enable(char *howarg, char *passwd)
     int rc=-1, fd, i;
     struct crypt_mnt_ftr crypt_ftr;
     char tmpfs_options[80];
+    char encrypted_state[32];
+
+    property_get("ro.crypto.state", encrypted_state, "");
+    if (strcmp(encrypted_state, "unencrypted")) {
+        SLOGE("Device is already running encrypted, aborting");
+        return -1;
+    }
 
     if (!strcmp(howarg, "wipe")) {
       how = CRYPTO_ENABLE_WIPE;
@@ -932,7 +962,7 @@ int cryptfs_changepw(char *oldpw, char *newpw)
 
     /* This is only allowed after we've successfully decrypted the master key */
     if (! key_sha1_saved) {
-        SLOGE("Key not saved");
+        SLOGE("Key not saved, aborting");
         return -1;
     }
 
