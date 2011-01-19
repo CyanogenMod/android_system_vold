@@ -74,11 +74,11 @@ static unsigned int get_blkdev_size(int fd)
   return nr_sec;
 }
 
-/* key can be NULL, in which case just write out the footer.  Useful to
+/* key or salt can be NULL, in which case just skip writing that value.  Useful to
  * update the failed mount count but not change the key.
  */
 static int put_crypt_ftr_and_key(char *real_blk_name, struct crypt_mnt_ftr *crypt_ftr,
-                                  unsigned char *key)
+                                  unsigned char *key, unsigned char *salt)
 {
   int fd;
   unsigned int nr_sec, cnt;
@@ -124,6 +124,23 @@ static int put_crypt_ftr_and_key(char *real_blk_name, struct crypt_mnt_ftr *cryp
     }
   }
 
+  if (salt) {
+    /* Compute the offset for start of the crypt footer */
+    off = ((off64_t)nr_sec * 512) - CRYPT_FOOTER_OFFSET;
+    /* Add in the length of the footer, key and padding */
+    off += sizeof(struct crypt_mnt_ftr) + crypt_ftr->keysize + KEY_TO_SALT_PADDING;
+
+    if (lseek64(fd, off, SEEK_SET) == -1) {
+      SLOGE("Cannot seek to real block device salt \n");
+      goto errout;
+    }
+
+    if ( (cnt = write(fd, salt, SALT_LEN)) != SALT_LEN) {
+      SLOGE("Cannot write salt for real block device %s\n", real_blk_name);
+      goto errout;
+    }
+  }
+
   /* Success! */
   rc = 0;
 
@@ -134,7 +151,7 @@ errout:
 }
 
 static int get_crypt_ftr_and_key(char *real_blk_name, struct crypt_mnt_ftr *crypt_ftr,
-                                  unsigned char *key)
+                                  unsigned char *key, unsigned char *salt)
 {
   int fd;
   unsigned int nr_sec, cnt;
@@ -201,6 +218,16 @@ static int get_crypt_ftr_and_key(char *real_blk_name, struct crypt_mnt_ftr *cryp
 
   if ( (cnt = read(fd, key, crypt_ftr->keysize)) != crypt_ftr->keysize) {
     SLOGE("Cannot read key for real block device %s\n", real_blk_name);
+    goto errout;
+  }
+
+  if (lseek64(fd, KEY_TO_SALT_PADDING, SEEK_CUR) == -1) {
+    SLOGE("Cannot seek to real block device salt\n");
+    goto errout;
+  }
+
+  if ( (cnt = read(fd, salt, SALT_LEN)) != SALT_LEN) {
+    SLOGE("Cannot read salt for real block device %s\n", real_blk_name);
     goto errout;
   }
 
@@ -345,19 +372,15 @@ errout:
 #define KEY_LEN_BYTES 16
 #define IV_LEN_BYTES 16
 
-static void pbkdf2(char *passwd, unsigned char *ikey)
+static void pbkdf2(char *passwd, unsigned char *salt, unsigned char *ikey)
 {
-    unsigned char salt[32] =  { 0 };
-
-    /* To Do: Make a salt based on some immutable data about this device.
-     * IMEI, or MEID, or CPU serial number, or whatever we can find
-     */
     /* Turn the password into a key and IV that can decrypt the master key */
-    PKCS5_PBKDF2_HMAC_SHA1(passwd, strlen(passwd), salt, sizeof(salt),
+    PKCS5_PBKDF2_HMAC_SHA1(passwd, strlen(passwd), salt, SALT_LEN,
                            HASH_COUNT, KEY_LEN_BYTES+IV_LEN_BYTES, ikey);
 }
 
-static int encrypt_master_key(char *passwd, unsigned char *decrypted_master_key,
+static int encrypt_master_key(char *passwd, unsigned char *salt,
+                              unsigned char *decrypted_master_key,
                               unsigned char *encrypted_master_key)
 {
     unsigned char ikey[32+32] = { 0 }; /* Big enough to hold a 256 bit key and 256 bit IV */
@@ -365,7 +388,7 @@ static int encrypt_master_key(char *passwd, unsigned char *decrypted_master_key,
     int encrypted_len, final_len;
 
     /* Turn the password into a key and IV that can decrypt the master key */
-    pbkdf2(passwd, ikey);
+    pbkdf2(passwd, salt, ikey);
   
     /* Initialize the decryption engine */
     if (! EVP_EncryptInit(&e_ctx, EVP_aes_128_cbc(), ikey, ikey+KEY_LEN_BYTES)) {
@@ -393,7 +416,8 @@ static int encrypt_master_key(char *passwd, unsigned char *decrypted_master_key,
     }
 }
 
-static int decrypt_master_key(char *passwd, unsigned char *encrypted_master_key,
+static int decrypt_master_key(char *passwd, unsigned char *salt,
+                              unsigned char *encrypted_master_key,
                               unsigned char *decrypted_master_key)
 {
   unsigned char ikey[32+32] = { 0 }; /* Big enough to hold a 256 bit key and 256 bit IV */
@@ -401,7 +425,7 @@ static int decrypt_master_key(char *passwd, unsigned char *encrypted_master_key,
   int decrypted_len, final_len;
 
   /* Turn the password into a key and IV that can decrypt the master key */
-  pbkdf2(passwd, ikey);
+  pbkdf2(passwd, salt, ikey);
 
   /* Initialize the decryption engine */
   if (! EVP_DecryptInit(&d_ctx, EVP_aes_128_cbc(), ikey, ikey+KEY_LEN_BYTES)) {
@@ -424,22 +448,21 @@ static int decrypt_master_key(char *passwd, unsigned char *encrypted_master_key,
   }
 }
 
-static int create_encrypted_random_key(char *passwd, unsigned char *master_key)
+static int create_encrypted_random_key(char *passwd, unsigned char *master_key, unsigned char *salt)
 {
     int fd;
-    unsigned char buf[KEY_LEN_BYTES];
-    unsigned char ikey[32+32] = { 0 }; /* Big enough to hold a 256 bit key and 256 bit IV */
-    unsigned char salt[32] = { 0 };
+    unsigned char key_buf[KEY_LEN_BYTES];
     EVP_CIPHER_CTX e_ctx;
     int encrypted_len, final_len;
 
     /* Get some random bits for a key */
     fd = open("/dev/urandom", O_RDONLY);
-    read(fd, buf, sizeof(buf));
+    read(fd, key_buf, sizeof(key_buf));
+    read(fd, salt, SALT_LEN);
     close(fd);
 
     /* Now encrypt it with the password */
-    return encrypt_master_key(passwd, buf, master_key);
+    return encrypt_master_key(passwd, salt, key_buf, master_key);
 }
 
 static int get_orig_mount_parms(char *mount_point, char *fs_type, char *real_blkdev,
@@ -604,6 +627,7 @@ static int test_mount_encrypted_fs(char *passwd, char *mount_point)
   struct crypt_mnt_ftr crypt_ftr;
   /* Allocate enough space for a 256 bit key, but we may use less */
   unsigned char encrypted_master_key[32], decrypted_master_key[32];
+  unsigned char salt[SALT_LEN];
   char crypto_blkdev[MAXPATHLEN];
   char real_blkdev[MAXPATHLEN];
   char fs_type[32];
@@ -625,7 +649,7 @@ static int test_mount_encrypted_fs(char *passwd, char *mount_point)
     return -1;
   }
 
-  if (get_crypt_ftr_and_key(real_blkdev, &crypt_ftr, encrypted_master_key)) {
+  if (get_crypt_ftr_and_key(real_blkdev, &crypt_ftr, encrypted_master_key, salt)) {
     SLOGE("Error getting crypt footer and key\n");
     return -1;
   }
@@ -633,7 +657,7 @@ static int test_mount_encrypted_fs(char *passwd, char *mount_point)
   orig_failed_decrypt_count = crypt_ftr.failed_decrypt_count;
 
   if (! (crypt_ftr.flags & CRYPT_MNT_KEY_UNENCRYPTED) ) {
-    decrypt_master_key(passwd, encrypted_master_key, decrypted_master_key);
+    decrypt_master_key(passwd, salt, encrypted_master_key, decrypted_master_key);
   }
 
   if (create_crypto_blk_dev(&crypt_ftr, decrypted_master_key,
@@ -664,7 +688,7 @@ static int test_mount_encrypted_fs(char *passwd, char *mount_point)
   }
 
   if (orig_failed_decrypt_count != crypt_ftr.failed_decrypt_count) {
-    put_crypt_ftr_and_key(real_blkdev, &crypt_ftr, 0);
+    put_crypt_ftr_and_key(real_blkdev, &crypt_ftr, 0, 0);
   }
 
   if (crypt_ftr.failed_decrypt_count) {
@@ -836,6 +860,7 @@ int cryptfs_enable(char *howarg, char *passwd)
     char fs_type[32], fs_options[256], mount_point[32];
     unsigned long mnt_flags, nr_sec;
     unsigned char master_key[16], decrypted_master_key[16];
+    unsigned char salt[SALT_LEN];
     int rc=-1, fd, i;
     struct crypt_mnt_ftr crypt_ftr;
     char tmpfs_options[80];
@@ -918,15 +943,15 @@ int cryptfs_enable(char *howarg, char *passwd)
     strcpy((char *)crypt_ftr.crypto_type_name, "aes-cbc-essiv:sha256");
 
     /* Make an encrypted master key */
-    if (create_encrypted_random_key(passwd, master_key)) {
+    if (create_encrypted_random_key(passwd, master_key, salt)) {
         SLOGE("Cannot create encrypted master key\n");
         return -1;
     }
 
     /* Write the key to the end of the partition */
-    put_crypt_ftr_and_key(real_blkdev, &crypt_ftr, master_key);
+    put_crypt_ftr_and_key(real_blkdev, &crypt_ftr, master_key, salt);
 
-    decrypt_master_key(passwd, master_key, decrypted_master_key);
+    decrypt_master_key(passwd, salt, master_key, decrypted_master_key);
     create_crypto_blk_dev(&crypt_ftr, decrypted_master_key, real_blkdev, crypto_blkdev);
 
     if (how == CRYPTO_ENABLE_WIPE) {
@@ -957,6 +982,7 @@ int cryptfs_changepw(char *oldpw, char *newpw)
 {
     struct crypt_mnt_ftr crypt_ftr;
     unsigned char encrypted_master_key[32], decrypted_master_key[32];
+    unsigned char salt[SALT_LEN];
     unsigned char new_key_sha1[20];
     char real_blkdev[MAXPATHLEN];
 
@@ -973,13 +999,13 @@ int cryptfs_changepw(char *oldpw, char *newpw)
     }
 
     /* get key */
-    if (get_crypt_ftr_and_key(real_blkdev, &crypt_ftr, encrypted_master_key)) {
+    if (get_crypt_ftr_and_key(real_blkdev, &crypt_ftr, encrypted_master_key, salt)) {
       SLOGE("Error getting crypt footer and key");
       return -1;
     }
 
     /* decrypt key with old passwd */
-    decrypt_master_key(oldpw, encrypted_master_key, decrypted_master_key);
+    decrypt_master_key(oldpw, salt, encrypted_master_key, decrypted_master_key);
 
     /* compute sha1 of decrypted key */
     SHA1(decrypted_master_key, KEY_LEN_BYTES, new_key_sha1);
@@ -987,10 +1013,10 @@ int cryptfs_changepw(char *oldpw, char *newpw)
     /* If computed sha1 and saved sha1 match, encrypt key with new passwd */
     if (! memcmp(saved_key_sha1, new_key_sha1, sizeof(saved_key_sha1))) {
         /* they match, it's safe to re-encrypt the key */
-        encrypt_master_key(newpw, decrypted_master_key, encrypted_master_key);
+        encrypt_master_key(newpw, salt, decrypted_master_key, encrypted_master_key);
 
         /* save the key */
-        put_crypt_ftr_and_key(real_blkdev, &crypt_ftr, encrypted_master_key);
+        put_crypt_ftr_and_key(real_blkdev, &crypt_ftr, encrypted_master_key, 0);
     } else {
         SLOGE("SHA1 mismatch");
         return -1;

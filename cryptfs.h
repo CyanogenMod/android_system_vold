@@ -17,6 +17,10 @@
 /* This structure starts 16,384 bytes before the end of a hardware
  * partition that is encrypted.
  * Immediately following this structure is the encrypted key.
+ * The keysize field tells how long the key is, in bytes.
+ * Then there is 32 bytes of padding,
+ * Finally there is the salt used with the user password.
+ * The salt is fixed at 16 bytes long.
  * Obviously, the filesystem does not include the last 16 kbytes
  * of the partition.
  */
@@ -24,6 +28,9 @@
 #define CRYPT_FOOTER_OFFSET 0x4000
 
 #define MAX_CRYPTO_TYPE_NAME_LEN 64
+
+#define SALT_LEN 16
+#define KEY_TO_SALT_PADDING 32
 
 /* definitions of flags in the structure below */
 #define CRYPT_MNT_KEY_UNENCRYPTED 0x1 /* The key for the partition is not encrypted. */
