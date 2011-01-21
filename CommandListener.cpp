@@ -554,13 +554,11 @@ int CommandListener::CryptfsCmd::runCommand(SocketClient *cli,
         cli->sendMsg(ResponseCode::CommandSyntaxError, "Unknown cryptfs cmd", false);
     }
 
-    if (!rc) {
-        cli->sendMsg(ResponseCode::CommandOkay, "cryptfs operation succeeded", false);
-    } else {
-        int erno = errno;
-        rc = ResponseCode::convertFromErrno();
-        cli->sendMsg(rc, "cryptfs operation failed", true);
-    }
+    // Always report that the command succeeded and return the error code.
+    // The caller will check the return value to see what the error was.
+    char msg[255];
+    snprintf(msg, sizeof(msg), "%d", rc);
+    cli->sendMsg(ResponseCode::CommandOkay, msg, false);
 
     return 0;
 }
