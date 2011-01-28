@@ -44,10 +44,14 @@
 #define DM_CRYPT_BUF_SIZE 4096
 #define DATA_MNT_POINT "/data"
 
+#define HASH_COUNT 2000
+#define KEY_LEN_BYTES 16
+#define IV_LEN_BYTES 16
+
 char *me = "cryptfs";
 
-static unsigned char saved_key_sha1[20] = { '\0' };
-static int  key_sha1_saved = 0;
+static unsigned char saved_master_key[KEY_LEN_BYTES];
+static int  master_key_saved = 0;
 
 static void ioctl_init(struct dm_ioctl *io, size_t dataSize, const char *name, unsigned flags)
 {
@@ -112,7 +116,7 @@ static int put_crypt_ftr_and_key(char *real_blk_name, struct crypt_mnt_ftr *cryp
   }
 
   if (key) {
-    if (crypt_ftr->keysize != 16) {
+    if (crypt_ftr->keysize != KEY_LEN_BYTES) {
       SLOGE("Keysize of %d bits not supported for real block device %s\n",
             crypt_ftr->keysize * 8, real_blk_name);
       goto errout; 
@@ -210,7 +214,7 @@ static int get_crypt_ftr_and_key(char *real_blk_name, struct crypt_mnt_ftr *cryp
     }
   }
 
-  if (crypt_ftr->keysize != 16) {
+  if (crypt_ftr->keysize != KEY_LEN_BYTES) {
     SLOGE("Keysize of %d bits not supported for real block device %s\n",
           crypt_ftr->keysize * 8, real_blk_name);
     goto errout;
@@ -367,10 +371,6 @@ errout:
   return retval;
 
 }
-
-#define HASH_COUNT 2000
-#define KEY_LEN_BYTES 16
-#define IV_LEN_BYTES 16
 
 static void pbkdf2(char *passwd, unsigned char *salt, unsigned char *ikey)
 {
@@ -554,7 +554,7 @@ int cryptfs_restart(void)
     static int restart_successful = 0;
 
     /* Validate that it's OK to call this routine */
-    if (! key_sha1_saved) {
+    if (! master_key_saved) {
         SLOGE("Encrypted filesystem not validated, aborting");
         return -1;
     }
@@ -639,7 +639,7 @@ static int test_mount_encrypted_fs(char *passwd, char *mount_point)
   int rc;
 
   property_get("ro.crypto.state", encrypted_state, "");
-  if ( key_sha1_saved || strcmp(encrypted_state, "encrypted") ) {
+  if ( master_key_saved || strcmp(encrypted_state, "encrypted") ) {
     SLOGE("encrypted fs already validated or not running with encryption, aborting");
     return -1;
   }
@@ -700,12 +700,12 @@ static int test_mount_encrypted_fs(char *passwd, char *mount_point)
      * so we can mount it when restarting the framework.
      */
     property_set("ro.crypto.fs_crypto_blkdev", crypto_blkdev);
-    /* Also save a SHA1 of the master key so we can know if we
-     * successfully decrypted the key when we want to change the
-     * password on it.
+
+    /* Also save a the master key so we can reencrypted the key
+     * the key when we want to change the password on it.
      */
-    SHA1(decrypted_master_key, KEY_LEN_BYTES, saved_key_sha1);
-    key_sha1_saved = 1;
+    memcpy(saved_master_key, decrypted_master_key, KEY_LEN_BYTES);
+    master_key_saved = 1;
     rc = 0;
   }
 
@@ -733,7 +733,7 @@ static void cryptfs_init_crypt_mnt_ftr(struct crypt_mnt_ftr *ftr)
     ftr->minor_version = 0;
     ftr->ftr_size = sizeof(struct crypt_mnt_ftr);
     ftr->flags = 0;
-    ftr->keysize = 16;
+    ftr->keysize = KEY_LEN_BYTES;
     ftr->spare1 = 0;
     ftr->fs_size = 0;
     ftr->failed_decrypt_count = 0;
@@ -859,7 +859,7 @@ int cryptfs_enable(char *howarg, char *passwd)
     char crypto_blkdev[MAXPATHLEN], real_blkdev[MAXPATHLEN];
     char fs_type[32], fs_options[256], mount_point[32];
     unsigned long mnt_flags, nr_sec;
-    unsigned char master_key[16], decrypted_master_key[16];
+    unsigned char master_key[KEY_LEN_BYTES], decrypted_master_key[KEY_LEN_BYTES];
     unsigned char salt[SALT_LEN];
     int rc=-1, fd, i;
     struct crypt_mnt_ftr crypt_ftr;
@@ -978,16 +978,15 @@ int cryptfs_enable(char *howarg, char *passwd)
     return rc;
 }
 
-int cryptfs_changepw(char *oldpw, char *newpw)
+int cryptfs_changepw(char *newpw)
 {
     struct crypt_mnt_ftr crypt_ftr;
-    unsigned char encrypted_master_key[32], decrypted_master_key[32];
+    unsigned char encrypted_master_key[KEY_LEN_BYTES], decrypted_master_key[KEY_LEN_BYTES];
     unsigned char salt[SALT_LEN];
-    unsigned char new_key_sha1[20];
     char real_blkdev[MAXPATHLEN];
 
     /* This is only allowed after we've successfully decrypted the master key */
-    if (! key_sha1_saved) {
+    if (! master_key_saved) {
         SLOGE("Key not saved, aborting");
         return -1;
     }
@@ -1004,24 +1003,10 @@ int cryptfs_changepw(char *oldpw, char *newpw)
       return -1;
     }
 
-    /* decrypt key with old passwd */
-    decrypt_master_key(oldpw, salt, encrypted_master_key, decrypted_master_key);
+    encrypt_master_key(newpw, salt, saved_master_key, encrypted_master_key);
 
-    /* compute sha1 of decrypted key */
-    SHA1(decrypted_master_key, KEY_LEN_BYTES, new_key_sha1);
-
-    /* If computed sha1 and saved sha1 match, encrypt key with new passwd */
-    if (! memcmp(saved_key_sha1, new_key_sha1, sizeof(saved_key_sha1))) {
-        /* they match, it's safe to re-encrypt the key */
-        encrypt_master_key(newpw, salt, decrypted_master_key, encrypted_master_key);
-
-        /* save the key */
-        put_crypt_ftr_and_key(real_blkdev, &crypt_ftr, encrypted_master_key, 0);
-    } else {
-        SLOGE("SHA1 mismatch");
-        return -1;
-    }
+    /* save the key */
+    put_crypt_ftr_and_key(real_blkdev, &crypt_ftr, encrypted_master_key, salt);
 
     return 0;
 }
-

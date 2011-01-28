@@ -543,12 +543,12 @@ int CommandListener::CryptfsCmd::runCommand(SocketClient *cli,
         dumpArgs(argc, argv, 3);
         rc = cryptfs_enable(argv[2], argv[3]);
     } else if (!strcmp(argv[1], "changepw")) {
-        if (argc != 4) {
-            cli->sendMsg(ResponseCode::CommandSyntaxError, "Usage: cryptfs changepw <oldpasswd> <newpasswd>", false);
+        if (argc != 3) {
+            cli->sendMsg(ResponseCode::CommandSyntaxError, "Usage: cryptfs changepw <newpasswd>", false);
             return 0;
         } 
-        SLOGD("cryptfs changepw {} {}");
-        rc = cryptfs_changepw(argv[2], argv[3]);
+        SLOGD("cryptfs changepw {}");
+        rc = cryptfs_changepw(argv[2]);
     } else {
         dumpArgs(argc, argv, -1);
         cli->sendMsg(ResponseCode::CommandSyntaxError, "Unknown cryptfs cmd", false);
