@@ -26,6 +26,7 @@ common_src_files := \
 
 common_c_includes := \
 	$(KERNEL_HEADERS) \
+	system/extras/ext4_utils \
 	external/openssl/include
 
 common_shared_libraries := \

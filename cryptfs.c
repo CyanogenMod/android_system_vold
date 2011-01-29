@@ -36,6 +36,7 @@
 #include <openssl/sha.h>
 #include <errno.h>
 #include <sys/reboot.h>
+#include <ext4.h>
 #include "cryptfs.h"
 #define LOG_TAG "Cryptfs"
 #include "cutils/log.h"
@@ -61,6 +62,37 @@ static void ioctl_init(struct dm_ioctl *io, size_t dataSize, const char *name, u
     if (name) {
         strncpy(io->name, name, sizeof(io->name));
     }
+}
+
+static unsigned int get_fs_size(char *dev)
+{
+    int fd, block_size;
+    struct ext4_super_block sb;
+    off64_t len;
+
+    if ((fd = open(dev, O_RDONLY)) < 0) {
+        SLOGE("Cannot open device to get filesystem size ");
+        return 0;
+    }
+
+    if (lseek64(fd, 1024, SEEK_SET) < 0) {
+        SLOGE("Cannot seek to superblock");
+        return 0;
+    }
+
+    if (read(fd, &sb, sizeof(sb)) != sizeof(sb)) {
+        SLOGE("Cannot read superblock");
+        return 0;
+    }
+
+    close(fd);
+
+    block_size = 1024 << sb.s_log_block_size;
+    /* compute length in bytes */
+    len = ( ((off64_t)sb.s_blocks_count_hi << 32) + sb.s_blocks_count_lo) * block_size;
+
+    /* return length in sectors */
+    return (unsigned int) (len / 512);
 }
 
 static unsigned int get_blkdev_size(int fd)
@@ -869,7 +901,7 @@ int cryptfs_enable(char *howarg, char *passwd)
     property_get("ro.crypto.state", encrypted_state, "");
     if (strcmp(encrypted_state, "unencrypted")) {
         SLOGE("Device is already running encrypted, aborting");
-        return -1;
+        goto error_unencrypted;
     }
 
     if (!strcmp(howarg, "wipe")) {
@@ -878,10 +910,31 @@ int cryptfs_enable(char *howarg, char *passwd)
       how = CRYPTO_ENABLE_INPLACE;
     } else {
       /* Shouldn't happen, as CommandListener vets the args */
-      return -1;
+      goto error_unencrypted;
     }
 
     get_orig_mount_parms(mount_point, fs_type, real_blkdev, &mnt_flags, fs_options);
+
+    /* Get the size of the real block device */
+    fd = open(real_blkdev, O_RDONLY);
+    if ( (nr_sec = get_blkdev_size(fd)) == 0) {
+        SLOGE("Cannot get size of block device %s\n", real_blkdev);
+        goto error_unencrypted;
+    }
+    close(fd);
+
+    /* If doing inplace encryption, make sure the orig fs doesn't include the crypto footer */
+    if (how == CRYPTO_ENABLE_INPLACE) {
+        unsigned int fs_size_sec, max_fs_size_sec;
+
+        fs_size_sec = get_fs_size(real_blkdev);
+        max_fs_size_sec = nr_sec - (CRYPT_FOOTER_OFFSET / 512);
+
+        if (fs_size_sec > max_fs_size_sec) {
+            SLOGE("Orig filesystem overlaps crypto footer region.  Cannot encrypt in place.");
+            goto error_unencrypted;
+        }
+    }
 
     /* The init files are setup to stop the class main and late start when
      * vold sets trigger_shutdown_framework.
@@ -890,12 +943,12 @@ int cryptfs_enable(char *howarg, char *passwd)
     SLOGD("Just asked init to shut down class main\n");
 
     if (wait_and_unmount("/mnt/sdcard")) {
-        return -1;
+        goto error_shutting_down;
     }
 
     /* Now unmount the /data partition. */
     if (wait_and_unmount(DATA_MNT_POINT)) {
-        return -1;
+        goto error_shutting_down;
     }
 
     /* Do extra work for a better UX when doing the long inplace encryption */
@@ -907,7 +960,7 @@ int cryptfs_enable(char *howarg, char *passwd)
         property_get("ro.crypto.tmpfs_options", tmpfs_options, "");
         if (mount("tmpfs", DATA_MNT_POINT, "tmpfs", MS_NOATIME | MS_NOSUID | MS_NODEV,
             tmpfs_options) < 0) {
-            return -1;
+            goto error_shutting_down;
         }
         /* Tells the framework that inplace encryption is starting */
         property_set("vold.encrypt_progress", "0");
@@ -915,7 +968,7 @@ int cryptfs_enable(char *howarg, char *passwd)
         /* restart the framework. */
         /* Create necessary paths on /data */
         if (prep_data_fs()) {
-            return -1;
+            goto error_shutting_down;
         }
 
         /* startup service classes main and late_start */
@@ -930,13 +983,6 @@ int cryptfs_enable(char *howarg, char *passwd)
     }
 
     /* Start the actual work of making an encrypted filesystem */
-    fd = open(real_blkdev, O_RDONLY);
-    if ( (nr_sec = get_blkdev_size(fd)) == 0) {
-        SLOGE("Cannot get size of block device %s\n", real_blkdev);
-        return -1;
-    }
-    close(fd);
-
     /* Initialize a crypt_mnt_ftr for the partition */
     cryptfs_init_crypt_mnt_ftr(&crypt_ftr);
     crypt_ftr.fs_size = nr_sec - (CRYPT_FOOTER_OFFSET / 512);
@@ -945,7 +991,7 @@ int cryptfs_enable(char *howarg, char *passwd)
     /* Make an encrypted master key */
     if (create_encrypted_random_key(passwd, master_key, salt)) {
         SLOGE("Cannot create encrypted master key\n");
-        return -1;
+        goto error_unencrypted;
     }
 
     /* Write the key to the end of the partition */
@@ -961,7 +1007,7 @@ int cryptfs_enable(char *howarg, char *passwd)
     } else {
         /* Shouldn't happen */
         SLOGE("cryptfs_enable: internal error, unknown option\n");
-        return -1;
+        goto error_unencrypted;
     }
 
     /* Undo the dm-crypt mapping whether we succeed or not */
@@ -972,10 +1018,34 @@ int cryptfs_enable(char *howarg, char *passwd)
         sleep(2); /* Give the UI a change to show 100% progress */
         sync();
         reboot(LINUX_REBOOT_CMD_RESTART);
+    } else {
+        property_set("vold.encrypt_progress", "error_partially_encrypted");
+        return -1;
     }
 
-    /* Only returns on error */
+    /* hrm, the encrypt step claims success, but the reboot failed.
+     * This should not happen.
+     * Set the property and return.  Hope the framework can deal with it.
+     */
+    property_set("vold.encrypt_progress", "error_reboot_failed");
     return rc;
+
+error_unencrypted:
+    property_set("vold.encrypt_progress", "error_not_encrypted");
+    return -1;
+
+error_shutting_down:
+    /* we failed, and have not encrypted anthing, so the users's data is still intact,
+     * but the framework is stopped and not restarted to show the error, so it's up to
+     * vold to restart the system.
+     */
+    SLOGE("Error enabling encryption after framework is shutdown, no data changed, restarting system");
+    sync();
+    reboot(LINUX_REBOOT_CMD_RESTART);
+
+    /* shouldn't get here */
+    property_set("vold.encrypt_progress", "error_shutting_down");
+    return -1;
 }
 
 int cryptfs_changepw(char *oldpw, char *newpw)
