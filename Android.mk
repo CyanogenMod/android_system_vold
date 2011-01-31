@@ -33,6 +33,7 @@ common_shared_libraries := \
 	libsysutils \
 	libcutils \
 	libdiskconfig \
+	libhardware_legacy \
 	libcrypto
 
 include $(CLEAR_VARS)
