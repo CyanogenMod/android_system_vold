@@ -41,6 +41,7 @@
 #define LOG_TAG "Cryptfs"
 #include "cutils/log.h"
 #include "cutils/properties.h"
+#include "hardware_legacy/power.h"
 
 #define DM_CRYPT_BUF_SIZE 4096
 #define DATA_MNT_POINT "/data"
@@ -897,6 +898,7 @@ int cryptfs_enable(char *howarg, char *passwd)
     struct crypt_mnt_ftr crypt_ftr;
     char tmpfs_options[80];
     char encrypted_state[32];
+    char lockid[32] = { 0 };
 
     property_get("ro.crypto.state", encrypted_state, "");
     if (strcmp(encrypted_state, "unencrypted")) {
@@ -935,6 +937,13 @@ int cryptfs_enable(char *howarg, char *passwd)
             goto error_unencrypted;
         }
     }
+
+    /* Get a wakelock as this may take a while, and we don't want the
+     * device to sleep on us.  We'll grab a partial wakelock, and if the UI
+     * wants to keep the screen on, it can grab a full wakelock.
+     */
+    snprintf(lockid, 32, "enablecrypto%d", (int) getpid());
+    acquire_wake_lock(PARTIAL_WAKE_LOCK, lockid);
 
     /* The init files are setup to stop the class main and late start when
      * vold sets trigger_shutdown_framework.
@@ -1020,6 +1029,7 @@ int cryptfs_enable(char *howarg, char *passwd)
         reboot(LINUX_REBOOT_CMD_RESTART);
     } else {
         property_set("vold.encrypt_progress", "error_partially_encrypted");
+        release_wake_lock(lockid);
         return -1;
     }
 
@@ -1028,10 +1038,14 @@ int cryptfs_enable(char *howarg, char *passwd)
      * Set the property and return.  Hope the framework can deal with it.
      */
     property_set("vold.encrypt_progress", "error_reboot_failed");
+    release_wake_lock(lockid);
     return rc;
 
 error_unencrypted:
     property_set("vold.encrypt_progress", "error_not_encrypted");
+    if (lockid[0]) {
+        release_wake_lock(lockid);
+    }
     return -1;
 
 error_shutting_down:
@@ -1045,6 +1059,9 @@ error_shutting_down:
 
     /* shouldn't get here */
     property_set("vold.encrypt_progress", "error_shutting_down");
+    if (lockid[0]) {
+        release_wake_lock(lockid);
+    }
     return -1;
 }
 
