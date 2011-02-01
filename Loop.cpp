@@ -128,7 +128,7 @@ int Loop::create(const char *id, const char *loopFile, char *loopDeviceBuffer, s
     char filename[256];
 
     for (i = 0; i < LOOP_MAX; i++) {
-        struct loop_info li;
+        struct loop_info64 li;
         int rc;
 
         sprintf(filename, "/dev/block/loop%d", i);
@@ -151,7 +151,7 @@ int Loop::create(const char *id, const char *loopFile, char *loopDeviceBuffer, s
             return -1;
         }
 
-        rc = ioctl(fd, LOOP_GET_STATUS, &li);
+        rc = ioctl(fd, LOOP_GET_STATUS64, &li);
         if (rc < 0 && errno == ENXIO)
             break;
 
