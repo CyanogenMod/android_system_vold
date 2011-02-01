@@ -655,6 +655,43 @@ int cryptfs_restart(void)
     return rc;
 }
 
+static int do_crypto_complete(char *mount_point)
+{
+  struct crypt_mnt_ftr crypt_ftr;
+  unsigned char encrypted_master_key[32];
+  unsigned char salt[SALT_LEN];
+  char real_blkdev[MAXPATHLEN];
+  char fs_type[32];
+  char fs_options[256];
+  unsigned long mnt_flags;
+  char encrypted_state[32];
+
+  property_get("ro.crypto.state", encrypted_state, "");
+  if (strcmp(encrypted_state, "encrypted") ) {
+    SLOGE("not running with encryption, aborting");
+    return 1;
+  }
+
+  if (get_orig_mount_parms(mount_point, fs_type, real_blkdev, &mnt_flags, fs_options)) {
+    SLOGE("Error reading original mount parms for mount point %s\n", mount_point);
+    return -1;
+  }
+
+  if (get_crypt_ftr_and_key(real_blkdev, &crypt_ftr, encrypted_master_key, salt)) {
+    SLOGE("Error getting crypt footer and key\n");
+    return -1;
+  }
+
+  if (crypt_ftr.flags & CRYPT_ENCRYPTION_IN_PROGRESS) {
+    SLOGE("Encryption process didn't finish successfully\n");
+    return -2;  /* -2 is the clue to the UI that there is no usable data on the disk,
+                 * and give the user an option to wipe the disk */
+  }
+
+  /* We passed the test! We shall diminish, and return to the west */
+  return 0;
+}
+
 static int test_mount_encrypted_fs(char *passwd, char *mount_point)
 {
   struct crypt_mnt_ftr crypt_ftr;
@@ -685,12 +722,6 @@ static int test_mount_encrypted_fs(char *passwd, char *mount_point)
   if (get_crypt_ftr_and_key(real_blkdev, &crypt_ftr, encrypted_master_key, salt)) {
     SLOGE("Error getting crypt footer and key\n");
     return -1;
-  }
-
-  if (crypt_ftr.flags & CRYPT_ENCRYPTION_IN_PROGRESS) {
-    SLOGE("Encryption process didn't finish successfully\n");
-    return -2;  /* -2 is the clue to the UI that there is no usable data on the disk,
-                 * and give the user an option to wipe the disk */
   }
 
   SLOGD("crypt_ftr->fs_size = %lld\n", crypt_ftr.fs_size);
@@ -750,6 +781,11 @@ static int test_mount_encrypted_fs(char *passwd, char *mount_point)
   }
 
   return rc;
+}
+
+int cryptfs_crypto_complete(void)
+{
+  return do_crypto_complete("/data");
 }
 
 int cryptfs_check_passwd(char *passwd)
@@ -1002,7 +1038,9 @@ int cryptfs_enable(char *howarg, char *passwd)
     /* Initialize a crypt_mnt_ftr for the partition */
     cryptfs_init_crypt_mnt_ftr(&crypt_ftr);
     crypt_ftr.fs_size = nr_sec - (CRYPT_FOOTER_OFFSET / 512);
+#if 0 /* Disable till MR1, needs more testing */
     crypt_ftr.flags |= CRYPT_ENCRYPTION_IN_PROGRESS;
+#endif
     strcpy((char *)crypt_ftr.crypto_type_name, "aes-cbc-essiv:sha256");
 
     /* Make an encrypted master key */
@@ -1032,9 +1070,12 @@ int cryptfs_enable(char *howarg, char *passwd)
 
     if (! rc) {
         /* Success */
+
+#if 0 /* Disable till MR1, needs more testing */
         /* Clear the encryption in progres flag in the footer */
         crypt_ftr.flags &= ~CRYPT_ENCRYPTION_IN_PROGRESS;
         put_crypt_ftr_and_key(real_blkdev, &crypt_ftr, 0, 0);
+#endif
 
         sleep(2); /* Give the UI a change to show 100% progress */
         sync();

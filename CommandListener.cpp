@@ -535,6 +535,13 @@ int CommandListener::CryptfsCmd::runCommand(SocketClient *cli,
         }
         dumpArgs(argc, argv, -1);
         rc = cryptfs_restart();
+    } else if (!strcmp(argv[1], "cryptocomplete")) {
+        if (argc != 2) {
+            cli->sendMsg(ResponseCode::CommandSyntaxError, "Usage: cryptfs cryptocomplete", false);
+            return 0;
+        }
+        dumpArgs(argc, argv, -1);
+        rc = cryptfs_crypto_complete();
     } else if (!strcmp(argv[1], "enablecrypto")) {
         if ( (argc != 4) || (strcmp(argv[2], "wipe") && strcmp(argv[2], "inplace")) ) {
             cli->sendMsg(ResponseCode::CommandSyntaxError, "Usage: cryptfs enablecrypto <wipe|inplace> <passwd>", false);
