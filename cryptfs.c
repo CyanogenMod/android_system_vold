@@ -686,6 +686,13 @@ static int test_mount_encrypted_fs(char *passwd, char *mount_point)
     SLOGE("Error getting crypt footer and key\n");
     return -1;
   }
+
+  if (crypt_ftr.flags & CRYPT_ENCRYPTION_IN_PROGRESS) {
+    SLOGE("Encryption process didn't finish successfully\n");
+    return -2;  /* -2 is the clue to the UI that there is no usable data on the disk,
+                 * and give the user an option to wipe the disk */
+  }
+
   SLOGD("crypt_ftr->fs_size = %lld\n", crypt_ftr.fs_size);
   orig_failed_decrypt_count = crypt_ftr.failed_decrypt_count;
 
@@ -995,6 +1002,7 @@ int cryptfs_enable(char *howarg, char *passwd)
     /* Initialize a crypt_mnt_ftr for the partition */
     cryptfs_init_crypt_mnt_ftr(&crypt_ftr);
     crypt_ftr.fs_size = nr_sec - (CRYPT_FOOTER_OFFSET / 512);
+    crypt_ftr.flags |= CRYPT_ENCRYPTION_IN_PROGRESS;
     strcpy((char *)crypt_ftr.crypto_type_name, "aes-cbc-essiv:sha256");
 
     /* Make an encrypted master key */
@@ -1024,6 +1032,10 @@ int cryptfs_enable(char *howarg, char *passwd)
 
     if (! rc) {
         /* Success */
+        /* Clear the encryption in progres flag in the footer */
+        crypt_ftr.flags &= ~CRYPT_ENCRYPTION_IN_PROGRESS;
+        put_crypt_ftr_and_key(real_blkdev, &crypt_ftr, 0, 0);
+
         sleep(2); /* Give the UI a change to show 100% progress */
         sync();
         reboot(LINUX_REBOOT_CMD_RESTART);
