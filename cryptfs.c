@@ -1038,9 +1038,7 @@ int cryptfs_enable(char *howarg, char *passwd)
     /* Initialize a crypt_mnt_ftr for the partition */
     cryptfs_init_crypt_mnt_ftr(&crypt_ftr);
     crypt_ftr.fs_size = nr_sec - (CRYPT_FOOTER_OFFSET / 512);
-#if 0 /* Disable till MR1, needs more testing */
     crypt_ftr.flags |= CRYPT_ENCRYPTION_IN_PROGRESS;
-#endif
     strcpy((char *)crypt_ftr.crypto_type_name, "aes-cbc-essiv:sha256");
 
     /* Make an encrypted master key */
@@ -1071,11 +1069,9 @@ int cryptfs_enable(char *howarg, char *passwd)
     if (! rc) {
         /* Success */
 
-#if 0 /* Disable till MR1, needs more testing */
         /* Clear the encryption in progres flag in the footer */
         crypt_ftr.flags &= ~CRYPT_ENCRYPTION_IN_PROGRESS;
         put_crypt_ftr_and_key(real_blkdev, &crypt_ftr, 0, 0);
-#endif
 
         sleep(2); /* Give the UI a change to show 100% progress */
         sync();
