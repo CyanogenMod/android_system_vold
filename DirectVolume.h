@@ -21,13 +21,15 @@
 
 #include "Volume.h"
 
-#define MAX_PARTS 4
+#ifndef VOLD_MAX_PARTITIONS
+#define VOLD_MAX_PARTITIONS 4
+#endif
 
 typedef android::List<char *> PathCollection;
 
 class DirectVolume : public Volume {
 public:
-    static const int MAX_PARTITIONS = 32;
+    static const int MAX_PARTITIONS = VOLD_MAX_PARTITIONS;
 protected:
     const char* mMountpoint;
     const char* mFuseMountpoint;
