@@ -221,6 +221,7 @@ int Volume::formatVol() {
     int ret = -1;
     // Only initialize the MBR if we are formatting the entire device
     if (formatEntireDevice) {
+	    SLOGW("mPartIdx was: %d, will format entire device: /dev/block/vold/%d:%d", mPartIdx, MAJOR(diskNode), MINOR(diskNode));
         sprintf(devicePath, "/dev/block/vold/%d:%d",
                 MAJOR(diskNode), MINOR(diskNode));
 
@@ -232,6 +233,16 @@ int Volume::formatVol() {
 
     sprintf(devicePath, "/dev/block/vold/%d:%d",
             MAJOR(partNode), MINOR(partNode));
+
+#ifdef VOLD_EMMC_SHARES_DEV_MAJOR
+	// If internal and external MMC share dev major #, 
+	// vold can pick the wrong device based on partition nodes alone (BAD!)
+	// Use device nodes instead.
+	dev_t deviceNodes;
+    getDeviceNodes((dev_t *) &deviceNodes, 1);
+	sprintf(devicePath, "/dev/block/vold/%d:%d",
+			MAJOR(deviceNodes), MINOR(deviceNodes));
+#endif
 
     if (mDebug) {
         SLOGI("Formatting volume %s (%s)", getLabel(), devicePath);
