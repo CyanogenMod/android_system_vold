@@ -61,26 +61,43 @@ int Fat::check(const char *fsPath) {
         args[3] = fsPath;
         args[4] = NULL;
 
+        enum { FS_OK, FS_FIXED, FS_MISMATCH, FS_ERROR } status = FS_ERROR;
+
         rc = logwrap(4, args, 1);
         if (rc == 0) {
             // if rc is 0, the check was ok
             // That means the FileSystem is FAT
             fsType = 1;
-        } else {
+            status = FS_OK;
+        } else if (rc == 2)
+            status = FS_MISMATCH;
+        else if (rc == 4)
+            status = FS_FIXED;
+        else
+            status = FS_ERROR;
+
+        if (status == FS_MISMATCH) { // not FAT, let's try EXT
             args[0] = FSCK_EXT_PATH;
             args[1] = "-p";
             args[2] = "-f";
             args[3] = fsPath;
             args[4] = NULL;
             rc = logwrap(4, args, 1);
-            if (rc == 0)
+            if (rc == 0) {
                 // if rc is 0, the check was ok
                 // That means the FileSystem is EXT
                 fsType = 2;
+                status = FS_OK;
+            } else if (rc == 1)
+                status = FS_FIXED;
+            else if (rc == 8)
+                status = FS_MISMATCH;
+            else
+                status = FS_ERROR;
         }
 
-        switch(rc) {
-        case 0:
+        switch(status) {
+        case FS_OK:
             SLOGI("Filesystem check completed OK");
             // TODO: Remove this print.
             const char *fsTypePrint;
@@ -93,12 +110,12 @@ int Fat::check(const char *fsPath) {
             SLOGI("Filesystem type is: %s", fsTypePrint);
             return 0;
 
-        case 2:
+        case FS_MISMATCH:
             SLOGW("Filesystem check failed (not a FAT or EXT filesystem)");
             errno = ENODATA;
             return -1;
 
-        case 4:
+        case FS_FIXED:
             if (pass++ <= 3) {
                 SLOGW("Filesystem modified - rechecking (pass %d)",
                         pass);
