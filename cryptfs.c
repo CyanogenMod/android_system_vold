@@ -35,7 +35,7 @@
 #include <openssl/evp.h>
 #include <openssl/sha.h>
 #include <errno.h>
-#include <sys/reboot.h>
+#include <cutils/android_reboot.h>
 #include <ext4.h>
 #include "cryptfs.h"
 #define LOG_TAG "Cryptfs"
@@ -1074,8 +1074,7 @@ int cryptfs_enable(char *howarg, char *passwd)
         put_crypt_ftr_and_key(real_blkdev, &crypt_ftr, 0, 0);
 
         sleep(2); /* Give the UI a change to show 100% progress */
-        sync();
-        reboot(LINUX_REBOOT_CMD_RESTART);
+        android_reboot(ANDROID_RB_RESTART, 0, 0);
     } else {
         property_set("vold.encrypt_progress", "error_partially_encrypted");
         release_wake_lock(lockid);
@@ -1103,8 +1102,7 @@ error_shutting_down:
      * vold to restart the system.
      */
     SLOGE("Error enabling encryption after framework is shutdown, no data changed, restarting system");
-    sync();
-    reboot(LINUX_REBOOT_CMD_RESTART);
+    android_reboot(ANDROID_RB_RESTART, 0, 0);
 
     /* shouldn't get here */
     property_set("vold.encrypt_progress", "error_shutting_down");
