@@ -634,6 +634,7 @@ int cryptfs_restart(void)
             /* If that succeeded, then mount the decrypted filesystem */
             mount(crypto_blkdev, DATA_MNT_POINT, fs_type, mnt_flags, fs_options);
 
+            property_set("vold.decrypt", "trigger_load_persist_props");
             /* Create necessary paths on /data */
             if (prep_data_fs()) {
                 return -1;
