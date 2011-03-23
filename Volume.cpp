@@ -33,6 +33,8 @@
 
 #include <diskconfig/diskconfig.h>
 
+#include <private/android_filesystem_config.h>
+
 #define LOG_TAG "Vold"
 
 #include <cutils/log.h>
@@ -336,8 +338,18 @@ int Volume::mountVol() {
          * muck with it before exposing it to non priviledged users.
          */
         errno = 0;
+        int gid;
+
+        if (!strcmp(getMountpoint(), "/mnt/sdcard")) {
+            // Special case the primary SD card.
+            // For this we grant write access to the SDCARD_RW group.
+            gid = AID_SDCARD_RW;
+        } else {
+            // For secondary external storage we keep things locked up.
+            gid = AID_MEDIA_RW;
+        }
         if (Fat::doMount(devicePath, "/mnt/secure/staging", false, false, false,
-                1000, 1015, 0702, true)) {
+                AID_SYSTEM, gid, 0702, true)) {
             SLOGE("%s failed to mount via VFAT (%s)\n", devicePath, strerror(errno));
             continue;
         }
