@@ -282,6 +282,8 @@ int Volume::mountVol() {
     dev_t deviceNodes[4];
     int n, i, rc = 0;
     char errmsg[255];
+    const char* externalStorage = getenv("EXTERNAL_STORAGE");
+    bool primaryStorage = externalStorage && !strcmp(getMountpoint(), externalStorage);
 
     if (getState() == Volume::State_NoMedia) {
         snprintf(errmsg, sizeof(errmsg),
@@ -340,7 +342,7 @@ int Volume::mountVol() {
         errno = 0;
         int gid;
 
-        if (!strcmp(getMountpoint(), "/mnt/sdcard")) {
+        if (primaryStorage) {
             // Special case the primary SD card.
             // For this we grant write access to the SDCARD_RW group.
             gid = AID_SDCARD_RW;
@@ -358,7 +360,8 @@ int Volume::mountVol() {
 
         protectFromAutorunStupidity();
 
-        if (createBindMounts()) {
+        // only create android_secure on primary storage
+        if (primaryStorage && createBindMounts()) {
             SLOGE("Failed to create bindmounts (%s)", strerror(errno));
             umount("/mnt/secure/staging");
             setState(Volume::State_Idle);
