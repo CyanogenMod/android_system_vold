@@ -188,8 +188,8 @@ int Loop::create(const char *id, const char *loopFile, char *loopDeviceBuffer, s
     struct loop_info64 li;
 
     memset(&li, 0, sizeof(li));
-    strncpy((char*) li.lo_crypt_name, id, LO_NAME_SIZE);
-    strncpy((char*) li.lo_file_name, loopFile, LO_NAME_SIZE);
+    strlcpy((char*) li.lo_crypt_name, id, LO_NAME_SIZE);
+    strlcpy((char*) li.lo_file_name, loopFile, LO_NAME_SIZE);
 
     if (ioctl(fd, LOOP_SET_STATUS64, &li) < 0) {
         SLOGE("Error setting loopback status (%s)", strerror(errno));
