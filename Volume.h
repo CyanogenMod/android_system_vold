@@ -78,10 +78,10 @@ public:
 
     void setDebug(bool enable);
 
+    virtual int getDeviceNodes(dev_t *devs, int max) = 0;
+
 protected:
     void setState(int state);
-
-    virtual int getDeviceNodes(dev_t *devs, int max) = 0;
 
     int createDeviceNode(const char *path, int major, int minor);
 
