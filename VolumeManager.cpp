@@ -1097,6 +1097,17 @@ int VolumeManager::shareVolume(const char *label, const char *method) {
         return -1;
     }
 
+#ifdef VOLD_EMMC_SHARES_DEV_MAJOR
+    // If emmc and sdcard share dev major number, vold may pick
+    // incorrectly based on partition nodes alone. Use device nodes instead.
+    v->getDeviceNodes((dev_t *) &d, 1);
+    if ((MAJOR(d) == 0) && (MINOR(d) == 0)) {
+        // This volume does not support raw disk access
+        errno = EINVAL;
+        return -1;
+    }
+#endif
+
     int fd;
     char nodepath[255];
     snprintf(nodepath,
@@ -1111,6 +1122,7 @@ int VolumeManager::shareVolume(const char *label, const char *method) {
             SLOGE("Unable to open ums lunfile (%s)", strerror(errno));
             return -1;
         }
+        SLOGD("Opened %s", CUSTOM_LUN_FILE"0/file");
     }
     else {
         if ((fd = open(CUSTOM_LUN_FILE"1/file",
@@ -1118,13 +1130,14 @@ int VolumeManager::shareVolume(const char *label, const char *method) {
             SLOGE("Unable to open ums lunfile (%s)", strerror(errno));
             return -1;
         }
+        SLOGD("Opened %s", CUSTOM_LUN_FILE"1/file");
     }
-
     if (write(fd, nodepath, strlen(nodepath)) < 0) {
         SLOGE("Unable to write to ums lunfile (%s)", strerror(errno));
         close(fd);
         return -1;
     }
+    SLOGD("Wrote %s", nodepath);
 
     close(fd);
     v->handleVolumeShared();
