@@ -116,6 +116,7 @@ Volume::Volume(VolumeManager *vm, const char *label, const char *mount_point) {
     mState = Volume::State_Init;
     mCurrentlyMountedKdev = -1;
     mPartIdx = -1;
+    mRetryMount = false;
 }
 
 Volume::~Volume() {
@@ -172,6 +173,10 @@ void Volume::setState(int state) {
     if (oldState == state) {
         SLOGW("Duplicate state (%d)\n", state);
         return;
+    }
+
+    if ((oldState == Volume::State_Pending) && (state != Volume::State_Idle)) {
+        mRetryMount = false;
     }
 
     mState = state;
@@ -309,6 +314,9 @@ int Volume::mountVol() {
         return -1;
     } else if (getState() != Volume::State_Idle) {
         errno = EBUSY;
+        if (getState() == Volume::State_Pending) {
+            mRetryMount = true;
+        }
         return -1;
     }
 
