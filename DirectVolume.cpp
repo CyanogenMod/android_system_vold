@@ -186,6 +186,11 @@ void DirectVolume::handlePartitionAdded(const char *devpath, NetlinkEvent *evt) 
         part_num = 1;
     }
 
+    if (part_num > MAX_PARTITIONS || part_num < 1) {
+        SLOGW("Invalid 'PARTN' value");
+        part_num = 1;
+    }
+
     if (part_num > mDiskNumParts) {
         mDiskNumParts = part_num;
     }
