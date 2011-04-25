@@ -50,6 +50,7 @@ NetlinkManager::~NetlinkManager() {
 int NetlinkManager::start() {
     struct sockaddr_nl nladdr;
     int sz = 64 * 1024;
+    int on = 1;
 
     memset(&nladdr, 0, sizeof(nladdr));
     nladdr.nl_family = AF_NETLINK;
@@ -62,7 +63,8 @@ int NetlinkManager::start() {
         return -1;
     }
 
-    if (setsockopt(mSock, SOL_SOCKET, SO_RCVBUFFORCE, &sz, sizeof(sz)) < 0) {
+    if (setsockopt(mSock, SOL_SOCKET, SO_RCVBUFFORCE, &sz, sizeof(sz)) < 0 ||
+        setsockopt(mSock, SOL_SOCKET, SO_PASSCRED, &on, sizeof(on)) < 0) {
         SLOGE("Unable to set uevent socket options: %s", strerror(errno));
         return -1;
     }
