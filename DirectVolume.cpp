@@ -145,7 +145,7 @@ void DirectVolume::handleDiskAdded(const char *devpath, NetlinkEvent *evt) {
         mDiskNumParts = atoi(tmp);
     } else {
         SLOGW("Kernel block uevent missing 'NPARTS'");
-        mDiskNumParts = 1;
+        mDiskNumParts = 0;
     }
 
     char msg[255];
@@ -188,7 +188,7 @@ void DirectVolume::handlePartitionAdded(const char *devpath, NetlinkEvent *evt) 
         part_num = atoi(tmp);
     } else {
         SLOGW("Kernel block uevent missing 'PARTN'");
-        part_num = 1;
+        part_num = ++mDiskNumParts;
     }
 
     SLOGD("DirectVolume::handlePartitionAdded -> MAJOR %d, MINOR %d, PARTN %d\n", major, minor, part_num);
@@ -255,7 +255,7 @@ void DirectVolume::handleDiskChanged(const char *devpath, NetlinkEvent *evt) {
         mDiskNumParts = atoi(tmp);
     } else {
         SLOGW("Kernel block uevent missing 'NPARTS'");
-        mDiskNumParts = 1;
+        mDiskNumParts = 0;
     }
 
     int partmask = 0;
