@@ -41,6 +41,7 @@
 #include "Devmapper.h"
 #include "Process.h"
 #include "Asec.h"
+#include "cryptfs.h"
 
 VolumeManager *VolumeManager::sInstance = NULL;
 
@@ -1127,6 +1128,50 @@ int VolumeManager::unshareVolume(const char *label, const char *method) {
         }
         mSavedDirtyRatio = -1;
     }
+    return 0;
+}
+
+extern "C" int vold_unmountVol(const char *label) {
+    VolumeManager *vm = VolumeManager::Instance();
+    return vm->unmountVolume(label, true);
+}
+
+extern "C" int vold_getNumDirectVolumes(void) {
+    VolumeManager *vm = VolumeManager::Instance();
+    return vm->getNumDirectVolumes();
+}
+
+int VolumeManager::getNumDirectVolumes(void) {
+    VolumeCollection::iterator i;
+    int n=0;
+
+    for (i = mVolumes->begin(); i != mVolumes->end(); ++i) {
+        if ((*i)->getShareDevice() != (dev_t)0) {
+            n++;
+        }
+    }
+    return n;
+}
+
+extern "C" int vold_getDirectVolumeList(struct volume_info *vol_list) {
+    VolumeManager *vm = VolumeManager::Instance();
+    return vm->getDirectVolumeList(vol_list);
+}
+
+int VolumeManager::getDirectVolumeList(struct volume_info *vol_list) {
+    VolumeCollection::iterator i;
+    int n=0;
+    dev_t d;
+
+    for (i = mVolumes->begin(); i != mVolumes->end(); ++i) {
+        if ((d=(*i)->getShareDevice()) != (dev_t)0) {
+            (*i)->getVolInfo(&vol_list[n]);
+            snprintf(vol_list[n].blk_dev, sizeof(vol_list[n].blk_dev),
+                     "/dev/block/vold/%d:%d",MAJOR(d), MINOR(d));
+            n++;
+        }
+    }
+
     return 0;
 }
 

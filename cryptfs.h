@@ -58,6 +58,18 @@ struct crypt_mnt_ftr {
 							       partition, null terminated */
 };
 
+struct volume_info {
+   unsigned int size;
+   unsigned int flags;
+   struct crypt_mnt_ftr crypt_ftr;
+   char mnt_point[256];
+   char blk_dev[256];
+   char crypto_blkdev[256];
+   char label[256];
+};
+#define VOL_NONREMOVABLE 0x1
+#define VOL_ENCRYPTABLE  0x2
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -66,6 +78,9 @@ extern "C" {
   int cryptfs_restart(void);
   int cryptfs_enable(char *flag, char *passwd);
   int cryptfs_changepw(char *newpw);
+  int cryptfs_setup_volume(const char *label, int major, int minor,
+                           char *crypto_dev_path, unsigned int max_pathlen,
+                           int *new_major, int *new_minor);
 #ifdef __cplusplus
 }
 #endif

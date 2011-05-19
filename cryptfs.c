@@ -37,11 +37,13 @@
 #include <errno.h>
 #include <cutils/android_reboot.h>
 #include <ext4.h>
+#include <linux/kdev_t.h>
 #include "cryptfs.h"
 #define LOG_TAG "Cryptfs"
 #include "cutils/log.h"
 #include "cutils/properties.h"
 #include "hardware_legacy/power.h"
+#include "VolumeManager.h"
 
 #define DM_CRYPT_BUF_SIZE 4096
 #define DATA_MNT_POINT "/data"
@@ -50,9 +52,16 @@
 #define KEY_LEN_BYTES 16
 #define IV_LEN_BYTES 16
 
+#define KEY_LOC_PROP   "ro.crypto.keyfile.userdata"
+#define KEY_IN_FOOTER  "footer"
+
+#define EXT4_FS 1
+#define FAT_FS 2
+
 char *me = "cryptfs";
 
 static unsigned char saved_master_key[KEY_LEN_BYTES];
+static char *saved_data_blkdev;
 static int  master_key_saved = 0;
 
 static void ioctl_init(struct dm_ioctl *io, size_t dataSize, const char *name, unsigned flags)
@@ -121,26 +130,42 @@ static int put_crypt_ftr_and_key(char *real_blk_name, struct crypt_mnt_ftr *cryp
   unsigned int nr_sec, cnt;
   off64_t off;
   int rc = -1;
+  char *fname;
+  char key_loc[PROPERTY_VALUE_MAX];
 
-  if ( (fd = open(real_blk_name, O_RDWR)) < 0) {
-    SLOGE("Cannot open real block device %s\n", real_blk_name);
-    return -1;
-  }
+  property_get(KEY_LOC_PROP, key_loc, KEY_IN_FOOTER);
 
-  if ( (nr_sec = get_blkdev_size(fd)) == 0) {
-    SLOGE("Cannot get size of block device %s\n", real_blk_name);
-    goto errout;
-  }
+  if (!strcmp(key_loc, KEY_IN_FOOTER)) {
+    fname = real_blk_name;
+    if ( (fd = open(fname, O_RDWR)) < 0) {
+      SLOGE("Cannot open real block device %s\n", fname);
+      return -1;
+    }
 
-  /* If it's an encrypted Android partition, the last 16 Kbytes contain the
-   * encryption info footer and key, and plenty of bytes to spare for future
-   * growth.
-   */
-  off = ((off64_t)nr_sec * 512) - CRYPT_FOOTER_OFFSET;
+    if ( (nr_sec = get_blkdev_size(fd)) == 0) {
+      SLOGE("Cannot get size of block device %s\n", fname);
+      goto errout;
+    }
 
-  if (lseek64(fd, off, SEEK_SET) == -1) {
-    SLOGE("Cannot seek to real block device footer\n");
-    goto errout;
+    /* If it's an encrypted Android partition, the last 16 Kbytes contain the
+     * encryption info footer and key, and plenty of bytes to spare for future
+     * growth.
+     */
+    off = ((off64_t)nr_sec * 512) - CRYPT_FOOTER_OFFSET;
+
+    if (lseek64(fd, off, SEEK_SET) == -1) {
+      SLOGE("Cannot seek to real block device footer\n");
+      goto errout;
+    }
+  } else if (key_loc[0] == '/') {
+    fname = key_loc;
+    if ( (fd = open(fname, O_RDWR | O_CREAT, 0600)) < 0) {
+      SLOGE("Cannot open footer file %s\n", fname);
+      return -1;
+    }
+  } else {
+    SLOGE("Unexpected value for" KEY_LOC_PROP "\n");
+    return -1;;
   }
 
   if ((cnt = write(fd, crypt_ftr, sizeof(struct crypt_mnt_ftr))) != sizeof(struct crypt_mnt_ftr)) {
@@ -151,29 +176,36 @@ static int put_crypt_ftr_and_key(char *real_blk_name, struct crypt_mnt_ftr *cryp
   if (key) {
     if (crypt_ftr->keysize != KEY_LEN_BYTES) {
       SLOGE("Keysize of %d bits not supported for real block device %s\n",
-            crypt_ftr->keysize * 8, real_blk_name);
+            crypt_ftr->keysize*8, fname);
       goto errout; 
     }
 
     if ( (cnt = write(fd, key, crypt_ftr->keysize)) != crypt_ftr->keysize) {
-      SLOGE("Cannot write key for real block device %s\n", real_blk_name);
+      SLOGE("Cannot write key for real block device %s\n", fname);
       goto errout;
     }
   }
 
   if (salt) {
-    /* Compute the offset for start of the crypt footer */
-    off = ((off64_t)nr_sec * 512) - CRYPT_FOOTER_OFFSET;
-    /* Add in the length of the footer, key and padding */
-    off += sizeof(struct crypt_mnt_ftr) + crypt_ftr->keysize + KEY_TO_SALT_PADDING;
+    /* Compute the offset from the last write to the salt */
+    off = KEY_TO_SALT_PADDING;
+    if (! key)
+      off += crypt_ftr->keysize;
 
-    if (lseek64(fd, off, SEEK_SET) == -1) {
+    if (lseek64(fd, off, SEEK_CUR) == -1) {
       SLOGE("Cannot seek to real block device salt \n");
       goto errout;
     }
 
     if ( (cnt = write(fd, salt, SALT_LEN)) != SALT_LEN) {
-      SLOGE("Cannot write salt for real block device %s\n", real_blk_name);
+      SLOGE("Cannot write salt for real block device %s\n", fname);
+      goto errout;
+    }
+  }
+
+  if (key_loc[0] == '/') {
+    if (ftruncate(fd, 0x4000)) {
+      SLOGE("Cannot set footer file sizen", fname);
       goto errout;
     }
   }
@@ -194,26 +226,50 @@ static int get_crypt_ftr_and_key(char *real_blk_name, struct crypt_mnt_ftr *cryp
   unsigned int nr_sec, cnt;
   off64_t off;
   int rc = -1;
+  char key_loc[PROPERTY_VALUE_MAX];
+  char *fname;
+  struct stat statbuf;
 
-  if ( (fd = open(real_blk_name, O_RDWR)) < 0) {
-    SLOGE("Cannot open real block device %s\n", real_blk_name);
-    return -1;
-  }
+  property_get(KEY_LOC_PROP, key_loc, KEY_IN_FOOTER);
 
-  if ( (nr_sec = get_blkdev_size(fd)) == 0) {
-    SLOGE("Cannot get size of block device %s\n", real_blk_name);
-    goto errout;
-  }
+  if (!strcmp(key_loc, KEY_IN_FOOTER)) {
+    fname = real_blk_name;
+    if ( (fd = open(fname, O_RDONLY)) < 0) {
+      SLOGE("Cannot open real block device %s\n", fname);
+      return -1;
+    }
 
-  /* If it's an encrypted Android partition, the last 16 Kbytes contain the
-   * encryption info footer and key, and plenty of bytes to spare for future
-   * growth.
-   */
-  off = ((off64_t)nr_sec * 512) - CRYPT_FOOTER_OFFSET;
+    if ( (nr_sec = get_blkdev_size(fd)) == 0) {
+      SLOGE("Cannot get size of block device %s\n", fname);
+      goto errout;
+    }
 
-  if (lseek64(fd, off, SEEK_SET) == -1) {
-    SLOGE("Cannot seek to real block device footer\n");
-    goto errout;
+    /* If it's an encrypted Android partition, the last 16 Kbytes contain the
+     * encryption info footer and key, and plenty of bytes to spare for future
+     * growth.
+     */
+    off = ((off64_t)nr_sec * 512) - CRYPT_FOOTER_OFFSET;
+
+    if (lseek64(fd, off, SEEK_SET) == -1) {
+      SLOGE("Cannot seek to real block device footer\n");
+      goto errout;
+    }
+  } else if (key_loc[0] == '/') {
+    fname = key_loc;
+    if ( (fd = open(fname, O_RDONLY)) < 0) {
+      SLOGE("Cannot open footer file %s\n", fname);
+      return -1;
+    }
+
+    /* Make sure it's 16 Kbytes in length */
+    fstat(fd, &statbuf);
+    if (statbuf.st_size != 0x4000) {
+      SLOGE("footer file %s is not the expected size!\n", fname);
+      goto errout;
+    }
+  } else {
+    SLOGE("Unexpected value for" KEY_LOC_PROP "\n");
+    return -1;;
   }
 
   if ( (cnt = read(fd, crypt_ftr, sizeof(struct crypt_mnt_ftr))) != sizeof(struct crypt_mnt_ftr)) {
@@ -222,7 +278,7 @@ static int get_crypt_ftr_and_key(char *real_blk_name, struct crypt_mnt_ftr *cryp
   }
 
   if (crypt_ftr->magic != CRYPT_MNT_MAGIC) {
-    SLOGE("Bad magic for real block device %s\n", real_blk_name);
+    SLOGE("Bad magic for real block device %s\n", fname);
     goto errout;
   }
 
@@ -249,12 +305,12 @@ static int get_crypt_ftr_and_key(char *real_blk_name, struct crypt_mnt_ftr *cryp
 
   if (crypt_ftr->keysize != KEY_LEN_BYTES) {
     SLOGE("Keysize of %d bits not supported for real block device %s\n",
-          crypt_ftr->keysize * 8, real_blk_name);
+          crypt_ftr->keysize * 8, fname);
     goto errout;
   }
 
   if ( (cnt = read(fd, key, crypt_ftr->keysize)) != crypt_ftr->keysize) {
-    SLOGE("Cannot read key for real block device %s\n", real_blk_name);
+    SLOGE("Cannot read key for real block device %s\n", fname);
     goto errout;
   }
 
@@ -264,7 +320,7 @@ static int get_crypt_ftr_and_key(char *real_blk_name, struct crypt_mnt_ftr *cryp
   }
 
   if ( (cnt = read(fd, salt, SALT_LEN)) != SALT_LEN) {
-    SLOGE("Cannot read salt for real block device %s\n", real_blk_name);
+    SLOGE("Cannot read salt for real block device %s\n", fname);
     goto errout;
   }
 
@@ -300,7 +356,7 @@ void convert_key_to_hex_ascii(unsigned char *master_key, unsigned int keysize,
 }
 
 static int create_crypto_blk_dev(struct crypt_mnt_ftr *crypt_ftr, unsigned char *master_key,
-                                    char *real_blk_name, char *crypto_blk_name)
+                                    char *real_blk_name, char *crypto_blk_name, const char *name)
 {
   char buffer[DM_CRYPT_BUF_SIZE];
   char master_key_ascii[129]; /* Large enough to hold 512 bit key and null */
@@ -310,7 +366,6 @@ static int create_crypto_blk_dev(struct crypt_mnt_ftr *crypt_ftr, unsigned char 
   unsigned int minor;
   int fd;
   int retval = -1;
-  char *name ="datadev"; /* FIX ME: Make me a parameter */
 
   if ((fd = open("/dev/device-mapper", O_RDWR)) < 0 ) {
     SLOGE("Cannot open device-mapper\n");
@@ -374,12 +429,11 @@ errout:
   return retval;
 }
 
-static int delete_crypto_blk_dev(char *crypto_blkdev)
+static int delete_crypto_blk_dev(char *name)
 {
   int fd;
   char buffer[DM_CRYPT_BUF_SIZE];
   struct dm_ioctl *io;
-  char *name ="datadev"; /* FIX ME: Make me a paraameter */
   int retval = -1;
 
   if ((fd = open("/dev/device-mapper", O_RDWR)) < 0 ) {
@@ -501,8 +555,8 @@ static int create_encrypted_random_key(char *passwd, unsigned char *master_key, 
 static int get_orig_mount_parms(char *mount_point, char *fs_type, char *real_blkdev,
                                 unsigned long *mnt_flags, char *fs_options)
 {
-  char mount_point2[32];
-  char fs_flags[32];
+  char mount_point2[PROPERTY_VALUE_MAX];
+  char fs_flags[PROPERTY_VALUE_MAX];
 
   property_get("ro.crypto.fs_type", fs_type, "");
   property_get("ro.crypto.fs_real_blkdev", real_blkdev, "");
@@ -527,6 +581,12 @@ static int wait_and_unmount(char *mountpoint)
     /*  Now umount the tmpfs filesystem */
     for (i=0; i<WAIT_UNMOUNT_COUNT; i++) {
         if (umount(mountpoint)) {
+            if (errno == EINVAL) {
+                /* EINVAL is returned if the directory is not a mountpoint,
+                 * i.e. there is no filesystem mounted there.  So just get out.
+                 */
+                break;
+            }
             sleep(1);
             i++;
         } else {
@@ -557,7 +617,7 @@ static int prep_data_fs(void)
 
     /* Wait a max of 25 seconds, hopefully it takes much less */
     for (i=0; i<DATA_PREP_TIMEOUT; i++) {
-        char p[16];;
+        char p[PROPERTY_VALUE_MAX];
 
         property_get("vold.post_fs_data_done", p, "0");
         if (*p == '1') {
@@ -662,10 +722,10 @@ static int do_crypto_complete(char *mount_point)
   unsigned char encrypted_master_key[32];
   unsigned char salt[SALT_LEN];
   char real_blkdev[MAXPATHLEN];
-  char fs_type[32];
-  char fs_options[256];
+  char fs_type[PROPERTY_VALUE_MAX];
+  char fs_options[PROPERTY_VALUE_MAX];
   unsigned long mnt_flags;
-  char encrypted_state[32];
+  char encrypted_state[PROPERTY_VALUE_MAX];
 
   property_get("ro.crypto.state", encrypted_state, "");
   if (strcmp(encrypted_state, "encrypted") ) {
@@ -693,7 +753,7 @@ static int do_crypto_complete(char *mount_point)
   return 0;
 }
 
-static int test_mount_encrypted_fs(char *passwd, char *mount_point)
+static int test_mount_encrypted_fs(char *passwd, char *mount_point, char *label)
 {
   struct crypt_mnt_ftr crypt_ftr;
   /* Allocate enough space for a 256 bit key, but we may use less */
@@ -701,12 +761,12 @@ static int test_mount_encrypted_fs(char *passwd, char *mount_point)
   unsigned char salt[SALT_LEN];
   char crypto_blkdev[MAXPATHLEN];
   char real_blkdev[MAXPATHLEN];
-  char fs_type[32];
-  char fs_options[256];
+  char fs_type[PROPERTY_VALUE_MAX];
+  char fs_options[PROPERTY_VALUE_MAX];
   char tmp_mount_point[64];
   unsigned long mnt_flags;
   unsigned int orig_failed_decrypt_count;
-  char encrypted_state[32];
+  char encrypted_state[PROPERTY_VALUE_MAX];
   int rc;
 
   property_get("ro.crypto.state", encrypted_state, "");
@@ -733,7 +793,7 @@ static int test_mount_encrypted_fs(char *passwd, char *mount_point)
   }
 
   if (create_crypto_blk_dev(&crypt_ftr, decrypted_master_key,
-                               real_blkdev, crypto_blkdev)) {
+                               real_blkdev, crypto_blkdev, label)) {
     SLOGE("Error creating decrypted block device\n");
     return -1;
   }
@@ -749,7 +809,7 @@ static int test_mount_encrypted_fs(char *passwd, char *mount_point)
   mkdir(tmp_mount_point, 0755);
   if ( mount(crypto_blkdev, tmp_mount_point, "ext4", MS_RDONLY, "") ) {
     SLOGE("Error temp mounting decrypted block device\n");
-    delete_crypto_blk_dev(crypto_blkdev);
+    delete_crypto_blk_dev(label);
     crypt_ftr.failed_decrypt_count++;
   } else {
     /* Success, so just umount and we'll mount it properly when we restart
@@ -777,11 +837,55 @@ static int test_mount_encrypted_fs(char *passwd, char *mount_point)
      * the key when we want to change the password on it.
      */
     memcpy(saved_master_key, decrypted_master_key, KEY_LEN_BYTES);
+    saved_data_blkdev = strdup(real_blkdev);
     master_key_saved = 1;
     rc = 0;
   }
 
   return rc;
+}
+
+/*
+ * Called by vold when it's asked to mount an encrypted, nonremovable volume.
+ * Setup a dm-crypt mapping, use the saved master key from
+ * setting up the /data mapping, and return the new device path.
+ */
+int cryptfs_setup_volume(const char *label, int major, int minor,
+                         char *crypto_sys_path, unsigned int max_path,
+                         int *new_major, int *new_minor)
+{
+    char real_blkdev[MAXPATHLEN], crypto_blkdev[MAXPATHLEN];
+    struct crypt_mnt_ftr sd_crypt_ftr;
+    unsigned char key[32], salt[32];
+    struct stat statbuf;
+    int nr_sec, fd;
+
+    sprintf(real_blkdev, "/dev/block/vold/%d:%d", major, minor);
+
+    /* Just want the footer, but gotta get it all */
+    get_crypt_ftr_and_key(saved_data_blkdev, &sd_crypt_ftr, key, salt);
+
+    /* Update the fs_size field to be the size of the volume */
+    fd = open(real_blkdev, O_RDONLY);
+    nr_sec = get_blkdev_size(fd);
+    close(fd);
+    if (nr_sec == 0) {
+        SLOGE("Cannot get size of volume %s\n", real_blkdev);
+        return -1;
+    }
+
+    sd_crypt_ftr.fs_size = nr_sec;
+    create_crypto_blk_dev(&sd_crypt_ftr, saved_master_key, real_blkdev, 
+                          crypto_blkdev, label);
+
+    stat(crypto_blkdev, &statbuf);
+    *new_major = MAJOR(statbuf.st_rdev);
+    *new_minor = MINOR(statbuf.st_rdev);
+
+    /* Create path to sys entry for this block device */
+    snprintf(crypto_sys_path, max_path, "/devices/virtual/block/%s", strrchr(crypto_blkdev, '/')+1);
+
+    return 0;
 }
 
 int cryptfs_crypto_complete(void)
@@ -793,7 +897,7 @@ int cryptfs_check_passwd(char *passwd)
 {
     int rc = -1;
 
-    rc = test_mount_encrypted_fs(passwd, DATA_MNT_POINT);
+    rc = test_mount_encrypted_fs(passwd, DATA_MNT_POINT, "userdata");
 
     return rc;
 }
@@ -817,14 +921,24 @@ static void cryptfs_init_crypt_mnt_ftr(struct crypt_mnt_ftr *ftr)
     ftr->crypto_type_name[0] = '\0';
 }
 
-static int cryptfs_enable_wipe(char *crypto_blkdev, off64_t size)
+static int cryptfs_enable_wipe(char *crypto_blkdev, off64_t size, int type)
 {
     char cmdline[256];
     int rc = -1;
 
-    snprintf(cmdline, sizeof(cmdline), "/system/bin/make_ext4fs -a /data -l %lld %s",
-             size * 512, crypto_blkdev);
-    SLOGI("Making empty filesystem with command %s\n", cmdline);
+    if (type == EXT4_FS) {
+        snprintf(cmdline, sizeof(cmdline), "/system/bin/make_ext4fs -a /data -l %lld %s",
+                 size * 512, crypto_blkdev);
+        SLOGI("Making empty filesystem with command %s\n", cmdline);
+    } else if (type== FAT_FS) {
+        snprintf(cmdline, sizeof(cmdline), "/system/bin/newfs_msdos -F 32 -O android -c 8 -s %lld %s",
+                 size, crypto_blkdev);
+        SLOGI("Making empty filesystem with command %s\n", cmdline);
+    } else {
+        SLOGE("cryptfs_enable_wipe(): unknown filesystem type %d\n", type);
+        return -1;
+    }
+
     if (system(cmdline)) {
       SLOGE("Error creating empty filesystem on %s\n", crypto_blkdev);
     } else {
@@ -851,13 +965,15 @@ static inline int unix_write(int  fd, const void*  buff, int  len)
 
 #define CRYPT_INPLACE_BUFSIZE 4096
 #define CRYPT_SECTORS_PER_BUFSIZE (CRYPT_INPLACE_BUFSIZE / 512)
-static int cryptfs_enable_inplace(char *crypto_blkdev, char *real_blkdev, off64_t size)
+static int cryptfs_enable_inplace(char *crypto_blkdev, char *real_blkdev, off64_t size,
+                                  off64_t *size_already_done, off64_t tot_size)
 {
     int realfd, cryptofd;
     char *buf[CRYPT_INPLACE_BUFSIZE];
     int rc = -1;
     off64_t numblocks, i, remainder;
     off64_t one_pct, cur_pct, new_pct;
+    off64_t blocks_already_done, tot_numblocks;
 
     if ( (realfd = open(real_blkdev, O_RDONLY)) < 0) { 
         SLOGE("Error opening real_blkdev %s for inplace encrypt\n", real_blkdev);
@@ -877,14 +993,16 @@ static int cryptfs_enable_inplace(char *crypto_blkdev, char *real_blkdev, off64_
      */
     numblocks = size / CRYPT_SECTORS_PER_BUFSIZE;
     remainder = size % CRYPT_SECTORS_PER_BUFSIZE;
+    tot_numblocks = tot_size / CRYPT_SECTORS_PER_BUFSIZE;
+    blocks_already_done = *size_already_done / CRYPT_SECTORS_PER_BUFSIZE;
 
     SLOGE("Encrypting filesystem in place...");
 
-    one_pct = numblocks / 100;
+    one_pct = tot_numblocks / 100;
     cur_pct = 0;
     /* process the majority of the filesystem in blocks */
     for (i=0; i<numblocks; i++) {
-        new_pct = i / one_pct;
+        new_pct = (i + blocks_already_done) / one_pct;
         if (new_pct > cur_pct) {
             char buf[8];
 
@@ -914,8 +1032,7 @@ static int cryptfs_enable_inplace(char *crypto_blkdev, char *real_blkdev, off64_
         }
     }
 
-    property_set("vold.encrypt_progress", "100");
-
+    *size_already_done += size;
     rc = 0;
 
 errout:
@@ -930,25 +1047,41 @@ errout:
 
 #define FRAMEWORK_BOOT_WAIT 60
 
+static inline int should_encrypt(struct volume_info *volume)
+{
+    return (volume->flags & (VOL_ENCRYPTABLE | VOL_NONREMOVABLE)) == 
+            (VOL_ENCRYPTABLE | VOL_NONREMOVABLE);
+}
+
 int cryptfs_enable(char *howarg, char *passwd)
 {
     int how = 0;
-    char crypto_blkdev[MAXPATHLEN], real_blkdev[MAXPATHLEN];
-    char fs_type[32], fs_options[256], mount_point[32];
+    char crypto_blkdev[MAXPATHLEN], real_blkdev[MAXPATHLEN], sd_crypto_blkdev[MAXPATHLEN];
+    char fs_type[PROPERTY_VALUE_MAX], fs_options[PROPERTY_VALUE_MAX],
+         mount_point[PROPERTY_VALUE_MAX];
     unsigned long mnt_flags, nr_sec;
     unsigned char master_key[KEY_LEN_BYTES], decrypted_master_key[KEY_LEN_BYTES];
     unsigned char salt[SALT_LEN];
     int rc=-1, fd, i;
-    struct crypt_mnt_ftr crypt_ftr;
-    char tmpfs_options[80];
-    char encrypted_state[32];
+    struct crypt_mnt_ftr crypt_ftr, sd_crypt_ftr;;
+    char tmpfs_options[PROPERTY_VALUE_MAX];
+    char encrypted_state[PROPERTY_VALUE_MAX];
     char lockid[32] = { 0 };
+    char key_loc[PROPERTY_VALUE_MAX];
+    char fuse_sdcard[PROPERTY_VALUE_MAX];
+    char *sd_mnt_point;
+    char sd_blk_dev[256] = { 0 };
+    int num_vols;
+    struct volume_info *vol_list = 0;
+    off64_t cur_encryption_done=0, tot_encryption_size=0;
 
     property_get("ro.crypto.state", encrypted_state, "");
     if (strcmp(encrypted_state, "unencrypted")) {
         SLOGE("Device is already running encrypted, aborting");
         goto error_unencrypted;
     }
+
+    property_get(KEY_LOC_PROP, key_loc, KEY_IN_FOOTER);
 
     if (!strcmp(howarg, "wipe")) {
       how = CRYPTO_ENABLE_WIPE;
@@ -970,7 +1103,7 @@ int cryptfs_enable(char *howarg, char *passwd)
     close(fd);
 
     /* If doing inplace encryption, make sure the orig fs doesn't include the crypto footer */
-    if (how == CRYPTO_ENABLE_INPLACE) {
+    if ((how == CRYPTO_ENABLE_INPLACE) && (!strcmp(key_loc, KEY_IN_FOOTER))) {
         unsigned int fs_size_sec, max_fs_size_sec;
 
         fs_size_sec = get_fs_size(real_blkdev);
@@ -986,8 +1119,34 @@ int cryptfs_enable(char *howarg, char *passwd)
      * device to sleep on us.  We'll grab a partial wakelock, and if the UI
      * wants to keep the screen on, it can grab a full wakelock.
      */
-    snprintf(lockid, 32, "enablecrypto%d", (int) getpid());
+    snprintf(lockid, sizeof(lockid), "enablecrypto%d", (int) getpid());
     acquire_wake_lock(PARTIAL_WAKE_LOCK, lockid);
+
+     /* Get the sdcard mount point */
+     sd_mnt_point = getenv("EXTERNAL_STORAGE");
+     if (! sd_mnt_point) {
+         sd_mnt_point = "/mnt/sdcard";
+     }
+
+    num_vols=vold_getNumDirectVolumes();
+    vol_list = malloc(sizeof(struct volume_info) * num_vols);
+    vold_getDirectVolumeList(vol_list);
+
+    for (i=0; i<num_vols; i++) {
+        if (should_encrypt(&vol_list[i])) {
+            fd = open(vol_list[i].blk_dev, O_RDONLY);
+            if ( (vol_list[i].size = get_blkdev_size(fd)) == 0) {
+                SLOGE("Cannot get size of block device %s\n", vol_list[i].blk_dev);
+                goto error_unencrypted;
+            }
+            close(fd);
+
+            if (vold_unmountVol(vol_list[i].label)) {
+                SLOGE("Failed to unmount volume %s\n", vol_list[i].label);
+                goto error_unencrypted;
+            }
+        }
+    }
 
     /* The init files are setup to stop the class main and late start when
      * vold sets trigger_shutdown_framework.
@@ -995,8 +1154,17 @@ int cryptfs_enable(char *howarg, char *passwd)
     property_set("vold.decrypt", "trigger_shutdown_framework");
     SLOGD("Just asked init to shut down class main\n");
 
-    if (wait_and_unmount("/mnt/sdcard")) {
-        goto error_shutting_down;
+    property_get("ro.crypto.fuse_sdcard", fuse_sdcard, "");
+    if (!strcmp(fuse_sdcard, "true")) {
+        /* This is a device using the fuse layer to emulate the sdcard semantics
+         * on top of the userdata partition.  vold does not manage it, it is managed
+         * by the sdcard service.  The sdcard service was killed by the property trigger
+         * above, so just unmount it now.  We must do this _AFTER_ killing the framework,
+         * unlike the case for vold managed devices above.
+         */
+        if (wait_and_unmount(sd_mnt_point)) {
+            goto error_shutting_down;
+        }
     }
 
     /* Now unmount the /data partition. */
@@ -1038,7 +1206,11 @@ int cryptfs_enable(char *howarg, char *passwd)
     /* Start the actual work of making an encrypted filesystem */
     /* Initialize a crypt_mnt_ftr for the partition */
     cryptfs_init_crypt_mnt_ftr(&crypt_ftr);
-    crypt_ftr.fs_size = nr_sec - (CRYPT_FOOTER_OFFSET / 512);
+    if (!strcmp(key_loc, KEY_IN_FOOTER)) {
+        crypt_ftr.fs_size = nr_sec - (CRYPT_FOOTER_OFFSET / 512);
+    } else {
+        crypt_ftr.fs_size = nr_sec;
+    }
     crypt_ftr.flags |= CRYPT_ENCRYPTION_IN_PROGRESS;
     strcpy((char *)crypt_ftr.crypto_type_name, "aes-cbc-essiv:sha256");
 
@@ -1052,12 +1224,51 @@ int cryptfs_enable(char *howarg, char *passwd)
     put_crypt_ftr_and_key(real_blkdev, &crypt_ftr, master_key, salt);
 
     decrypt_master_key(passwd, salt, master_key, decrypted_master_key);
-    create_crypto_blk_dev(&crypt_ftr, decrypted_master_key, real_blkdev, crypto_blkdev);
+    create_crypto_blk_dev(&crypt_ftr, decrypted_master_key, real_blkdev, crypto_blkdev,
+                          "userdata");
+
+    /* setup crypto mapping for all encryptable volumes handled by vold */
+    for (i=0; i<num_vols; i++) {
+        if (should_encrypt(&vol_list[i])) {
+            vol_list[i].crypt_ftr = crypt_ftr; /* gotta love struct assign */
+            vol_list[i].crypt_ftr.fs_size = vol_list[i].size;
+            create_crypto_blk_dev(&vol_list[i].crypt_ftr, decrypted_master_key,
+                                  vol_list[i].blk_dev, vol_list[i].crypto_blkdev,
+                                  vol_list[i].label);
+             tot_encryption_size += vol_list[i].size;
+        }
+    }
 
     if (how == CRYPTO_ENABLE_WIPE) {
-        rc = cryptfs_enable_wipe(crypto_blkdev, crypt_ftr.fs_size);
+        rc = cryptfs_enable_wipe(crypto_blkdev, crypt_ftr.fs_size, EXT4_FS);
+        /* Encrypt all encryptable volumes handled by vold */
+        if (!rc) {
+            for (i=0; i<num_vols; i++) {
+                if (should_encrypt(&vol_list[i])) {
+                    rc = cryptfs_enable_wipe(vol_list[i].crypto_blkdev,
+                                             vol_list[i].crypt_ftr.fs_size, FAT_FS);
+                }
+            }
+        }
     } else if (how == CRYPTO_ENABLE_INPLACE) {
-        rc = cryptfs_enable_inplace(crypto_blkdev, real_blkdev, crypt_ftr.fs_size);
+        rc = cryptfs_enable_inplace(crypto_blkdev, real_blkdev, crypt_ftr.fs_size,
+                                    &cur_encryption_done, tot_encryption_size);
+        /* Encrypt all encryptable volumes handled by vold */
+        if (!rc) {
+            for (i=0; i<num_vols; i++) {
+                if (should_encrypt(&vol_list[i])) {
+                    rc = cryptfs_enable_inplace(vol_list[i].crypto_blkdev,
+                                                vol_list[i].blk_dev,
+                                                vol_list[i].crypt_ftr.fs_size,
+                                                &cur_encryption_done, tot_encryption_size);
+                }
+            }
+        }
+        if (!rc) {
+            /* The inplace routine never actually sets the progress to 100%
+             * due to the round down nature of integer division, so set it here */
+            property_set("vold.encrypt_progress", "100");
+        }
     } else {
         /* Shouldn't happen */
         SLOGE("cryptfs_enable: internal error, unknown option\n");
@@ -1065,7 +1276,14 @@ int cryptfs_enable(char *howarg, char *passwd)
     }
 
     /* Undo the dm-crypt mapping whether we succeed or not */
-    delete_crypto_blk_dev(crypto_blkdev);
+    delete_crypto_blk_dev("userdata");
+    for (i=0; i<num_vols; i++) {
+        if (should_encrypt(&vol_list[i])) {
+            delete_crypto_blk_dev(vol_list[i].label);
+        }
+    }
+
+    free(vol_list);
 
     if (! rc) {
         /* Success */
@@ -1074,7 +1292,7 @@ int cryptfs_enable(char *howarg, char *passwd)
         crypt_ftr.flags &= ~CRYPT_ENCRYPTION_IN_PROGRESS;
         put_crypt_ftr_and_key(real_blkdev, &crypt_ftr, 0, 0);
 
-        sleep(2); /* Give the UI a change to show 100% progress */
+        sleep(2); /* Give the UI a chance to show 100% progress */
         android_reboot(ANDROID_RB_RESTART, 0, 0);
     } else {
         property_set("vold.encrypt_progress", "error_partially_encrypted");
@@ -1091,6 +1309,7 @@ int cryptfs_enable(char *howarg, char *passwd)
     return rc;
 
 error_unencrypted:
+    free(vol_list);
     property_set("vold.encrypt_progress", "error_not_encrypted");
     if (lockid[0]) {
         release_wake_lock(lockid);
@@ -1107,6 +1326,7 @@ error_shutting_down:
 
     /* shouldn't get here */
     property_set("vold.encrypt_progress", "error_shutting_down");
+    free(vol_list);
     if (lockid[0]) {
         release_wake_lock(lockid);
     }

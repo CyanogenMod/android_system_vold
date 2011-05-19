@@ -29,6 +29,7 @@
 #include "DirectVolume.h"
 #include "VolumeManager.h"
 #include "ResponseCode.h"
+#include "cryptfs.h"
 
 // #define PARTITION_DEBUG
 
@@ -59,6 +60,10 @@ DirectVolume::~DirectVolume() {
 int DirectVolume::addPath(const char *path) {
     mPaths->push_back(strdup(path));
     return 0;
+}
+
+void DirectVolume::setFlags(int flags) {
+    mFlags = flags;
 }
 
 dev_t DirectVolume::getDiskDevice() {
@@ -353,4 +358,62 @@ int DirectVolume::getDeviceNodes(dev_t *devs, int max) {
     }
     devs[0] = MKDEV(mDiskMajor, mPartMinors[mPartIdx -1]);
     return 1;
+}
+
+/*
+ * Called from base to update device info,
+ * e.g. When setting up an dm-crypt mapping for the sd card.
+ */
+int DirectVolume::updateDeviceInfo(char *new_path, int new_major, int new_minor)
+{
+    PathCollection::iterator it;
+
+    if (mPartIdx == -1) {
+        SLOGE("Can only change device info on a partition\n");
+        return -1;
+    }
+
+    /*
+     * This is to change the sysfs path associated with a partition, in particular,
+     * for an internal SD card partition that is encrypted.  Thus, the list is
+     * expected to be only 1 entry long.  Check that and bail if not.
+     */
+    if (mPaths->size() != 1) {
+        SLOGE("Cannot change path if there are more than one for a volume\n");
+        return -1;
+    }
+
+    it = mPaths->begin();
+    free(*it); /* Free the string storage */
+    mPaths->erase(it); /* Remove it from the list */
+    addPath(new_path); /* Put the new path on the list */
+
+    mDiskMajor = new_major;
+    mDiskMinor = new_minor;
+    /* Ugh, virual block devices don't use minor 0 for whole disk and minor > 0 for
+     * partition number.  They don't have partitions, they are just virtual block
+     * devices, and minor number 0 is the first dm-crypt device.  Luckily the first
+     * dm-crypt device is for the userdata partition, which gets minor number 0, and
+     * it is not managed by vold.  So the next device is minor number one, which we
+     * will call partition one.
+     */
+    mPartIdx = new_minor;
+    mPartMinors[new_minor-1] = new_minor;
+
+    mIsDecrypted = 1;
+
+    return 0;
+}
+
+/*
+ * Called from base to give cryptfs all the info it needs to encrypt eligible volumes
+ */
+int DirectVolume::getVolInfo(struct volume_info *v)
+{
+    strcpy(v->label, mLabel);
+    strcpy(v->mnt_point, mMountpoint);
+    v->flags=mFlags;
+    /* Other fields of struct volume_info are filled in by the caller or cryptfs.c */
+
+    return 0;
 }

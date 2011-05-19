@@ -35,6 +35,8 @@ protected:
     int            mPartMinors[MAX_PARTITIONS];
     int            mDiskNumParts;
     unsigned char  mPendingPartMap;
+    int            mIsDecrypted;
+    int            mFlags;
 
 public:
     DirectVolume(VolumeManager *vm, const char *label, const char *mount_point, int partIdx);
@@ -47,9 +49,14 @@ public:
     dev_t getShareDevice();
     void handleVolumeShared();
     void handleVolumeUnshared();
+    int getVolInfo(struct volume_info *v);
+    void setFlags(int flags);
 
 protected:
     int getDeviceNodes(dev_t *devs, int max);
+    int updateDeviceInfo(char *new_path, int new_major, int new_minor);
+    int isDecrypted() { return mIsDecrypted; }
+    int getFlags() { return mFlags; }
 
 private:
     void handleDiskAdded(const char *devpath, NetlinkEvent *evt);

@@ -19,6 +19,7 @@
 
 #include <pthread.h>
 
+#ifdef __cplusplus
 #include <utils/List.h>
 #include <sysutils/SocketListener.h>
 
@@ -121,13 +122,26 @@ public:
 
     static char *asecHash(const char *id, char *buffer, size_t len);
 
+    Volume *lookupVolume(const char *label);
+    int getNumDirectVolumes(void);
+    int getDirectVolumeList(struct volume_info *vol_list);
+
 private:
     VolumeManager();
     void readInitialState();
-    Volume *lookupVolume(const char *label);
     bool isMountpointMounted(const char *mp);
 
     inline bool massStorageAvailable() const { return mUsbMassStorageEnabled && mUsbConnected; }
     void notifyUmsAvailable(bool available);
 };
+
+extern "C" {
+#endif /* __cplusplus */
+    int vold_unmountVol(const char *label);
+    int vold_getNumDirectVolumes(void);
+    int vold_getDirectVolumeList(struct volume_info *v);
+#ifdef __cplusplus
+}
+#endif
+
 #endif

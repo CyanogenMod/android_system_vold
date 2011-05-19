@@ -77,11 +77,15 @@ public:
     virtual void handleVolumeUnshared();
 
     void setDebug(bool enable);
+    virtual int getVolInfo(struct volume_info *v) = 0;
 
 protected:
     void setState(int state);
 
     virtual int getDeviceNodes(dev_t *devs, int max) = 0;
+    virtual int updateDeviceInfo(char *new_path, int new_major, int new_minor) = 0;
+    virtual int isDecrypted(void) = 0;
+    virtual int getFlags(void) = 0;
 
     int createDeviceNode(const char *path, int major, int minor);
 
