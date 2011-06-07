@@ -155,7 +155,6 @@ int logwrap(int argc, const char* argv[], int background)
                 if (write(fd, text, strlen(text)) < 0) {
                     LOG(LOG_WARN, "logwrapper",
                         "Unable to background process (%s)", strerror(errno));
-                    close(fd);
                 }
                 close(fd);
             } else {
