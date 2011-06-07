@@ -53,11 +53,5 @@ void NetlinkHandler::onEvent(NetlinkEvent *evt) {
 
     if (!strcmp(subsys, "block")) {
         vm->handleBlockEvent(evt);
-    } else if (!strcmp(subsys, "switch")) {
-        vm->handleSwitchEvent(evt);
-    } else if (!strcmp(subsys, "usb_composite")) {
-        vm->handleUsbCompositeEvent(evt);
-    } else if (!strcmp(subsys, "battery")) {
-    } else if (!strcmp(subsys, "power_supply")) {
     }
 }

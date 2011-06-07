@@ -44,7 +44,6 @@ CommandListener::CommandListener() :
     registerCmd(new VolumeCmd());
     registerCmd(new AsecCmd());
     registerCmd(new ObbCmd());
-    registerCmd(new ShareCmd());
     registerCmd(new StorageCmd());
     registerCmd(new XwarpCmd());
     registerCmd(new CryptfsCmd());
@@ -195,39 +194,6 @@ int CommandListener::VolumeCmd::runCommand(SocketClient *cli,
         int erno = errno;
         rc = ResponseCode::convertFromErrno();
         cli->sendMsg(rc, "volume operation failed", true);
-    }
-
-    return 0;
-}
-
-CommandListener::ShareCmd::ShareCmd() :
-                 VoldCommand("share") {
-}
-
-int CommandListener::ShareCmd::runCommand(SocketClient *cli,
-                                                      int argc, char **argv) {
-    dumpArgs(argc, argv, -1);
-
-    if (argc < 2) {
-        cli->sendMsg(ResponseCode::CommandSyntaxError, "Missing Argument", false);
-        return 0;
-    }
-
-    VolumeManager *vm = VolumeManager::Instance();
-    int rc = 0;
-
-    if (!strcmp(argv[1], "status")) {
-        bool avail = false;
-
-        if (vm->shareAvailable(argv[2], &avail)) {
-            cli->sendMsg(
-                    ResponseCode::OperationFailed, "Failed to determine share availability", true);
-        } else {
-            cli->sendMsg(ResponseCode::ShareStatusResult,
-                    (avail ? "Share available" : "Share unavailable"), false);
-        }
-    } else {
-        cli->sendMsg(ResponseCode::CommandSyntaxError, "Unknown share cmd", false);
     }
 
     return 0;
