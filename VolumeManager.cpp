@@ -1192,7 +1192,7 @@ int VolumeManager::unmountVolume(const char *label, bool force) {
         SLOGW("Attempt to unmount volume which isn't mounted (%d)\n",
              v->getState());
         errno = EBUSY;
-        return -1;
+        return UNMOUNT_NOT_MOUNTED_ERR;
     }
 
     cleanupAsec(v, force);

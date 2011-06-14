@@ -589,7 +589,7 @@ int Volume::unmountVol(bool force) {
     if (getState() != Volume::State_Mounted) {
         SLOGE("Volume %s unmount request when not mounted", getLabel());
         errno = EINVAL;
-        return -1;
+        return UNMOUNT_NOT_MOUNTED_ERR;
     }
 
     setState(Volume::State_Unmounting);
