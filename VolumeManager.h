@@ -137,6 +137,7 @@ private:
 
 extern "C" {
 #endif /* __cplusplus */
+#define UNMOUNT_NOT_MOUNTED_ERR -2
     int vold_unmountVol(const char *label);
     int vold_getNumDirectVolumes(void);
     int vold_getDirectVolumeList(struct volume_info *v);

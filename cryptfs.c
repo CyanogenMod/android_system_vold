@@ -1062,7 +1062,7 @@ int cryptfs_enable(char *howarg, char *passwd)
     unsigned long mnt_flags, nr_sec;
     unsigned char master_key[KEY_LEN_BYTES], decrypted_master_key[KEY_LEN_BYTES];
     unsigned char salt[SALT_LEN];
-    int rc=-1, fd, i;
+    int rc=-1, fd, i, ret;
     struct crypt_mnt_ftr crypt_ftr, sd_crypt_ftr;;
     char tmpfs_options[PROPERTY_VALUE_MAX];
     char encrypted_state[PROPERTY_VALUE_MAX];
@@ -1141,7 +1141,10 @@ int cryptfs_enable(char *howarg, char *passwd)
             }
             close(fd);
 
-            if (vold_unmountVol(vol_list[i].label)) {
+            ret=vold_unmountVol(vol_list[i].label);
+            if ((ret < 0) && (ret != UNMOUNT_NOT_MOUNTED_ERR)) {
+                /* -2 is returned when the device exists but is not currently mounted.
+                 * ignore the error and continue. */
                 SLOGE("Failed to unmount volume %s\n", vol_list[i].label);
                 goto error_unencrypted;
             }
