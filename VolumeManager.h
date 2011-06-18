@@ -59,8 +59,6 @@ private:
 
     VolumeCollection      *mVolumes;
     AsecIdCollection      *mActiveContainers;
-    bool                   mUsbMassStorageEnabled;
-    bool                   mUsbConnected;
     bool                   mDebug;
 
     // for adjusting /proc/sys/vm/dirty_ratio when UMS is active
@@ -75,8 +73,6 @@ public:
     int stop();
 
     void handleBlockEvent(NetlinkEvent *evt);
-    void handleSwitchEvent(NetlinkEvent *evt);
-    void handleUsbCompositeEvent(NetlinkEvent *evt);
 
     int addVolume(Volume *v);
 
@@ -85,9 +81,7 @@ public:
     int unmountVolume(const char *label, bool force);
     int shareVolume(const char *label, const char *method);
     int unshareVolume(const char *label, const char *method);
-    int shareAvailable(const char *method, bool *avail);
     int shareEnabled(const char *path, const char *method, bool *enabled);
-    int simulate(const char *cmd, const char *arg);
     int formatVolume(const char *label);
 
     /* ASEC */
@@ -130,9 +124,6 @@ private:
     VolumeManager();
     void readInitialState();
     bool isMountpointMounted(const char *mp);
-
-    inline bool massStorageAvailable() const { return mUsbMassStorageEnabled && mUsbConnected; }
-    void notifyUmsAvailable(bool available);
 };
 
 extern "C" {

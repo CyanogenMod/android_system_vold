@@ -56,47 +56,10 @@ VolumeManager::VolumeManager() {
     mVolumes = new VolumeCollection();
     mActiveContainers = new AsecIdCollection();
     mBroadcaster = NULL;
-    mUsbMassStorageEnabled = false;
-    mUsbConnected = false;
     mUmsSharingCount = 0;
     mSavedDirtyRatio = -1;
     // set dirty ratio to 0 when UMS is active
     mUmsDirtyRatio = 0;
-
-    readInitialState();
-}
-
-void VolumeManager::readInitialState() {
-    FILE *fp;
-    char state[255];
-
-    /*
-     * Read the initial mass storage enabled state
-     */
-    if ((fp = fopen("/sys/devices/virtual/usb_composite/usb_mass_storage/enable", "r"))) {
-        if (fgets(state, sizeof(state), fp)) {
-            mUsbMassStorageEnabled = !strncmp(state, "1", 1);
-        } else {
-            SLOGE("Failed to read usb_mass_storage enabled state (%s)", strerror(errno));
-        }
-        fclose(fp);
-    } else {
-        SLOGD("USB mass storage support is not enabled in the kernel");
-    }
-
-    /*
-     * Read the initial USB connected state
-     */
-    if ((fp = fopen("/sys/devices/virtual/switch/usb_configuration/state", "r"))) {
-        if (fgets(state, sizeof(state), fp)) {
-            mUsbConnected = !strncmp(state, "1", 1);
-        } else {
-            SLOGE("Failed to read usb_configuration switch (%s)", strerror(errno));
-        }
-        fclose(fp);
-    } else {
-        SLOGD("usb_configuration switch is not enabled in the kernel");
-    }
 }
 
 VolumeManager::~VolumeManager() {
@@ -155,56 +118,6 @@ int VolumeManager::stop() {
 int VolumeManager::addVolume(Volume *v) {
     mVolumes->push_back(v);
     return 0;
-}
-
-void VolumeManager::notifyUmsAvailable(bool available) {
-    char msg[255];
-
-    snprintf(msg, sizeof(msg), "Share method ums now %s",
-             (available ? "available" : "unavailable"));
-    SLOGD(msg);
-    getBroadcaster()->sendBroadcast(ResponseCode::ShareAvailabilityChange,
-                                    msg, false);
-}
-
-void VolumeManager::handleSwitchEvent(NetlinkEvent *evt) {
-    const char *devpath = evt->findParam("DEVPATH");
-    const char *name = evt->findParam("SWITCH_NAME");
-    const char *state = evt->findParam("SWITCH_STATE");
-
-    if (!name || !state) {
-        SLOGW("Switch %s event missing name/state info", devpath);
-        return;
-    }
-
-    bool oldAvailable = massStorageAvailable();
-    if (!strcmp(name, "usb_configuration")) {
-        mUsbConnected = !strcmp(state, "1");
-        SLOGD("USB %s", mUsbConnected ? "connected" : "disconnected");
-        bool newAvailable = massStorageAvailable();
-        if (newAvailable != oldAvailable) {
-            notifyUmsAvailable(newAvailable);
-        }
-    }
-}
-void VolumeManager::handleUsbCompositeEvent(NetlinkEvent *evt) {
-    const char *function = evt->findParam("FUNCTION");
-    const char *enabled = evt->findParam("ENABLED");
-
-    if (!function || !enabled) {
-        SLOGW("usb_composite event missing function/enabled info");
-        return;
-    }
-
-    if (!strcmp(function, "usb_mass_storage")) {
-        bool oldAvailable = massStorageAvailable();
-        mUsbMassStorageEnabled = !strcmp(enabled, "1");
-        SLOGD("usb_mass_storage function %s", mUsbMassStorageEnabled ? "enabled" : "disabled");
-        bool newAvailable = massStorageAvailable();
-        if (newAvailable != oldAvailable) {
-            notifyUmsAvailable(newAvailable);
-        }
-    }
 }
 
 void VolumeManager::handleBlockEvent(NetlinkEvent *evt) {
@@ -961,17 +874,6 @@ int VolumeManager::listMountedObbs(SocketClient* cli) {
     return 0;
 }
 
-int VolumeManager::shareAvailable(const char *method, bool *avail) {
-
-    if (strcmp(method, "ums")) {
-        errno = ENOSYS;
-        return -1;
-    }
-
-    *avail = massStorageAvailable();
-    return 0;
-}
-
 int VolumeManager::shareEnabled(const char *label, const char *method, bool *enabled) {
     Volume *v = lookupVolume(label);
 
@@ -989,24 +891,6 @@ int VolumeManager::shareEnabled(const char *label, const char *method, bool *ena
         *enabled = false;
     } else {
         *enabled = true;
-    }
-    return 0;
-}
-
-int VolumeManager::simulate(const char *cmd, const char *arg) {
-
-    if (!strcmp(cmd, "ums")) {
-        if (!strcmp(arg, "connect")) {
-            notifyUmsAvailable(true);
-        } else if (!strcmp(arg, "disconnect")) {
-            notifyUmsAvailable(false);
-        } else {
-            errno = EINVAL;
-            return -1;
-        }
-    } else {
-        errno = EINVAL;
-        return -1;
     }
     return 0;
 }
