@@ -203,6 +203,20 @@ int VolumeManager::getAsecMountPath(const char *id, char *buffer, int maxlen) {
     return 0;
 }
 
+int VolumeManager::getAsecFilesystemPath(const char *id, char *buffer, int maxlen) {
+    char asecFileName[255];
+    snprintf(asecFileName, sizeof(asecFileName), "%s/%s.asec", Volume::SEC_ASECDIR, id);
+
+    memset(buffer, 0, maxlen);
+    if (access(asecFileName, F_OK)) {
+        errno = ENOENT;
+        return -1;
+    }
+
+    snprintf(buffer, maxlen, "%s", asecFileName);
+    return 0;
+}
+
 int VolumeManager::createAsec(const char *id, unsigned int numSectors,
                               const char *fstype, const char *key, int ownerUid) {
     struct asec_superblock sb;

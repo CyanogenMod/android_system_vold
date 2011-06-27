@@ -352,6 +352,18 @@ int CommandListener::AsecCmd::runCommand(SocketClient *cli,
             cli->sendMsg(ResponseCode::AsecPathResult, path, false);
             return 0;
         }
+    } else if (!strcmp(argv[1], "fspath")) {
+        dumpArgs(argc, argv, -1);
+        if (argc != 3) {
+            cli->sendMsg(ResponseCode::CommandSyntaxError, "Usage: asec fspath <container-id>", false);
+            return 0;
+        }
+        char path[255];
+
+        if (!(rc = vm->getAsecFilesystemPath(argv[2], path, sizeof(path)))) {
+            cli->sendMsg(ResponseCode::AsecPathResult, path, false);
+            return 0;
+        }
     } else {
         dumpArgs(argc, argv, -1);
         cli->sendMsg(ResponseCode::CommandSyntaxError, "Unknown asec cmd", false);
