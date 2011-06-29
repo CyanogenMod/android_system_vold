@@ -1230,6 +1230,9 @@ int cryptfs_enable(char *howarg, char *passwd)
     create_crypto_blk_dev(&crypt_ftr, decrypted_master_key, real_blkdev, crypto_blkdev,
                           "userdata");
 
+    /* The size of the userdata partition, and add in the vold volumes below */
+    tot_encryption_size = crypt_ftr.fs_size;
+
     /* setup crypto mapping for all encryptable volumes handled by vold */
     for (i=0; i<num_vols; i++) {
         if (should_encrypt(&vol_list[i])) {
@@ -1238,7 +1241,7 @@ int cryptfs_enable(char *howarg, char *passwd)
             create_crypto_blk_dev(&vol_list[i].crypt_ftr, decrypted_master_key,
                                   vol_list[i].blk_dev, vol_list[i].crypto_blkdev,
                                   vol_list[i].label);
-             tot_encryption_size += vol_list[i].size;
+            tot_encryption_size += vol_list[i].size;
         }
     }
 
