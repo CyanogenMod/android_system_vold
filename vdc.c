@@ -21,6 +21,7 @@
 #include <signal.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <stdlib.h>
 
 #include <sys/socket.h>
 #include <sys/select.h>
@@ -56,6 +57,7 @@ int main(int argc, char **argv) {
 static int do_cmd(int sock, int argc, char **argv) {
     char final_cmd[255] = { '\0' };
     int i;
+    int ret;
 
     for (i = 1; i < argc; i++) {
         char *cmp;
@@ -65,7 +67,9 @@ static int do_cmd(int sock, int argc, char **argv) {
         else
             asprintf(&cmp, "\"%s\"%s", argv[i], (i == (argc -1)) ? "" : " ");
 
-        strcat(final_cmd, cmp);
+        ret = strlcat(final_cmd, cmp, sizeof(final_cmd));
+        if (ret >= sizeof(final_cmd))
+            abort();
         free(cmp);
     }
 
