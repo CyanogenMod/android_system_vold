@@ -213,6 +213,13 @@ void VolumeManager::handleSwitchEvent(NetlinkEvent *evt) {
         bool newAvailable = massStorageAvailable();
         if (newAvailable != oldAvailable) {
             notifyUmsAvailable(newAvailable);
+        }
+    } else if (!strcmp(name, "usb_connected")) {
+        mUsbConnected = !strcmp(state, "1");
+        SLOGD("USB %s", mUsbConnected ? "connected" : "disconnected");
+        bool newAvailable = massStorageAvailable();
+        if (newAvailable != oldAvailable) {
+            notifyUmsAvailable(newAvailable);
 #endif
         }
     } else {
