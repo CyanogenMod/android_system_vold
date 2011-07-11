@@ -65,6 +65,7 @@ private:
     int                    mUmsSharingCount;
     int                    mSavedDirtyRatio;
     int                    mUmsDirtyRatio;
+    int                    mVolManagerDisabled;
 
 public:
     virtual ~VolumeManager();
@@ -83,6 +84,7 @@ public:
     int unshareVolume(const char *label, const char *method);
     int shareEnabled(const char *path, const char *method, bool *enabled);
     int formatVolume(const char *label);
+    void disableVolumeManager(void) { mVolManagerDisabled = 1; }
 
     /* ASEC */
     int createAsec(const char *id, unsigned numSectors, const char *fstype,
@@ -130,7 +132,7 @@ private:
 extern "C" {
 #endif /* __cplusplus */
 #define UNMOUNT_NOT_MOUNTED_ERR -2
-    int vold_unmountVol(const char *label);
+    int vold_disableVol(const char *label);
     int vold_getNumDirectVolumes(void);
     int vold_getDirectVolumeList(struct volume_info *v);
 #ifdef __cplusplus
