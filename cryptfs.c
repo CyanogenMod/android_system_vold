@@ -1141,7 +1141,7 @@ int cryptfs_enable(char *howarg, char *passwd)
             }
             close(fd);
 
-            ret=vold_unmountVol(vol_list[i].label);
+            ret=vold_disableVol(vol_list[i].label);
             if ((ret < 0) && (ret != UNMOUNT_NOT_MOUNTED_ERR)) {
                 /* -2 is returned when the device exists but is not currently mounted.
                  * ignore the error and continue. */

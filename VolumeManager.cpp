@@ -62,6 +62,7 @@ VolumeManager::VolumeManager() {
     mSavedDirtyRatio = -1;
     // set dirty ratio to 0 when UMS is active
     mUmsDirtyRatio = 0;
+    mVolManagerDisabled = 0;
 }
 
 VolumeManager::~VolumeManager() {
@@ -165,6 +166,11 @@ int VolumeManager::formatVolume(const char *label) {
 
     if (!v) {
         errno = ENOENT;
+        return -1;
+    }
+
+    if (mVolManagerDisabled) {
+        errno = EBUSY;
         return -1;
     }
 
@@ -940,6 +946,11 @@ int VolumeManager::shareVolume(const char *label, const char *method) {
         return -1;
     }
 
+    if (mVolManagerDisabled) {
+        errno = EBUSY;
+        return -1;
+    }
+
     dev_t d = v->getShareDevice();
     if ((MAJOR(d) == 0) && (MINOR(d) == 0)) {
         // This volume does not support raw disk access
@@ -1030,8 +1041,10 @@ int VolumeManager::unshareVolume(const char *label, const char *method) {
     return 0;
 }
 
-extern "C" int vold_unmountVol(const char *label) {
+extern "C" int vold_disableVol(const char *label) {
     VolumeManager *vm = VolumeManager::Instance();
+    vm->disableVolumeManager();
+    vm->unshareVolume(label, "ums");
     return vm->unmountVolume(label, true);
 }
 
