@@ -18,6 +18,7 @@
 #define _VOLUME_H
 
 #include <utils/List.h>
+#include <string.h>
 
 class NetlinkEvent;
 class VolumeManager;
@@ -68,6 +69,13 @@ public:
 
     const char *getLabel() { return mLabel; }
     const char *getMountpoint() { return mMountpoint; }
+    bool isPrefixOf(Volume *v) {
+        const char *myMountpoint = getMountpoint();
+        const char *oMountpoint = v->getMountpoint();
+        int myLen = strlen(myMountpoint);
+        return !strncmp(myMountpoint, oMountpoint, myLen) && (myMountpoint[myLen-1] == '/' || oMountpoint[myLen] == '/');
+    }
+
     int getState() { return mState; }
 
     virtual int handleBlockEvent(NetlinkEvent *evt);

@@ -19,6 +19,7 @@
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <unistd.h>
 
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -339,13 +340,41 @@ int Volume::mountVol() {
             return -1;
         }
 
+        if (access(getMountpoint(), F_OK)) {
+            char *myMountpoint = strdup(getMountpoint());
+            if (!myMountpoint) {
+                SLOGE("Allocation failure while mounting %s", devicePath);
+                return -1;
+            }
+            if (*myMountpoint) {
+                if (mDebug) SLOGD("Mount point prepare for \"%s\"", myMountpoint);
+                char *slash = myMountpoint;
+                while (slash) {
+                    slash = strchr(slash + 1, '/');
+                    if (slash)
+                        *slash = 0;
+                    if (mDebug) SLOGD("Check existence of %s", myMountpoint);
+                    if (access(myMountpoint, F_OK)) {
+                        if (mDebug) SLOGD("Create %s", myMountpoint);
+                        if (mkdir(myMountpoint, 0555)) {
+                            SLOGE("Failed to create %s", myMountpoint);
+                            return -1;
+                        }
+                    }
+                    if (slash)
+                        *slash = '/';
+                }
+            }
+            free (myMountpoint);
+        }
+
         /*
          * Mount the device on our internal staging mountpoint so we can
          * muck with it before exposing it to non priviledged users.
          */
         errno = 0;
         if (Fat::doMount(devicePath, "/mnt/secure/staging", false, false, false,
-                1000, 1015, 0702, true)) {
+                1000, 1015, 0602, true)) {
             SLOGE("%s failed to mount (%s)\n", devicePath, strerror(errno));
             continue;
         }
