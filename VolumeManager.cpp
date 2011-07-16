@@ -948,10 +948,26 @@ int VolumeManager::mountObb(const char *img, const char *key, int ownerUid) {
 
 int VolumeManager::mountVolume(const char *label) {
     Volume *v = lookupVolume(label);
+    VolumeCollection::iterator it;
 
     if (!v) {
         errno = ENOENT;
         return -1;
+    }
+
+    if (mDebug) SLOGD("Mounting %s", v->getMountpoint());
+    for (it = mVolumes->begin(); it != mVolumes->end(); ++it) {
+
+        Volume *cur = *it;
+        const char *mountpoint = cur->getMountpoint();
+        if (mDebug) SLOGD("checking mountpoint %s", mountpoint);
+        if (!strcmp(v->getMountpoint(), mountpoint)) continue;
+        if (cur->isPrefixOf(v) && cur->getState() != Volume::State_Mounted)
+        {
+            int tmp_ret = cur->mountVol();
+            if (tmp_ret < 0)
+                return tmp_ret;
+        }
     }
 
     return v->mountVol();
@@ -1224,6 +1240,7 @@ int VolumeManager::unshareVolume(const char *label, const char *method) {
 
 int VolumeManager::unmountVolume(const char *label, bool force) {
     Volume *v = lookupVolume(label);
+    VolumeCollection::iterator it;
 
     if (!v) {
         errno = ENOENT;
@@ -1240,6 +1257,21 @@ int VolumeManager::unmountVolume(const char *label, bool force) {
              v->getState());
         errno = EBUSY;
         return -1;
+    }
+
+    if (mDebug) SLOGD("Unmounting %s", v->getMountpoint());
+    for (it = --(mVolumes->end()); it != mVolumes->end(); it--) {
+        Volume *cur = *it;
+        const char *mountpoint = cur->getMountpoint();
+        if (mDebug) SLOGD("checking mountpoint %s", mountpoint);
+        if (!strcmp(v->getMountpoint(), mountpoint)) continue;
+        if (v->isPrefixOf(cur) && cur->getState() == Volume::State_Mounted)
+        {
+            cleanupAsec(cur, force);
+            int tmp_ret = cur->unmountVol(force);
+            if (tmp_ret < 0)
+                return tmp_ret;
+        }
     }
 
     cleanupAsec(v, force);
