@@ -141,5 +141,6 @@ private:
     inline bool massStorageAvailable() const { return mUsbMassStorageEnabled && mUsbConnected; }
     void notifyUmsAvailable(bool available);
 #endif
+    int openLun(int number);
 };
 #endif

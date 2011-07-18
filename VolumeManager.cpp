@@ -42,9 +42,16 @@
 #include "Process.h"
 #include "Asec.h"
 
-#ifndef CUSTOM_LUN_FILE
-#define CUSTOM_LUN_FILE "/sys/devices/platform/usb_mass_storage/lun"
+const char *LUN_FILES[] = {
+#ifdef CUSTOM_LUN_FILE
+	CUSTOM_LUN_FILE,
 #endif
+	"/sys/devices/platform/usb_mass_storage/lun%d/file",
+	"/sys/devices/platform/msm_hsusb/gadget/lun%d/file",
+	NULL
+};
+
+const char *the_lun_file = NULL;
 
 VolumeManager *VolumeManager::sInstance = NULL;
 
@@ -1084,6 +1091,24 @@ int VolumeManager::simulate(const char *cmd, const char *arg) {
     return 0;
 }
 
+int VolumeManager::openLun(int number) {
+    const char **iterator = LUN_FILES;
+    char qualified_lun[255];
+    while (*iterator) {
+	bzero(qualified_lun, 255);
+	snprintf(qualified_lun, 254, *iterator, number);
+        int fd = open(qualified_lun, O_WRONLY);
+        if (fd >= 0) {
+            the_lun_file = *iterator;
+            return fd;
+        }
+        iterator++;
+    }
+    the_lun_file = NULL; // Just in case.
+    errno = EINVAL;
+    return -1;
+}
+
 int VolumeManager::shareVolume(const char *label, const char *method) {
     Volume *v = lookupVolume(label);
 
@@ -1108,7 +1133,7 @@ int VolumeManager::shareVolume(const char *label, const char *method) {
     }
 
     if (v->getState() != Volume::State_Idle) {
-        // You need to unmount manually befoe sharing
+        // You need to unmount manually before sharing
         errno = EBUSY;
         return -1;
     }
@@ -1140,20 +1165,18 @@ int VolumeManager::shareVolume(const char *label, const char *method) {
     // TODO: Currently only two mounts are supported, defaulting
     // /mnt/sdcard to lun0 and anything else to lun1. Fix this.
     if (0 == strcmp(label, "/mnt/sdcard")) {
-        if ((fd = open(CUSTOM_LUN_FILE"0/file",
-                       O_WRONLY)) < 0) {
+        if ((fd = openLun(0)) < 0) {
             SLOGE("Unable to open ums lunfile (%s)", strerror(errno));
             return -1;
         }
-        SLOGD("Opened %s", CUSTOM_LUN_FILE"0/file");
+        SLOGD("Opened %s", the_lun_file);
     }
     else {
-        if ((fd = open(CUSTOM_LUN_FILE"1/file",
-                       O_WRONLY)) < 0) {
+        if ((fd = openLun(1)) < 0) {
             SLOGE("Unable to open ums lunfile (%s)", strerror(errno));
             return -1;
         }
-        SLOGD("Opened %s", CUSTOM_LUN_FILE"1/file");
+        SLOGD("Opened %s", the_lun_file);
     }
     if (write(fd, nodepath, strlen(nodepath)) < 0) {
         SLOGE("Unable to write to ums lunfile (%s)", strerror(errno));
@@ -1204,13 +1227,13 @@ int VolumeManager::unshareVolume(const char *label, const char *method) {
 
     // /mnt/sdcard to lun0 and anything else to lun1. Fix this.
     if (0 == strcmp(label, "/mnt/sdcard")) {
-        if ((fd = open(CUSTOM_LUN_FILE"0/file", O_WRONLY)) < 0) {
+        if ((fd = openLun(0)) < 0) {
             SLOGE("Unable to open ums lunfile (%s)", strerror(errno));
             return -1;
         }
     }
     else {
-        if ((fd = open(CUSTOM_LUN_FILE"1/file", O_WRONLY)) < 0) {
+        if ((fd = openLun(1)) < 0) {
             SLOGE("Unable to open ums lunfile (%s)", strerror(errno));
             return -1;
         }
