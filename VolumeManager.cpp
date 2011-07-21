@@ -161,7 +161,20 @@ int VolumeManager::stop() {
 }
 
 int VolumeManager::addVolume(Volume *v) {
-    mVolumes->push_back(v);
+    VolumeCollection::iterator it;
+    int myLen = strlen(v->getMountpoint());
+    for (it = mVolumes->begin(); it != mVolumes->end(); ++it) {
+	    if (strlen((*it)->getMountpoint()) >= myLen)
+            break;
+    }
+    mVolumes->insert(it, v);
+    if (mDebug) {
+        SLOGD("VolumeManager::addVolume completed");
+        SLOGD("VOLUMES DUMP BEGIN");
+        for (it = mVolumes->begin(); it != mVolumes->end(); ++it)
+            SLOGD("%c%s", *it == v ? '*' : ' ', (*it)->getMountpoint());
+        SLOGD("VOLUMES DUMP END");
+    }
     return 0;
 }
 
