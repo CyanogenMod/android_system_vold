@@ -114,6 +114,7 @@ static const char *stateToStr(int state) {
 }
 
 Volume::Volume(VolumeManager *vm, const char *label, const char *mount_point) {
+    char switchable[PROPERTY_VALUE_MAX];
     mVm = vm;
     mDebug = false;
     mLabel = strdup(label);
@@ -122,6 +123,29 @@ Volume::Volume(VolumeManager *vm, const char *label, const char *mount_point) {
     mCurrentlyMountedKdev = -1;
     mPartIdx = -1;
     mRetryMount = false;
+
+    property_get("persist.sys.vold.switchexternal", switchable, "0");
+    if (!strcmp(switchable,"1")) {
+        char *first, *second = NULL;
+        const char *delim = ",";
+
+        property_get("ro.vold.switchablepair", switchable, "");
+
+        if (!(first = strtok(switchable, delim))) {
+            SLOGE("Mount switch requested, but no switchable mountpoints found");
+            return;
+        } else if (!(second = strtok(NULL, delim))) {
+            SLOGE("Mount switch requested, but bad switchable mountpoints found");
+            return;
+        }
+        if (!strcmp(mount_point,first)) {
+                free(mMountpoint);
+                mMountpoint = strdup(second);
+        } else if (!strcmp(mount_point,second)) {
+                free(mMountpoint);
+                mMountpoint = strdup(first);
+        }
+    }
 }
 
 Volume::~Volume() {
