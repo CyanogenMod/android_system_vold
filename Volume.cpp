@@ -591,7 +591,7 @@ int Volume::doUnmount(const char *path, bool force) {
     return -1;
 }
 
-int Volume::unmountVol(bool force) {
+int Volume::unmountVol(bool force, bool revert) {
     int i, rc;
 
     if (getState() != Volume::State_Mounted) {
@@ -644,6 +644,16 @@ int Volume::unmountVol(bool force) {
     }
 
     SLOGI("%s unmounted sucessfully", getMountpoint());
+
+    /* If this is an encrypted volume, and we've been asked to undo
+     * the crypto mapping, then revert the dm-crypt mapping, and revert
+     * the device info to the original values.
+     */
+    if (revert && isDecrypted()) {
+        cryptfs_revert_volume(getLabel());
+        revertDeviceInfo();
+        SLOGI("Encrypted volume %s reverted successfully", getMountpoint());
+    }
 
     setState(Volume::State_Idle);
     mCurrentlyMountedKdev = -1;

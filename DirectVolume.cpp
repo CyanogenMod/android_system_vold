@@ -317,7 +317,7 @@ void DirectVolume::handlePartitionRemoved(const char *devpath, NetlinkEvent *evt
             SLOGE("Failed to cleanup ASEC - unmount will probably fail!");
         }
 
-        if (Volume::unmountVol(true)) {
+        if (Volume::unmountVol(true, false)) {
             SLOGE("Failed to unmount volume on bad removal (%s)", 
                  strerror(errno));
             // XXX: At this point we're screwed for now
@@ -392,6 +392,16 @@ int DirectVolume::updateDeviceInfo(char *new_path, int new_major, int new_minor)
     mPaths->erase(it); /* Remove it from the list */
     addPath(new_path); /* Put the new path on the list */
 
+    /* Save away original info so we can restore it when doing factory reset.
+     * Then, when doing the format, it will format the original device in the
+     * clear, otherwise it just formats the encrypted device which is not
+     * readable when the device boots unencrypted after the reset.
+     */
+    mOrigDiskMajor = mDiskMajor;
+    mOrigDiskMinor = mDiskMinor;
+    mOrigPartIdx = mPartIdx;
+    memcpy(mOrigPartMinors, mPartMinors, sizeof(mPartMinors));
+
     mDiskMajor = new_major;
     mDiskMinor = new_minor;
     /* Ugh, virual block devices don't use minor 0 for whole disk and minor > 0 for
@@ -407,6 +417,24 @@ int DirectVolume::updateDeviceInfo(char *new_path, int new_major, int new_minor)
     mIsDecrypted = 1;
 
     return 0;
+}
+
+/*
+ * Called from base to revert device info to the way it was before a
+ * crypto mapping was created for it.
+ */
+void DirectVolume::revertDeviceInfo(void)
+{
+    if (mIsDecrypted) {
+        mDiskMajor = mOrigDiskMajor;
+        mDiskMinor = mOrigDiskMinor;
+        mPartIdx = mOrigPartIdx;
+        memcpy(mPartMinors, mOrigPartMinors, sizeof(mPartMinors));
+
+        mIsDecrypted = 0;
+    }
+
+    return;
 }
 
 /*

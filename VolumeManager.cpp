@@ -1045,7 +1045,7 @@ extern "C" int vold_disableVol(const char *label) {
     VolumeManager *vm = VolumeManager::Instance();
     vm->disableVolumeManager();
     vm->unshareVolume(label, "ums");
-    return vm->unmountVolume(label, true);
+    return vm->unmountVolume(label, true, false);
 }
 
 extern "C" int vold_getNumDirectVolumes(void) {
@@ -1087,7 +1087,7 @@ int VolumeManager::getDirectVolumeList(struct volume_info *vol_list) {
     return 0;
 }
 
-int VolumeManager::unmountVolume(const char *label, bool force) {
+int VolumeManager::unmountVolume(const char *label, bool force, bool revert) {
     Volume *v = lookupVolume(label);
 
     if (!v) {
@@ -1109,7 +1109,7 @@ int VolumeManager::unmountVolume(const char *label, bool force) {
 
     cleanupAsec(v, force);
 
-    return v->unmountVol(force);
+    return v->unmountVol(force, revert);
 }
 
 /*

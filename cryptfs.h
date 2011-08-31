@@ -81,6 +81,7 @@ extern "C" {
   int cryptfs_setup_volume(const char *label, int major, int minor,
                            char *crypto_dev_path, unsigned int max_pathlen,
                            int *new_major, int *new_minor);
+  int cryptfs_revert_volume(const char *label);
 #ifdef __cplusplus
 }
 #endif

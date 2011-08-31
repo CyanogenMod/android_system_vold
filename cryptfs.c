@@ -845,6 +845,15 @@ static int test_mount_encrypted_fs(char *passwd, char *mount_point, char *label)
   return rc;
 }
 
+/* Called by vold when it wants to undo the crypto mapping of a volume it
+ * manages.  This is usually in response to a factory reset, when we want
+ * to undo the crypto mapping so the volume is formatted in the clear.
+ */
+int cryptfs_revert_volume(const char *label)
+{
+    return delete_crypto_blk_dev((char *)label);
+}
+
 /*
  * Called by vold when it's asked to mount an encrypted, nonremovable volume.
  * Setup a dm-crypt mapping, use the saved master key from
