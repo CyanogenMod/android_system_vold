@@ -267,6 +267,24 @@ int Volume::formatVol() {
     sprintf(devicePath, "/dev/block/vold/%d:%d", MAJOR(deviceNodes), MINOR(deviceNodes));
 #endif
 
+    // Ensure devicePath is valid. In some cases vold may pick
+    // incorrectly. Before trying to format an invalid device
+    // try to correct it.
+    if (access(devicePath, F_OK) == -1) {
+        SLOGI("Invalid device path (%s), attempting to correct", devicePath);
+        dev_t deviceNodes;
+        getDeviceNodes((dev_t *) &deviceNodes, 1);
+        sprintf(devicePath, "/dev/block/vold/%d:%d", MAJOR(deviceNodes), MINOR(deviceNodes));
+
+        if (access(devicePath, F_OK) == -1) {
+            SLOGE("Unable to correct device path, aborting format");
+            ret = -1;
+            goto err;
+        } else {
+           SLOGI("Corrected device path (%s)", devicePath);
+       }
+    }
+
     if (mDebug) {
         SLOGI("Formatting volume %s (%s)", getLabel(), devicePath);
     }
