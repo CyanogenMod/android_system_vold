@@ -132,6 +132,7 @@ static int put_crypt_ftr_and_key(char *real_blk_name, struct crypt_mnt_ftr *cryp
   int rc = -1;
   char *fname;
   char key_loc[PROPERTY_VALUE_MAX];
+  struct stat statbuf;
 
   property_get(KEY_LOC_PROP, key_loc, KEY_IN_FOOTER);
 
@@ -203,9 +204,11 @@ static int put_crypt_ftr_and_key(char *real_blk_name, struct crypt_mnt_ftr *cryp
     }
   }
 
-  if (key_loc[0] == '/') {
+  fstat(fd, &statbuf);
+  /* If the keys are kept on a raw block device, do not try to truncate it. */
+  if (S_ISREG(statbuf.st_mode) && (key_loc[0] == '/')) {
     if (ftruncate(fd, 0x4000)) {
-      SLOGE("Cannot set footer file sizen", fname);
+      SLOGE("Cannot set footer file size\n", fname);
       goto errout;
     }
   }
@@ -263,7 +266,7 @@ static int get_crypt_ftr_and_key(char *real_blk_name, struct crypt_mnt_ftr *cryp
 
     /* Make sure it's 16 Kbytes in length */
     fstat(fd, &statbuf);
-    if (statbuf.st_size != 0x4000) {
+    if (S_ISREG(statbuf.st_mode) && (statbuf.st_size != 0x4000)) {
       SLOGE("footer file %s is not the expected size!\n", fname);
       goto errout;
     }
