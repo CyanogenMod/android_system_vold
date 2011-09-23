@@ -175,22 +175,34 @@ static int process_config(VolumeManager *vm) {
     FILE *fp;
     int n = 0;
     char line[255];
+    Volume *vol = 0;
 
-    if (!(fp = fopen("/etc/vold.fstab", "r"))) {
-        const char *sdcard = 0;
-        if ((fp = fopen("/proc/cmdline", "r"))) {
-            while (fscanf(fp, "%s", line) > 0) {
-                if (!strncmp(line, "SDCARD=", 7)) {
-                    sdcard = line + 7;
-                    break;
+    if ((fp = fopen("/proc/cmdline", "r"))) {
+        while (fscanf(fp, "%s", line) > 0) {
+            if (!strncmp(line, "SDCARD=", 7)) {
+                const char *sdcard = line + 7;
+                if (*sdcard) {
+                    // FIXME: should not hardcode the label and mount_point
+                    if ((vol = new AutoVolume(vm, "sdcard", "/mnt/sdcard", sdcard))) {
+                        vm->addVolume(vol);
+                        break;
+                    }
                 }
             }
-            fclose(fp);
         }
-        // FIXME: should not hardcode the label and mount_point
-        AutoVolume *dv = new AutoVolume(vm, "sdcard", "/mnt/sdcard", sdcard);
-        vm->addVolume(dv);
-        return 0;
+        fclose(fp);
+    }
+
+    if (!(fp = fopen("/etc/vold.fstab", "r"))) {
+        // no volume added yet, create a AutoVolume object
+        // to mount USB/MMC/SD automatically
+        if (!vol) {
+            // FIXME: should not hardcode the label and mount_point
+            vol = new AutoVolume(vm, "sdcard", "/mnt/sdcard");
+            if (vol)
+                vm->addVolume(vol);
+        }
+        return vol ? 0 : -ENOMEM;
     }
 
     while(fgets(line, sizeof(line), fp)) {
@@ -225,23 +237,29 @@ static int process_config(VolumeManager *vm) {
                 SLOGE("Error parsing partition");
                 goto out_syntax;
             }
-            if (strcmp(part, "auto") && atoi(part) == 0) {
+
+            int idx = (strcmp(part, "auto") ? atoi(part) : -1);
+            if (!idx) {
                 SLOGE("Partition must either be 'auto' or 1 based index instead of '%s'", part);
                 goto out_syntax;
             }
 
-            if (!strcmp(part, "auto")) {
-                dv = new DirectVolume(vm, label, mount_point, -1);
-            } else {
-                dv = new DirectVolume(vm, label, mount_point, atoi(part));
-            }
-
+            const char *sdcard = 0;
             while (char *sysfs_path = strtok_r(NULL, delim, &save_ptr)) {
+                if ((sdcard = strncmp(sysfs_path,
+                                "SDCARD=", 7) ? 0 : sysfs_path + 7))
+                    break;
+                if (!dv) {
+                    dv = new DirectVolume(vm, label, mount_point, idx);
+                }
                 if (dv->addPath(sysfs_path)) {
                     SLOGE("Failed to add devpath %s to volume %s", sysfs_path,
                          label);
                     goto out_fail;
                 }
+            }
+            if (!dv) {
+                dv = new AutoVolume(vm, label, mount_point, sdcard);
             }
             vm->addVolume(dv);
         } else if (!strcmp(type, "map_mount")) {

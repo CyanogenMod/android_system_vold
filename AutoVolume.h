@@ -22,7 +22,7 @@
 
 class AutoVolume : public DirectVolume {
 public:
-    AutoVolume(VolumeManager *vm, const char *label, const char *mount_point, const char *part_name);
+    AutoVolume(VolumeManager *vm, const char *label, const char *mount_point, const char *part_name = 0);
     virtual ~AutoVolume();
 
 protected:
