@@ -1184,7 +1184,7 @@ int VolumeManager::shareVolume(const char *label, const char *method) {
     if (0 == strcmp(label, "/mnt/sdcard")) {
         lun_number = 0;
     } else {
-        lun_number = 1;
+        lun_number = SECOND_LUN_NUM;
     }
 
     if ((fd = openLun(lun_number)) < 0) {
@@ -1243,7 +1243,7 @@ int VolumeManager::unshareVolume(const char *label, const char *method) {
     if (0 == strcmp(label, "/mnt/sdcard")) {
         lun_number = 0;
     } else {
-        lun_number = 1;
+        lun_number = SECOND_LUN_NUM;
     }
 
     if ((fd = openLun(lun_number)) < 0) {
