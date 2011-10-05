@@ -75,6 +75,7 @@ extern "C" {
 #endif
   int cryptfs_crypto_complete(void);
   int cryptfs_check_passwd(char *pw);
+  int cryptfs_verify_passwd(char *newpw);
   int cryptfs_restart(void);
   int cryptfs_enable(char *flag, char *passwd);
   int cryptfs_changepw(char *newpw);

@@ -28,6 +28,7 @@
 #include <cutils/log.h>
 
 #include <sysutils/SocketClient.h>
+#include <private/android_filesystem_config.h>
 
 #include "CommandListener.h"
 #include "VolumeManager.h"
@@ -498,6 +499,11 @@ CommandListener::CryptfsCmd::CryptfsCmd() :
 
 int CommandListener::CryptfsCmd::runCommand(SocketClient *cli,
                                                       int argc, char **argv) {
+    if ((cli->getUid() != 0) && (cli->getUid() != AID_SYSTEM)) {
+        cli->sendMsg(ResponseCode::CommandNoPermission, "No permission to run cryptfs commands", false);
+        return 0;
+    }
+
     if (argc < 2) {
         cli->sendMsg(ResponseCode::CommandSyntaxError, "Missing Argument", false);
         return 0;
@@ -540,6 +546,13 @@ int CommandListener::CryptfsCmd::runCommand(SocketClient *cli,
         } 
         SLOGD("cryptfs changepw {}");
         rc = cryptfs_changepw(argv[2]);
+    } else if (!strcmp(argv[1], "verifypw")) {
+        if (argc != 3) {
+            cli->sendMsg(ResponseCode::CommandSyntaxError, "Usage: cryptfs verifypw <passwd>", false);
+            return 0;
+        }
+        SLOGD("cryptfs verifypw {}");
+        rc = cryptfs_verify_passwd(argv[2]);
     } else {
         dumpArgs(argc, argv, -1);
         cli->sendMsg(ResponseCode::CommandSyntaxError, "Unknown cryptfs cmd", false);

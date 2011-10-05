@@ -62,6 +62,7 @@ char *me = "cryptfs";
 
 static unsigned char saved_master_key[KEY_LEN_BYTES];
 static char *saved_data_blkdev;
+static char *saved_mount_point;
 static int  master_key_saved = 0;
 
 static void ioctl_init(struct dm_ioctl *io, size_t dataSize, const char *name, unsigned flags)
@@ -841,6 +842,7 @@ static int test_mount_encrypted_fs(char *passwd, char *mount_point, char *label)
      */
     memcpy(saved_master_key, decrypted_master_key, KEY_LEN_BYTES);
     saved_data_blkdev = strdup(real_blkdev);
+    saved_mount_point = strdup(mount_point);
     master_key_saved = 1;
     rc = 0;
   }
@@ -910,6 +912,63 @@ int cryptfs_check_passwd(char *passwd)
     int rc = -1;
 
     rc = test_mount_encrypted_fs(passwd, DATA_MNT_POINT, "userdata");
+
+    return rc;
+}
+
+int cryptfs_verify_passwd(char *passwd)
+{
+    struct crypt_mnt_ftr crypt_ftr;
+    /* Allocate enough space for a 256 bit key, but we may use less */
+    unsigned char encrypted_master_key[32], decrypted_master_key[32];
+    unsigned char salt[SALT_LEN];
+    char real_blkdev[MAXPATHLEN];
+    char fs_type[PROPERTY_VALUE_MAX];
+    char fs_options[PROPERTY_VALUE_MAX];
+    unsigned long mnt_flags;
+    char encrypted_state[PROPERTY_VALUE_MAX];
+    int rc;
+
+    property_get("ro.crypto.state", encrypted_state, "");
+    if (strcmp(encrypted_state, "encrypted") ) {
+        SLOGE("device not encrypted, aborting");
+        return -2;
+    }
+
+    if (!master_key_saved) {
+        SLOGE("encrypted fs not yet mounted, aborting");
+        return -1;
+    }
+
+    if (!saved_mount_point) {
+        SLOGE("encrypted fs failed to save mount point, aborting");
+        return -1;
+    }
+
+    if (get_orig_mount_parms(saved_mount_point, fs_type, real_blkdev, &mnt_flags, fs_options)) {
+        SLOGE("Error reading original mount parms for mount point %s\n", saved_mount_point);
+        return -1;
+    }
+
+    if (get_crypt_ftr_and_key(real_blkdev, &crypt_ftr, encrypted_master_key, salt)) {
+        SLOGE("Error getting crypt footer and key\n");
+        return -1;
+    }
+
+    if (crypt_ftr.flags & CRYPT_MNT_KEY_UNENCRYPTED) {
+        /* If the device has no password, then just say the password is valid */
+        rc = 0;
+    } else {
+        decrypt_master_key(passwd, salt, encrypted_master_key, decrypted_master_key);
+        if (!memcmp(decrypted_master_key, saved_master_key, crypt_ftr.keysize)) {
+            /* They match, the password is correct */
+            rc = 0;
+        } else {
+            /* If incorrect, sleep for a bit to prevent dictionary attacks */
+            sleep(1);
+            rc = 1;
+        }
+    }
 
     return rc;
 }

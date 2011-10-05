@@ -48,6 +48,7 @@ public:
     // action did not take place.
     static const int CommandSyntaxError = 500;
     static const int CommandParameterError = 501;
+    static const int CommandNoPermission = 502;
 
     // 600 series - Unsolicited broadcasts
     static const int UnsolicitedInformational       = 600;
