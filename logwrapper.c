@@ -43,7 +43,7 @@ int parent(const char *tag, int parent_read) {
             } else if (buffer[b] == '\n') {
                 buffer[b] = '\0';
 
-                LOG(LOG_INFO, tag, "%s", &buffer[a]);
+                ALOG(LOG_INFO, tag, "%s", &buffer[a]);
                 a = b + 1;
             }
         }
@@ -51,7 +51,7 @@ int parent(const char *tag, int parent_read) {
         if (a == 0 && b == sizeof(buffer) - 1) {
             // buffer is full, flush
             buffer[b] = '\0';
-            LOG(LOG_INFO, tag, "%s", &buffer[a]);
+            ALOG(LOG_INFO, tag, "%s", &buffer[a]);
             b = 0;
         } else if (a != b) {
             // Keep left-overs
@@ -67,24 +67,24 @@ int parent(const char *tag, int parent_read) {
     // Flush remaining data
     if (a != b) {
         buffer[b] = '\0';
-        LOG(LOG_INFO, tag, "%s", &buffer[a]);
+        ALOG(LOG_INFO, tag, "%s", &buffer[a]);
     }
     status = 0xAAAA;
     if (wait(&status) != -1) {  // Wait for child
         if (WIFEXITED(status)) {
             if (WEXITSTATUS(status) != 0) {
-                LOG(LOG_INFO, "logwrapper", "%s terminated by exit(%d)", tag,
+                ALOG(LOG_INFO, "logwrapper", "%s terminated by exit(%d)", tag,
                         WEXITSTATUS(status));
             }
             return WEXITSTATUS(status);
         } else if (WIFSIGNALED(status))
-            LOG(LOG_INFO, "logwrapper", "%s terminated by signal %d", tag,
+            ALOG(LOG_INFO, "logwrapper", "%s terminated by signal %d", tag,
                     WTERMSIG(status));
         else if (WIFSTOPPED(status))
-            LOG(LOG_INFO, "logwrapper", "%s stopped by signal %d", tag,
+            ALOG(LOG_INFO, "logwrapper", "%s stopped by signal %d", tag,
                     WSTOPSIG(status));
     } else
-        LOG(LOG_INFO, "logwrapper", "%s wait() failed: %s (%d)", tag,
+        ALOG(LOG_INFO, "logwrapper", "%s wait() failed: %s (%d)", tag,
                 strerror(errno), errno);
     return -EAGAIN;
 }
@@ -97,7 +97,7 @@ void child(int argc, const char**argv) {
 
     // XXX: PROTECT FROM VIKING KILLER
     if (execv(argv_child[0], argv_child)) {
-        LOG(LOG_ERROR, "logwrapper",
+        ALOG(LOG_ERROR, "logwrapper",
             "executing %s failed: %s", argv_child[0], strerror(errno));
         exit(-1);
     }
@@ -114,21 +114,21 @@ int logwrap(int argc, const char* argv[], int background)
     /* Use ptty instead of socketpair so that STDOUT is not buffered */
     parent_ptty = open("/dev/ptmx", O_RDWR);
     if (parent_ptty < 0) {
-	LOG(LOG_ERROR, "logwrapper", "Cannot create parent ptty");
-	return -errno;
+        ALOG(LOG_ERROR, "logwrapper", "Cannot create parent ptty");
+        return -errno;
     }
 
     if (grantpt(parent_ptty) || unlockpt(parent_ptty) ||
             ((child_devname = (char*)ptsname(parent_ptty)) == 0)) {
         close(parent_ptty);
-	LOG(LOG_ERROR, "logwrapper", "Problem with /dev/ptmx");
-	return -1;
+        ALOG(LOG_ERROR, "logwrapper", "Problem with /dev/ptmx");
+        return -1;
     }
 
     pid = fork();
     if (pid < 0) {
         close(parent_ptty);
-	LOG(LOG_ERROR, "logwrapper", "Failed to fork");
+        ALOG(LOG_ERROR, "logwrapper", "Failed to fork");
         return -errno;
     } else if (pid == 0) {
         /*
@@ -137,7 +137,7 @@ int logwrap(int argc, const char* argv[], int background)
         child_ptty = open(child_devname, O_RDWR);
         if (child_ptty < 0) {
             close(parent_ptty);
-	    LOG(LOG_ERROR, "logwrapper", "Problem with child ptty");
+            ALOG(LOG_ERROR, "logwrapper", "Problem with child ptty");
             return -errno;
         }
 
@@ -153,12 +153,12 @@ int logwrap(int argc, const char* argv[], int background)
                 char text[64];
                 sprintf(text, "%d", getpid());
                 if (write(fd, text, strlen(text)) < 0) {
-                    LOG(LOG_WARN, "logwrapper",
+                    ALOG(LOG_WARN, "logwrapper",
                         "Unable to background process (%s)", strerror(errno));
                 }
                 close(fd);
             } else {
-                LOG(LOG_WARN, "logwrapper",
+                ALOG(LOG_WARN, "logwrapper",
                     "Unable to background process (%s)", strerror(errno));
             }
         }
