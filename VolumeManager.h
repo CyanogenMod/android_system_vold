@@ -67,11 +67,6 @@ private:
 #endif
     bool                   mDebug;
 
-    // for adjusting /proc/sys/vm/dirty_ratio when UMS is active
-    int                    mUmsSharingCount;
-    int                    mSavedDirtyRatio;
-    int                    mUmsDirtyRatio;
-
 public:
     virtual ~VolumeManager();
 
