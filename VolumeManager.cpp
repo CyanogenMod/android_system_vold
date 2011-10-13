@@ -34,6 +34,7 @@
 
 #include <cutils/fs.h>
 #include <cutils/log.h>
+#include <cutils/properties.h>
 
 #include <sysutils/NetlinkEvent.h>
 
@@ -67,9 +68,12 @@ VolumeManager::VolumeManager() {
     mBroadcaster = NULL;
     mUmsSharingCount = 0;
     mSavedDirtyRatio = -1;
-    // set dirty ratio to 0 when UMS is active
-    mUmsDirtyRatio = 0;
     mVolManagerDisabled = 0;
+
+    // set dirty ratio to ro.vold.umsdirtyratio (default 0) when UMS is active
+    char dirtyratio[PROPERTY_VALUE_MAX];
+    property_get("ro.vold.umsdirtyratio", dirtyratio, "0");
+    mUmsDirtyRatio = atoi(dirtyratio);
 }
 
 VolumeManager::~VolumeManager() {
