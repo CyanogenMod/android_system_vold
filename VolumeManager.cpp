@@ -25,6 +25,8 @@
 
 #include <linux/kdev_t.h>
 
+#include <cutils/properties.h>
+
 #define LOG_TAG "Vold"
 
 #include <openssl/md5.h>
@@ -58,7 +60,9 @@ VolumeManager::VolumeManager() {
     mUmsSharingCount = 0;
     mSavedDirtyRatio = -1;
     // set dirty ratio to 0 when UMS is active
-    mUmsDirtyRatio = 0;
+    char value[PROPERTY_VALUE_MAX];
+    property_get("ro.vold.umsdirtyratio", value, "0");
+    mUmsDirtyRatio = atoi(value);
 
 
 #ifdef USE_USB_MASS_STORAGE_SWITCH
