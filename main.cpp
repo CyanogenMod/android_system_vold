@@ -174,21 +174,23 @@ static void coldboot(const char *path)
 static int process_config(VolumeManager *vm) {
     FILE *fp;
     int n = 0;
-    char line[255];
+    char *bootarg, line[255];
     Volume *vol = 0;
 
     if ((fp = fopen("/proc/cmdline", "r"))) {
-        while (fscanf(fp, "%s", line) > 0) {
-            if (!strncmp(line, "SDCARD=", 7)) {
-                const char *sdcard = line + 7;
+        while (fscanf(fp, "%as", &bootarg) > 0) {
+            if (!strncmp(bootarg, "SDCARD=", 7)) {
+                const char *sdcard = bootarg + 7;
                 if (*sdcard) {
                     // FIXME: should not hardcode the label and mount_point
                     if ((vol = new AutoVolume(vm, "sdcard", "/mnt/sdcard", sdcard))) {
                         vm->addVolume(vol);
+                        free(bootarg);
                         break;
                     }
                 }
             }
+            free(bootarg);
         }
         fclose(fp);
     }
