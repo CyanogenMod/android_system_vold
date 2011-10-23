@@ -174,7 +174,7 @@ static void coldboot(const char *path)
 static int process_config(VolumeManager *vm) {
     FILE *fp;
     int n = 0;
-    char line[255];
+    char line[1024];
     Volume *vol = 0;
 
     if ((fp = fopen("/proc/cmdline", "r"))) {
