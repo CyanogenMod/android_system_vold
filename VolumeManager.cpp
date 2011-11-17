@@ -1289,6 +1289,17 @@ int VolumeManager::shareVolume(const char *label, const char *method) {
         return -1;
     }
 
+#ifdef VOLD_EMMC_SHARES_DEV_MAJOR
+    // If emmc and sdcard share dev major number, vold may pick
+    // incorrectly based on partition nodes alone. Use device nodes instead.
+    v->getDeviceNodes((dev_t *) &d, 1);
+    if ((MAJOR(d) == 0) && (MINOR(d) == 0)) {
+        // This volume does not support raw disk access
+        errno = EINVAL;
+        return -1;
+    }
+#endif
+
     int fd;
     char nodepath[255];
     int written = snprintf(nodepath,
