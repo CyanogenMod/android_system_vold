@@ -28,6 +28,10 @@
 /* The length of an MD5 hash when encoded into ASCII hex characters */
 #define MD5_ASCII_LENGTH_PLUS_NULL ((MD5_DIGEST_LENGTH*2)+1)
 
+#ifndef CUSTOM_SECOND_LUN_NUM
+#define CUSTOM_SECOND_LUN_NUM 1
+#endif
+
 typedef enum { ASEC, OBB } container_type_t;
 
 class ContainerData {
@@ -51,6 +55,10 @@ public:
 typedef android::List<ContainerData*> AsecIdCollection;
 
 class VolumeManager {
+
+public:
+    static const int SECOND_LUN_NUM = CUSTOM_SECOND_LUN_NUM;
+
 private:
     static VolumeManager *sInstance;
 
@@ -142,6 +150,7 @@ private:
     VolumeManager();
     void readInitialState();
     bool isMountpointMounted(const char *mp);
+    int openLun(int number);
     bool isAsecInDirectory(const char *dir, const char *asec) const;
 };
 

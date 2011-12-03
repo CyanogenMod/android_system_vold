@@ -49,8 +49,6 @@
 #include "Asec.h"
 #include "cryptfs.h"
 
-#define MASS_STORAGE_FILE_PATH  "/sys/class/android_usb/android0/f_mass_storage/lun/file"
-
 VolumeManager *VolumeManager::sInstance = NULL;
 
 VolumeManager *VolumeManager::Instance() {
@@ -1166,6 +1164,36 @@ int VolumeManager::shareEnabled(const char *label, const char *method, bool *ena
     return 0;
 }
 
+static const char *LUN_FILES[] = {
+#ifdef CUSTOM_LUN_FILE
+    CUSTOM_LUN_FILE,
+#endif
+    /* Only andriod0 exists, but the %d in there is a hack to satisfy the
+       format string and also give a not found error when %d > 0 */
+    "/sys/class/android_usb/android%d/f_mass_storage/lun/file",
+    NULL
+};
+
+int VolumeManager::openLun(int number) {
+    const char **iterator = LUN_FILES;
+    char qualified_lun[255];
+    while (*iterator) {
+        bzero(qualified_lun, 255);
+        snprintf(qualified_lun, 254, *iterator, number);
+        int fd = open(qualified_lun, O_WRONLY);
+        if (fd >= 0) {
+            SLOGD("Opened lunfile %s", qualified_lun);
+            return fd;
+        }
+        SLOGE("Unable to open ums lunfile %s (%s)", qualified_lun, strerror(errno));
+        iterator++;
+    }
+
+    errno = EINVAL;
+    SLOGE("Unable to find ums lunfile for LUN %d", number);
+    return -1;
+}
+
 int VolumeManager::shareVolume(const char *label, const char *method) {
     Volume *v = lookupVolume(label);
 
@@ -1190,7 +1218,7 @@ int VolumeManager::shareVolume(const char *label, const char *method) {
     }
 
     if (v->getState() != Volume::State_Idle) {
-        // You need to unmount manually befoe sharing
+        // You need to unmount manually before sharing
         errno = EBUSY;
         return -1;
     }
@@ -1218,14 +1246,21 @@ int VolumeManager::shareVolume(const char *label, const char *method) {
     }
 #endif
 
-    int fd;
+    int fd, lun_number;
     char nodepath[255];
     snprintf(nodepath,
              sizeof(nodepath), "/dev/block/vold/%d:%d",
              MAJOR(d), MINOR(d));
 
-    if ((fd = open(MASS_STORAGE_FILE_PATH, O_WRONLY)) < 0) {
-        SLOGE("Unable to open ums lunfile (%s)", strerror(errno));
+    // TODO: Currently only two mounts are supported, defaulting
+    // /mnt/sdcard to lun0 and anything else to lun1. Fix this.
+    if (v->isPrimaryStorage()) {
+        lun_number = 0;
+    } else {
+        lun_number = SECOND_LUN_NUM;
+    }
+
+    if ((fd = openLun(lun_number)) < 0) {
         return -1;
     }
 
@@ -1274,8 +1309,16 @@ int VolumeManager::unshareVolume(const char *label, const char *method) {
     }
 
     int fd;
-    if ((fd = open(MASS_STORAGE_FILE_PATH, O_WRONLY)) < 0) {
-        SLOGE("Unable to open ums lunfile (%s)", strerror(errno));
+    int lun_number;
+
+    // /mnt/sdcard to lun0 and anything else to lun1. Fix this.
+    if (v->isPrimaryStorage()) {
+        lun_number = 0;
+    } else {
+        lun_number = SECOND_LUN_NUM;
+    }
+
+    if ((fd = openLun(lun_number)) < 0) {
         return -1;
     }
 
@@ -1473,6 +1516,10 @@ bool VolumeManager::isMountpointMounted(const char *mp)
 }
 
 int VolumeManager::cleanupAsec(Volume *v, bool force) {
+    /* Only EXTERNAL_STORAGE needs ASEC cleanup. */
+    if (!v->isPrimaryStorage())
+        return 0;
+
     while(mActiveContainers->size()) {
         AsecIdCollection::iterator it = mActiveContainers->begin();
         ContainerData* cd = *it;
