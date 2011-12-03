@@ -71,6 +71,7 @@ public:
     const char *getLabel() { return mLabel; }
     const char *getMountpoint() { return mMountpoint; }
     int getState() { return mState; }
+    bool isPrimaryStorage();
 
     virtual int handleBlockEvent(NetlinkEvent *evt);
     virtual dev_t getDiskDevice();
