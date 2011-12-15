@@ -730,6 +730,7 @@ static int do_crypto_complete(char *mount_point)
   char fs_options[PROPERTY_VALUE_MAX];
   unsigned long mnt_flags;
   char encrypted_state[PROPERTY_VALUE_MAX];
+  char key_loc[PROPERTY_VALUE_MAX];
 
   property_get("ro.crypto.state", encrypted_state, "");
   if (strcmp(encrypted_state, "encrypted") ) {
@@ -743,8 +744,21 @@ static int do_crypto_complete(char *mount_point)
   }
 
   if (get_crypt_ftr_and_key(real_blkdev, &crypt_ftr, encrypted_master_key, salt)) {
-    SLOGE("Error getting crypt footer and key\n");
-    return -1;
+    property_get(KEY_LOC_PROP, key_loc, KEY_IN_FOOTER);
+    /*
+     * Only report this error if key_loc is a file and it exists.
+     * If the device was never encrypted, and /data is not mountable for
+     * some reason, returning 1 should prevent the UI from presenting the
+     * a "enter password" screen, or worse, a "press button to wipe the
+     * device" screen.
+     */
+    if ((key_loc[0] == '/') && (access("key_loc", F_OK) == -1)) {
+      SLOGE("master key file does not exist, aborting");
+      return 1;
+    } else {
+      SLOGE("Error getting crypt footer and key\n");
+      return -1;
+    }
   }
 
   if (crypt_ftr.flags & CRYPT_ENCRYPTION_IN_PROGRESS) {
