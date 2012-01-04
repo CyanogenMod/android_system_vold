@@ -46,6 +46,16 @@ protected:
     int            mIsDecrypted;
     int            mFlags;
 
+#ifdef VOLD_DISC_HAS_MULTIPLE_MAJORS
+private:
+    struct ValuePair {
+        int major;
+        int part_num;
+    };
+
+    android::List<ValuePair> badPartitions;
+#endif
+
 public:
     DirectVolume(VolumeManager *vm, const fstab_rec* rec, int flags);
     virtual ~DirectVolume();
@@ -78,6 +88,9 @@ private:
     void handlePartitionChanged(const char *devpath, NetlinkEvent *evt);
 
     int doMountVfat(const char *deviceNode, const char *mountPoint);
+#ifdef VOLD_DISC_HAS_MULTIPLE_MAJORS
+    int getMajorNumberForBadPartition(int part_num);
+#endif
 
 };
 

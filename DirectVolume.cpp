@@ -31,7 +31,7 @@
 #include "ResponseCode.h"
 #include "cryptfs.h"
 
-// #define PARTITION_DEBUG
+//#define PARTITION_DEBUG
 
 DirectVolume::DirectVolume(VolumeManager *vm, const fstab_rec* rec, int flags) :
         Volume(vm, rec, flags) {
@@ -199,6 +199,8 @@ void DirectVolume::handlePartitionAdded(const char *devpath, NetlinkEvent *evt) 
         part_num = 1;
     }
 
+    SLOGD("DirectVolume::handlePartitionAdded -> MAJOR %d, MINOR %d, PARTN %d\n", major, minor, part_num);
+
     if (part_num > MAX_PARTITIONS || part_num < 1) {
         SLOGE("Invalid 'PARTN' value");
         return;
@@ -210,7 +212,14 @@ void DirectVolume::handlePartitionAdded(const char *devpath, NetlinkEvent *evt) 
 
     if (major != mDiskMajor) {
         SLOGE("Partition '%s' has a different major than its disk!", devpath);
+#ifdef VOLD_DISC_HAS_MULTIPLE_MAJORS
+        ValuePair vp;
+        vp.major = major;
+        vp.part_num = part_num;
+        badPartitions.push_back(vp);
+#else
         return;
+#endif
     }
 #ifdef PARTITION_DEBUG
     SLOGD("Dv:partAdd: part_num = %d, minor = %d\n", part_num, minor);
@@ -362,6 +371,7 @@ int DirectVolume::getDeviceNodes(dev_t *devs, int max) {
         // If the disk has no partitions, try the disk itself
         if (!mDiskNumParts) {
             devs[0] = MKDEV(mDiskMajor, mDiskMinor);
+            SLOGD("Disc has only one partition.");
             return 1;
         }
 
@@ -369,13 +379,52 @@ int DirectVolume::getDeviceNodes(dev_t *devs, int max) {
         for (i = 0; i < mDiskNumParts; i++) {
             if (i == max)
                 break;
+#ifdef VOLD_DISC_HAS_MULTIPLE_MAJORS
+            int major = getMajorNumberForBadPartition(i + 1);
+            if(major != -1) {
+                SLOGE("Fixing major number from %d to %d for partition %d", mDiskMajor, major, i + 1);
+                devs[i] = MKDEV(major, mPartMinors[i]);
+            }
+            else
+#endif
             devs[i] = MKDEV(mDiskMajor, mPartMinors[i]);
         }
         return mDiskNumParts;
     }
+#ifdef VOLD_DISC_HAS_MULTIPLE_MAJORS
+    int major = getMajorNumberForBadPartition(mPartIdx);
+    if(major != -1) {
+        SLOGE("Fixing major number from %d to %d for partition %d", mDiskMajor, major, mPartIdx);
+        devs[0] = MKDEV(major, mPartMinors[mPartIdx - 1]);
+    }
+    else
+#endif
     devs[0] = MKDEV(mDiskMajor, mPartMinors[mPartIdx -1]);
     return 1;
 }
+
+#ifdef VOLD_DISC_HAS_MULTIPLE_MAJORS
+/*
+ * Returns the correct major number for a bad partition.
+ * Returns -1 if the partition is good.
+ */
+int DirectVolume::getMajorNumberForBadPartition(int part_num) {
+    SLOGD("Checking for bad partition major number");
+    bool found = false;
+    android::List<ValuePair>::iterator iterator = badPartitions.begin();
+    for(;iterator != badPartitions.end(); iterator++) {
+        if((*iterator).part_num == part_num) {
+            found = true;
+            SLOGD("Found bad partition");
+            break;
+        }
+    }
+    if(found == true)
+        return (*iterator).major;
+    else
+        return -1;
+}
+#endif
 
 /*
  * Called from base to update device info,
