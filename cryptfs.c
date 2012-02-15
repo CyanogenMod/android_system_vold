@@ -40,6 +40,7 @@
 #include <linux/kdev_t.h>
 #include "cryptfs.h"
 #define LOG_TAG "Cryptfs"
+#include "cutils/android_reboot.h"
 #include "cutils/log.h"
 #include "cutils/properties.h"
 #include "hardware_legacy/power.h"
@@ -1372,8 +1373,26 @@ int cryptfs_enable(char *howarg, char *passwd)
         sleep(2); /* Give the UI a chance to show 100% progress */
         android_reboot(ANDROID_RB_RESTART, 0, 0);
     } else {
-        property_set("vold.encrypt_progress", "error_partially_encrypted");
-        release_wake_lock(lockid);
+        char value[PROPERTY_VALUE_MAX];
+
+        property_get("ro.vold.wipe_on_cyrypt_fail", value, "0");
+        if (!strcmp(value, "1")) {
+            /* wipe data if encryption failed */
+            SLOGE("encryption failed - rebooting into recovery to wipe data\n");
+            mkdir("/cache/recovery", 0700);
+            int fd = open("/cache/recovery/command", O_RDWR|O_CREAT|O_TRUNC);
+            if (fd >= 0) {
+                write(fd, "--wipe_data", strlen("--wipe_data") + 1);
+                close(fd);
+            } else {
+                SLOGE("could not open /cache/recovery/command\n");
+            }
+            android_reboot(ANDROID_RB_RESTART2, 0, "recovery");
+        } else {
+            /* set property to trigger dialog */
+            property_set("vold.encrypt_progress", "error_partially_encrypted");
+            release_wake_lock(lockid);
+        }
         return -1;
     }
 
