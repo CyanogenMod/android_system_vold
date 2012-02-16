@@ -40,7 +40,7 @@
 #include "cryptfs.h"
 
 CommandListener::CommandListener() :
-                 FrameworkListener("vold") {
+                 FrameworkListener("vold", true) {
     registerCmd(new DumpCmd());
     registerCmd(new VolumeCmd());
     registerCmd(new AsecCmd());
@@ -566,4 +566,3 @@ int CommandListener::CryptfsCmd::runCommand(SocketClient *cli,
 
     return 0;
 }
-
