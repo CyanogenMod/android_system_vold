@@ -48,6 +48,7 @@
 #include "VolumeManager.h"
 #include "ResponseCode.h"
 #include "Fat.h"
+#include "Ntfs.h"
 #include "Process.h"
 #include "cryptfs.h"
 
@@ -462,6 +463,14 @@ int Volume::mountVol() {
                 if (Fat::doMount(devicePath, getMountpoint(), false, false, false,
                             AID_MEDIA_RW, AID_MEDIA_RW, 0007, true)) {
                     SLOGE("%s failed to mount via VFAT (%s)\n", devicePath, strerror(errno));
+                    continue;
+                }
+
+            } else if (strcmp(fstype, "ntfs") == 0) {
+
+                if (Ntfs::doMount(devicePath, getMountpoint(), false, false, false,
+                            AID_MEDIA_RW, AID_MEDIA_RW, 0007, true)) {
+                    SLOGE("%s failed to mount via NTFS (%s)\n", devicePath, strerror(errno));
                     continue;
                 }
 
