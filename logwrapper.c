@@ -25,6 +25,7 @@
 
 #include "private/android_filesystem_config.h"
 #include "cutils/log.h"
+#include "cutils/sched_policy.h"
 
 int parent(const char *tag, int parent_read) {
     int status;
@@ -148,18 +149,10 @@ int logwrap(int argc, const char* argv[], int background)
         close(child_ptty);
 
         if (background) {
-            int fd = open("/dev/cpuctl/bg_non_interactive/tasks", O_WRONLY);
-            if (fd >= 0) {
-                char text[64];
-                sprintf(text, "%d", getpid());
-                if (write(fd, text, strlen(text)) < 0) {
-                    ALOG(LOG_WARN, "logwrapper",
-                        "Unable to background process (%s)", strerror(errno));
-                }
-                close(fd);
-            } else {
+            int err = set_sched_policy(getpid(), SP_BACKGROUND);
+            if (err < 0) {
                 ALOG(LOG_WARN, "logwrapper",
-                    "Unable to background process (%s)", strerror(errno));
+                    "Unable to background process (%s)", strerror(-err));
             }
         }
 
