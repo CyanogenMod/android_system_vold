@@ -48,6 +48,7 @@
 #include "VolumeManager.h"
 #include "ResponseCode.h"
 #include "Fat.h"
+#include "Ntfs.h"
 #include "Process.h"
 #include "cryptfs.h"
 
@@ -249,6 +250,8 @@ int Volume::createDeviceNode(const char *path, int major, int minor) {
 
 int Volume::formatVol(bool wipe) {
 
+    char* fstype = NULL;
+
     if (getState() == Volume::State_NoMedia) {
         errno = ENODEV;
         return -1;
@@ -289,16 +292,23 @@ int Volume::formatVol(bool wipe) {
     sprintf(devicePath, "/dev/block/vold/%d:%d",
             major(partNode), minor(partNode));
 
+    fstype = getFsType((const char*)devicePath);
+
     if (mDebug) {
-        SLOGI("Formatting volume %s (%s)", getLabel(), devicePath);
+        SLOGI("Formatting volume %s (%s) as %s", getLabel(), devicePath, fstype);
     }
 
-    if (Fat::format(devicePath, 0, wipe)) {
+    if (strcmp(fstype, "ntfs") == 0) {
+        ret = Ntfs::format(devicePath, wipe);
+    } else {
+        ret = Fat::format(devicePath, 0, wipe);
+    }
+
+    if (ret < 0) {
         SLOGE("Failed to format (%s)", strerror(errno));
-        goto err;
     }
 
-    ret = 0;
+    free(fstype);
 
 err:
     setState(Volume::State_Idle);
@@ -462,6 +472,14 @@ int Volume::mountVol() {
                 if (Fat::doMount(devicePath, getMountpoint(), false, false, false,
                             AID_MEDIA_RW, AID_MEDIA_RW, 0007, true)) {
                     SLOGE("%s failed to mount via VFAT (%s)\n", devicePath, strerror(errno));
+                    continue;
+                }
+
+            } else if (strcmp(fstype, "ntfs") == 0) {
+
+                if (Ntfs::doMount(devicePath, getMountpoint(), false, false, false,
+                            AID_MEDIA_RW, AID_MEDIA_RW, 0007, true)) {
+                    SLOGE("%s failed to mount via NTFS (%s)\n", devicePath, strerror(errno));
                     continue;
                 }
 
