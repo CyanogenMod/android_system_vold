@@ -55,7 +55,7 @@ int main(int argc, char **argv) {
 }
 
 static int do_cmd(int sock, int argc, char **argv) {
-    char final_cmd[255] = { '\0' };
+    char final_cmd[255] = "0 "; /* 0 is a (now required) sequence number */
     int i;
     int ret;
 
