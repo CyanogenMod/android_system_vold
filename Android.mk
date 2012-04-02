@@ -40,6 +40,8 @@ LOCAL_C_INCLUDES := $(common_c_includes)
 
 LOCAL_SHARED_LIBRARIES := $(common_shared_libraries)
 
+LOCAL_STATIC_LIBRARIES := libfs_mgr
+
 LOCAL_MODULE_TAGS := eng tests
 
 include $(BUILD_STATIC_LIBRARY)
@@ -57,6 +59,8 @@ LOCAL_C_INCLUDES := $(common_c_includes)
 LOCAL_CFLAGS := -Werror=format
 
 LOCAL_SHARED_LIBRARIES := $(common_shared_libraries)
+
+LOCAL_STATIC_LIBRARIES := libfs_mgr
 
 include $(BUILD_EXECUTABLE)
 
