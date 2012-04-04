@@ -41,7 +41,8 @@ public:
     static const char *SECDIR;
     static const char *SEC_STGDIR;
     static const char *SEC_STG_SECIMGDIR;
-    static const char *SEC_ASECDIR;
+    static const char *SEC_ASECDIR_EXT;
+    static const char *SEC_ASECDIR_INT;
     static const char *ASECDIR;
 
     static const char *LOOPDIR;

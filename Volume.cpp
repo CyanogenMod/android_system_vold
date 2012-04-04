@@ -69,10 +69,14 @@ const char *Volume::SEC_STGDIR        = "/mnt/secure/staging";
 const char *Volume::SEC_STG_SECIMGDIR = "/mnt/secure/staging/.android_secure";
 
 /*
- * Path to where *only* root can access asec imagefiles
+ * Path to external storage where *only* root can access ASEC image files
  */
-const char *Volume::SEC_ASECDIR       = "/mnt/secure/asec";
+const char *Volume::SEC_ASECDIR_EXT   = "/mnt/secure/asec";
 
+/*
+ * Path to internal storage where *only* root can access ASEC image files
+ */
+const char *Volume::SEC_ASECDIR_INT   = "/data/app-asec";
 /*
  * Path to where secure containers are mounted
  */
@@ -504,9 +508,9 @@ int Volume::createBindMounts() {
      * Bind mount /mnt/secure/staging/android_secure -> /mnt/secure/asec so we'll
      * have a root only accessable mountpoint for it.
      */
-    if (mount(SEC_STG_SECIMGDIR, SEC_ASECDIR, "", MS_BIND, NULL)) {
+    if (mount(SEC_STG_SECIMGDIR, SEC_ASECDIR_EXT, "", MS_BIND, NULL)) {
         SLOGE("Failed to bind mount points %s -> %s (%s)",
-                SEC_STG_SECIMGDIR, SEC_ASECDIR, strerror(errno));
+                SEC_STG_SECIMGDIR, SEC_ASECDIR_EXT, strerror(errno));
         return -1;
     }
 
@@ -630,8 +634,8 @@ int Volume::unmountVol(bool force, bool revert) {
      * the previously obscured directory.
      */
 
-    if (doUnmount(Volume::SEC_ASECDIR, force)) {
-        SLOGE("Failed to remove bindmount on %s (%s)", SEC_ASECDIR, strerror(errno));
+    if (doUnmount(Volume::SEC_ASECDIR_EXT, force)) {
+        SLOGE("Failed to remove bindmount on %s (%s)", SEC_ASECDIR_EXT, strerror(errno));
         goto fail_remount_tmpfs;
     }
 
@@ -663,7 +667,7 @@ int Volume::unmountVol(bool force, bool revert) {
      * Failure handling - try to restore everything back the way it was
      */
 fail_recreate_bindmount:
-    if (mount(SEC_STG_SECIMGDIR, SEC_ASECDIR, "", MS_BIND, NULL)) {
+    if (mount(SEC_STG_SECIMGDIR, SEC_ASECDIR_EXT, "", MS_BIND, NULL)) {
         SLOGE("Failed to restore bindmount after failure! - Storage will appear offline!");
         goto out_nomedia;
     }

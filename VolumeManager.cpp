@@ -19,6 +19,8 @@
 #include <string.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <fts.h>
+#include <unistd.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/mount.h>
@@ -33,10 +35,13 @@
 
 #include <sysutils/NetlinkEvent.h>
 
+#include <private/android_filesystem_config.h>
+
 #include "VolumeManager.h"
 #include "DirectVolume.h"
 #include "ResponseCode.h"
 #include "Loop.h"
+#include "Ext4.h"
 #include "Fat.h"
 #include "Devmapper.h"
 #include "Process.h"
@@ -197,7 +202,11 @@ int VolumeManager::getObbMountPath(const char *sourceFile, char *mountPath, int 
 
 int VolumeManager::getAsecMountPath(const char *id, char *buffer, int maxlen) {
     char asecFileName[255];
-    snprintf(asecFileName, sizeof(asecFileName), "%s/%s.asec", Volume::SEC_ASECDIR, id);
+
+    if (findAsec(id, asecFileName, sizeof(asecFileName))) {
+        SLOGE("Couldn't find ASEC %s", id);
+        return -1;
+    }
 
     memset(buffer, 0, maxlen);
     if (access(asecFileName, F_OK)) {
@@ -211,7 +220,11 @@ int VolumeManager::getAsecMountPath(const char *id, char *buffer, int maxlen) {
 
 int VolumeManager::getAsecFilesystemPath(const char *id, char *buffer, int maxlen) {
     char asecFileName[255];
-    snprintf(asecFileName, sizeof(asecFileName), "%s/%s.asec", Volume::SEC_ASECDIR, id);
+
+    if (findAsec(id, asecFileName, sizeof(asecFileName))) {
+        SLOGE("Couldn't find ASEC %s", id);
+        return -1;
+    }
 
     memset(buffer, 0, maxlen);
     if (access(asecFileName, F_OK)) {
@@ -223,10 +236,23 @@ int VolumeManager::getAsecFilesystemPath(const char *id, char *buffer, int maxle
     return 0;
 }
 
-int VolumeManager::createAsec(const char *id, unsigned int numSectors,
-                              const char *fstype, const char *key, int ownerUid) {
+int VolumeManager::createAsec(const char *id, unsigned int numSectors, const char *fstype,
+        const char *key, const int ownerUid, bool isExternal) {
     struct asec_superblock sb;
     memset(&sb, 0, sizeof(sb));
+
+    const bool wantFilesystem = strcmp(fstype, "none");
+    bool usingExt4 = false;
+    if (wantFilesystem) {
+        usingExt4 = !strcmp(fstype, "ext4");
+        if (usingExt4) {
+            sb.c_opts |= ASEC_SB_C_OPTS_EXT4;
+        } else if (strcmp(fstype, "fat")) {
+            SLOGE("Invalid filesystem type %s", fstype);
+            errno = EINVAL;
+            return -1;
+        }
+    }
 
     sb.magic = ASEC_SB_MAGIC;
     sb.ver = ASEC_SB_VER;
@@ -244,11 +270,21 @@ int VolumeManager::createAsec(const char *id, unsigned int numSectors,
     }
 
     char asecFileName[255];
-    snprintf(asecFileName, sizeof(asecFileName), "%s/%s.asec", Volume::SEC_ASECDIR, id);
+
+    if (!findAsec(id, asecFileName, sizeof(asecFileName))) {
+        SLOGE("ASEC file '%s' currently exists - destroy it first! (%s)",
+                asecFileName, strerror(errno));
+        errno = EADDRINUSE;
+        return -1;
+    }
+
+    const char *asecDir = isExternal ? Volume::SEC_ASECDIR_EXT : Volume::SEC_ASECDIR_INT;
+
+    snprintf(asecFileName, sizeof(asecFileName), "%s/%s.asec", asecDir, id);
 
     if (!access(asecFileName, F_OK)) {
         SLOGE("ASEC file '%s' currently exists - destroy it first! (%s)",
-             asecFileName, strerror(errno));
+                asecFileName, strerror(errno));
         errno = EADDRINUSE;
         return -1;
     }
@@ -340,13 +376,16 @@ int VolumeManager::createAsec(const char *id, unsigned int numSectors,
     }
     close(sbfd);
 
-    if (strcmp(fstype, "none")) {
-        if (strcmp(fstype, "fat")) {
-            SLOGW("Unknown fstype '%s' specified for container", fstype);
+    if (wantFilesystem) {
+        int formatStatus;
+        if (usingExt4) {
+            formatStatus = Ext4::format(dmDevice);
+        } else {
+            formatStatus = Fat::format(dmDevice, numImgSectors);
         }
 
-        if (Fat::format(dmDevice, numImgSectors)) {
-            SLOGE("ASEC FAT format failed (%s)", strerror(errno));
+        if (formatStatus < 0) {
+            SLOGE("ASEC fs format failed (%s)", strerror(errno));
             if (cleanupDm) {
                 Devmapper::destroy(idHash);
             }
@@ -354,10 +393,11 @@ int VolumeManager::createAsec(const char *id, unsigned int numSectors,
             unlink(asecFileName);
             return -1;
         }
+
         char mountPoint[255];
 
         snprintf(mountPoint, sizeof(mountPoint), "%s/%s", Volume::ASECDIR, id);
-        if (mkdir(mountPoint, 0777)) {
+        if (mkdir(mountPoint, 0000)) {
             if (errno != EEXIST) {
                 SLOGE("Mountpoint creation failed (%s)", strerror(errno));
                 if (cleanupDm) {
@@ -369,8 +409,15 @@ int VolumeManager::createAsec(const char *id, unsigned int numSectors,
             }
         }
 
-        if (Fat::doMount(dmDevice, mountPoint, false, false, false, ownerUid,
-                         0, 0000, false)) {
+        int mountStatus;
+        if (usingExt4) {
+            mountStatus = Ext4::doMount(dmDevice, mountPoint, false, false, false);
+        } else {
+            mountStatus = Fat::doMount(dmDevice, mountPoint, false, false, false, ownerUid, 0, 0000,
+                    false);
+        }
+
+        if (mountStatus) {
             SLOGE("ASEC FAT mount failed (%s)", strerror(errno));
             if (cleanupDm) {
                 Devmapper::destroy(idHash);
@@ -378,6 +425,17 @@ int VolumeManager::createAsec(const char *id, unsigned int numSectors,
             Loop::destroyByDevice(loopDevice);
             unlink(asecFileName);
             return -1;
+        }
+
+        if (usingExt4) {
+            int dirfd = open(mountPoint, O_DIRECTORY);
+            if (dirfd >= 0) {
+                if (fchown(dirfd, ownerUid, AID_SYSTEM)
+                        || fchmod(dirfd, S_IRUSR | S_IWUSR | S_IXUSR | S_ISGID | S_IRGRP | S_IXGRP)) {
+                    SLOGI("Cannot chown/chmod new ASEC mount point %s", mountPoint);
+                }
+                close(dirfd);
+            }
         }
     } else {
         SLOGI("Created raw secure container %s (no filesystem)", id);
@@ -392,7 +450,10 @@ int VolumeManager::finalizeAsec(const char *id) {
     char loopDevice[255];
     char mountPoint[255];
 
-    snprintf(asecFileName, sizeof(asecFileName), "%s/%s.asec", Volume::SEC_ASECDIR, id);
+    if (findAsec(id, asecFileName, sizeof(asecFileName))) {
+        SLOGE("Couldn't find ASEC %s", id);
+        return -1;
+    }
 
     char idHash[33];
     if (!asecHash(id, idHash, sizeof(idHash))) {
@@ -405,9 +466,23 @@ int VolumeManager::finalizeAsec(const char *id) {
         return -1;
     }
 
+    unsigned int nr_sec = 0;
+    struct asec_superblock sb;
+
+    if (Loop::lookupInfo(loopDevice, &sb, &nr_sec)) {
+        return -1;
+    }
+
     snprintf(mountPoint, sizeof(mountPoint), "%s/%s", Volume::ASECDIR, id);
-    // XXX:
-    if (Fat::doMount(loopDevice, mountPoint, true, true, true, 0, 0, 0227, false)) {
+
+    int result = 0;
+    if (sb.c_opts & ASEC_SB_C_OPTS_EXT4) {
+        result = Ext4::doMount(loopDevice, mountPoint, true, true, true);
+    } else {
+        result = Fat::doMount(loopDevice, mountPoint, true, true, true, 0, 0, 0227, false);
+    }
+
+    if (result) {
         SLOGE("ASEC finalize mount failed (%s)", strerror(errno));
         return -1;
     }
@@ -418,13 +493,131 @@ int VolumeManager::finalizeAsec(const char *id) {
     return 0;
 }
 
+int VolumeManager::fixupAsecPermissions(const char *id, gid_t gid, const char* filename) {
+    char asecFileName[255];
+    char loopDevice[255];
+    char mountPoint[255];
+
+    if (gid < AID_APP) {
+        SLOGE("Group ID is not in application range");
+        return -1;
+    }
+
+    if (findAsec(id, asecFileName, sizeof(asecFileName))) {
+        SLOGE("Couldn't find ASEC %s", id);
+        return -1;
+    }
+
+    char idHash[33];
+    if (!asecHash(id, idHash, sizeof(idHash))) {
+        SLOGE("Hash of '%s' failed (%s)", id, strerror(errno));
+        return -1;
+    }
+
+    if (Loop::lookupActive(idHash, loopDevice, sizeof(loopDevice))) {
+        SLOGE("Unable fix permissions during lookup on %s (%s)", id, strerror(errno));
+        return -1;
+    }
+
+    unsigned int nr_sec = 0;
+    struct asec_superblock sb;
+
+    if (Loop::lookupInfo(loopDevice, &sb, &nr_sec)) {
+        return -1;
+    }
+
+    snprintf(mountPoint, sizeof(mountPoint), "%s/%s", Volume::ASECDIR, id);
+
+    int result = 0;
+    if ((sb.c_opts & ASEC_SB_C_OPTS_EXT4) == 0) {
+        return 0;
+    }
+
+    int ret = Ext4::doMount(loopDevice, mountPoint,
+            false /* read-only */,
+            true  /* remount */,
+            false /* executable */);
+    if (ret) {
+        SLOGE("Unable remount to fix permissions for %s (%s)", id, strerror(errno));
+        return -1;
+    }
+
+    char *paths[] = { mountPoint, NULL };
+
+    FTS *fts = fts_open(paths, FTS_PHYSICAL | FTS_NOCHDIR | FTS_XDEV, NULL);
+    if (fts) {
+        // Traverse the entire hierarchy and chown to system UID.
+        for (FTSENT *ftsent = fts_read(fts); ftsent != NULL; ftsent = fts_read(fts)) {
+            // We don't care about the lost+found directory.
+            if (!strcmp(ftsent->fts_name, "lost+found")) {
+                continue;
+            }
+
+            /*
+             * There can only be one file marked as private right now.
+             * This should be more robust, but it satisfies the requirements
+             * we have for right now.
+             */
+            const bool privateFile = !strcmp(ftsent->fts_name, filename);
+
+            int fd = open(ftsent->fts_accpath, O_NOFOLLOW);
+            if (fd < 0) {
+                SLOGE("Couldn't open file %s: %s", ftsent->fts_accpath, strerror(errno));
+                result = -1;
+                continue;
+            }
+
+            result |= fchown(fd, AID_SYSTEM, privateFile? gid : AID_SYSTEM);
+
+            if (ftsent->fts_info & FTS_D) {
+                result |= fchmod(fd, 0711);
+            } else {
+                result |= fchmod(fd, privateFile ? 0640 : 0644);
+            }
+            close(fd);
+        }
+        fts_close(fts);
+
+        // Finally make the directory readable by everyone.
+        int dirfd = open(mountPoint, O_DIRECTORY);
+        if (dirfd < 0 || fchmod(dirfd, 0755)) {
+            SLOGE("Couldn't change owner of existing directory %s: %s", mountPoint, strerror(errno));
+            result |= -1;
+        }
+        close(dirfd);
+    } else {
+        result |= -1;
+    }
+
+    result |= Ext4::doMount(loopDevice, mountPoint,
+            true /* read-only */,
+            true /* remount */,
+            true /* execute */);
+
+    if (result) {
+        SLOGE("ASEC fix permissions failed (%s)", strerror(errno));
+        return -1;
+    }
+
+    if (mDebug) {
+        SLOGD("ASEC %s permissions fixed", id);
+    }
+    return 0;
+}
+
 int VolumeManager::renameAsec(const char *id1, const char *id2) {
-    char *asecFilename1;
+    char asecFilename1[255];
     char *asecFilename2;
     char mountPoint[255];
 
-    asprintf(&asecFilename1, "%s/%s.asec", Volume::SEC_ASECDIR, id1);
-    asprintf(&asecFilename2, "%s/%s.asec", Volume::SEC_ASECDIR, id2);
+    const char *dir;
+
+    if (findAsec(id1, asecFilename1, sizeof(asecFilename1), &dir)) {
+        SLOGE("Couldn't find ASEC %s", id1);
+        return -1;
+    }
+
+    asprintf(&asecFilename2, "%s/%s.asec", dir, id2);
 
     snprintf(mountPoint, sizeof(mountPoint), "%s/%s", Volume::ASECDIR, id1);
     if (isMountpointMounted(mountPoint)) {
@@ -451,12 +644,10 @@ int VolumeManager::renameAsec(const char *id1, const char *id2) {
         goto out_err;
     }
 
-    free(asecFilename1);
     free(asecFilename2);
     return 0;
 
 out_err:
-    free(asecFilename1);
     free(asecFilename2);
     return -1;
 }
@@ -467,7 +658,11 @@ int VolumeManager::unmountAsec(const char *id, bool force) {
     char asecFileName[255];
     char mountPoint[255];
 
-    snprintf(asecFileName, sizeof(asecFileName), "%s/%s.asec", Volume::SEC_ASECDIR, id);
+    if (findAsec(id, asecFileName, sizeof(asecFileName))) {
+        SLOGE("Couldn't find ASEC %s", id);
+        return -1;
+    }
+
     snprintf(mountPoint, sizeof(mountPoint), "%s/%s", Volume::ASECDIR, id);
 
     char idHash[33];
@@ -579,7 +774,11 @@ int VolumeManager::destroyAsec(const char *id, bool force) {
     char asecFileName[255];
     char mountPoint[255];
 
-    snprintf(asecFileName, sizeof(asecFileName), "%s/%s.asec", Volume::SEC_ASECDIR, id);
+    if (findAsec(id, asecFileName, sizeof(asecFileName))) {
+        SLOGE("Couldn't find ASEC %s", id);
+        return -1;
+    }
+
     snprintf(mountPoint, sizeof(mountPoint), "%s/%s", Volume::ASECDIR, id);
 
     if (isMountpointMounted(mountPoint)) {
@@ -603,11 +802,70 @@ int VolumeManager::destroyAsec(const char *id, bool force) {
     return 0;
 }
 
+bool VolumeManager::isAsecInDirectory(const char *dir, const char *asecName) const {
+    int dirfd = open(dir, O_DIRECTORY);
+    if (dirfd < 0) {
+        SLOGE("Couldn't open internal ASEC dir (%s)", strerror(errno));
+        return -1;
+    }
+
+    bool ret = false;
+
+    if (!faccessat(dirfd, asecName, F_OK, AT_SYMLINK_NOFOLLOW)) {
+        ret = true;
+    }
+
+    close(dirfd);
+
+    return ret;
+}
+
+int VolumeManager::findAsec(const char *id, char *asecPath, size_t asecPathLen,
+        const char **directory) const {
+    int dirfd, fd;
+    const int idLen = strlen(id);
+    char *asecName;
+
+    if (asprintf(&asecName, "%s.asec", id) < 0) {
+        SLOGE("Couldn't allocate string to write ASEC name");
+        return -1;
+    }
+
+    const char *dir;
+    if (isAsecInDirectory(Volume::SEC_ASECDIR_INT, asecName)) {
+        dir = Volume::SEC_ASECDIR_INT;
+    } else if (isAsecInDirectory(Volume::SEC_ASECDIR_EXT, asecName)) {
+        dir = Volume::SEC_ASECDIR_EXT;
+    } else {
+        free(asecName);
+        return -1;
+    }
+
+    if (directory != NULL) {
+        *directory = dir;
+    }
+
+    if (asecPath != NULL) {
+        int written = snprintf(asecPath, asecPathLen, "%s/%s", dir, asecName);
+        if (written < 0 || static_cast<size_t>(written) >= asecPathLen) {
+            free(asecName);
+            return -1;
+        }
+    }
+
+    free(asecName);
+    return 0;
+}
+
 int VolumeManager::mountAsec(const char *id, const char *key, int ownerUid) {
     char asecFileName[255];
     char mountPoint[255];
 
-    snprintf(asecFileName, sizeof(asecFileName), "%s/%s.asec", Volume::SEC_ASECDIR, id);
+    if (findAsec(id, asecFileName, sizeof(asecFileName))) {
+        SLOGE("Couldn't find ASEC %s", id);
+        return -1;
+    }
+
     snprintf(mountPoint, sizeof(mountPoint), "%s/%s", Volume::ASECDIR, id);
 
     if (isMountpointMounted(mountPoint)) {
@@ -641,39 +899,11 @@ int VolumeManager::mountAsec(const char *id, const char *key, int ownerUid) {
     bool cleanupDm = false;
     int fd;
     unsigned int nr_sec = 0;
-
-    if ((fd = open(loopDevice, O_RDWR)) < 0) {
-        SLOGE("Failed to open loopdevice (%s)", strerror(errno));
-        Loop::destroyByDevice(loopDevice);
-        return -1;
-    }
-
-    if (ioctl(fd, BLKGETSIZE, &nr_sec)) {
-        SLOGE("Failed to get loop size (%s)", strerror(errno));
-        Loop::destroyByDevice(loopDevice);
-        close(fd);
-        return -1;
-    }
-
-    /*
-     * Validate superblock
-     */
     struct asec_superblock sb;
-    memset(&sb, 0, sizeof(sb));
-    if (lseek(fd, ((nr_sec-1) * 512), SEEK_SET) < 0) {
-        SLOGE("lseek failed (%s)", strerror(errno));
-        close(fd);
-        Loop::destroyByDevice(loopDevice);
-        return -1;
-    }
-    if (read(fd, &sb, sizeof(sb)) != sizeof(sb)) {
-        SLOGE("superblock read failed (%s)", strerror(errno));
-        close(fd);
-        Loop::destroyByDevice(loopDevice);
-        return -1;
-    }
 
-    close(fd);
+    if (Loop::lookupInfo(loopDevice, &sb, &nr_sec)) {
+        return -1;
+    }
 
     if (mDebug) {
         SLOGD("Container sb magic/ver (%.8x/%.2x)", sb.magic, sb.ver);
@@ -707,7 +937,7 @@ int VolumeManager::mountAsec(const char *id, const char *key, int ownerUid) {
         strcpy(dmDevice, loopDevice);
     }
 
-    if (mkdir(mountPoint, 0777)) {
+    if (mkdir(mountPoint, 0000)) {
         if (errno != EEXIST) {
             SLOGE("Mountpoint creation failed (%s)", strerror(errno));
             if (cleanupDm) {
@@ -718,9 +948,14 @@ int VolumeManager::mountAsec(const char *id, const char *key, int ownerUid) {
         }
     }
 
-    if (Fat::doMount(dmDevice, mountPoint, true, false, true, ownerUid, 0,
-                     0222, false)) {
-//                     0227, false)) {
+    int result;
+    if (sb.c_opts & ASEC_SB_C_OPTS_EXT4) {
+        result = Ext4::doMount(dmDevice, mountPoint, true, false, true);
+    } else {
+        result = Fat::doMount(dmDevice, mountPoint, true, false, true, ownerUid, 0, 0222, false);
+    }
+
+    if (result) {
         SLOGE("ASEC mount failed (%s)", strerror(errno));
         if (cleanupDm) {
             Devmapper::destroy(idHash);

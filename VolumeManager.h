@@ -87,9 +87,23 @@ public:
     void disableVolumeManager(void) { mVolManagerDisabled = 1; }
 
     /* ASEC */
+    int findAsec(const char *id, char *asecPath = NULL, size_t asecPathLen = 0,
+            const char **directory = NULL) const;
     int createAsec(const char *id, unsigned numSectors, const char *fstype,
-                   const char *key, int ownerUid);
+                   const char *key, const int ownerUid, bool isExternal);
     int finalizeAsec(const char *id);
+
+    /**
+     * Fixes ASEC permissions on a filesystem that has owners and permissions.
+     * This currently means EXT4-based ASEC containers.
+     *
+     * There is a single file that can be marked as "private" and will not have
+     * world-readable permission. The group for that file will be set to the gid
+     * supplied.
+     *
+     * Returns 0 on success.
+     */
+    int fixupAsecPermissions(const char *id, gid_t gid, const char* privateFilename);
     int destroyAsec(const char *id, bool force);
     int mountAsec(const char *id, const char *key, int ownerUid);
     int unmountAsec(const char *id, bool force);
@@ -127,6 +141,7 @@ private:
     VolumeManager();
     void readInitialState();
     bool isMountpointMounted(const char *mp);
+    bool isAsecInDirectory(const char *dir, const char *asec) const;
 };
 
 extern "C" {

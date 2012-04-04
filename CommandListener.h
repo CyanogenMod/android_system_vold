@@ -47,6 +47,8 @@ private:
         AsecCmd();
         virtual ~AsecCmd() {}
         int runCommand(SocketClient *c, int argc, char ** argv);
+    private:
+        void listAsecsInDirectory(SocketClient *c, const char *directory);
     };
 
     class ObbCmd : public VoldCommand {

@@ -261,6 +261,44 @@ CommandListener::AsecCmd::AsecCmd() :
                  VoldCommand("asec") {
 }
 
+void CommandListener::AsecCmd::listAsecsInDirectory(SocketClient *cli, const char *directory) {
+    DIR *d = opendir(directory);
+
+    if (!d) {
+        cli->sendMsg(ResponseCode::OperationFailed, "Failed to open asec dir", true);
+        return;
+    }
+
+    size_t dirent_len = offsetof(struct dirent, d_name) +
+            pathconf(directory, _PC_NAME_MAX) + 1;
+
+    struct dirent *dent = (struct dirent *) malloc(dirent_len);
+    if (dent == NULL) {
+        cli->sendMsg(ResponseCode::OperationFailed, "Failed to allocate memory", true);
+        return;
+    }
+
+    struct dirent *result;
+
+    while (!readdir_r(d, dent, &result) && result != NULL) {
+        if (dent->d_name[0] == '.')
+            continue;
+        if (dent->d_type != DT_REG)
+            continue;
+        size_t name_len = strlen(dent->d_name);
+        if (name_len > 5 && name_len < 260 &&
+                !strcmp(&dent->d_name[name_len - 5], ".asec")) {
+            char id[255];
+            memset(id, 0, sizeof(id));
+            strlcpy(id, dent->d_name, name_len - 5);
+            cli->sendMsg(ResponseCode::AsecListResult, id, false);
+        }
+    }
+    closedir(d);
+
+    free(dent);
+}
+
 int CommandListener::AsecCmd::runCommand(SocketClient *cli,
                                                       int argc, char **argv) {
     if (argc < 2) {
@@ -273,35 +311,21 @@ int CommandListener::AsecCmd::runCommand(SocketClient *cli,
 
     if (!strcmp(argv[1], "list")) {
         dumpArgs(argc, argv, -1);
-        DIR *d = opendir(Volume::SEC_ASECDIR);
 
-        if (!d) {
-            cli->sendMsg(ResponseCode::OperationFailed, "Failed to open asec dir", true);
-            return 0;
-        }
-
-        struct dirent *dent;
-        while ((dent = readdir(d))) {
-            if (dent->d_name[0] == '.')
-                continue;
-            if (!strcmp(&dent->d_name[strlen(dent->d_name)-5], ".asec")) {
-                char id[255];
-                memset(id, 0, sizeof(id));
-                strncpy(id, dent->d_name, strlen(dent->d_name) -5);
-                cli->sendMsg(ResponseCode::AsecListResult, id, false);
-            }
-        }
-        closedir(d);
+        listAsecsInDirectory(cli, Volume::SEC_ASECDIR_EXT);
+        listAsecsInDirectory(cli, Volume::SEC_ASECDIR_INT);
     } else if (!strcmp(argv[1], "create")) {
         dumpArgs(argc, argv, 5);
-        if (argc != 7) {
+        if (argc != 8) {
             cli->sendMsg(ResponseCode::CommandSyntaxError,
-                    "Usage: asec create <container-id> <size_mb> <fstype> <key> <ownerUid>", false);
+                    "Usage: asec create <container-id> <size_mb> <fstype> <key> <ownerUid> "
+                    "<isExternal>", false);
             return 0;
         }
 
         unsigned int numSectors = (atoi(argv[3]) * (1024 * 1024)) / 512;
-        rc = vm->createAsec(argv[2], numSectors, argv[4], argv[5], atoi(argv[6]));
+        const bool isExternal = (atoi(argv[7]) == 1);
+        rc = vm->createAsec(argv[2], numSectors, argv[4], argv[5], atoi(argv[6]), isExternal);
     } else if (!strcmp(argv[1], "finalize")) {
         dumpArgs(argc, argv, -1);
         if (argc != 3) {
@@ -309,6 +333,21 @@ int CommandListener::AsecCmd::runCommand(SocketClient *cli,
             return 0;
         }
         rc = vm->finalizeAsec(argv[2]);
+    } else if (!strcmp(argv[1], "fixperms")) {
+        dumpArgs(argc, argv, -1);
+        if  (argc != 5) {
+            cli->sendMsg(ResponseCode::CommandSyntaxError, "Usage: asec fixperms <container-id> <gid> <filename>", false);
+            return 0;
+        }
+
+        char *endptr;
+        gid_t gid = (gid_t) strtoul(argv[3], &endptr, 10);
+        if (*endptr != '\0') {
+            cli->sendMsg(ResponseCode::CommandSyntaxError, "Usage: asec fixperms <container-id> <gid> <filename>", false);
+            return 0;
+        }
+
+        rc = vm->fixupAsecPermissions(argv[2], gid, argv[4]);
     } else if (!strcmp(argv[1], "destroy")) {
         dumpArgs(argc, argv, -1);
         if (argc < 3) {
