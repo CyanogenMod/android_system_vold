@@ -72,7 +72,15 @@ dev_t DirectVolume::getDiskDevice() {
 
 dev_t DirectVolume::getShareDevice() {
     if (mPartIdx != -1) {
-        return MKDEV(mDiskMajor, mPartIdx);
+#ifdef VOLD_DISC_HAS_MULTIPLE_MAJORS
+        int major = getMajorNumberForBadPartition(mPartIdx);
+        if(major != -1) {
+            SLOGE("getShareDevice() returning correct major: %d, minor: %d", major, mPartMinors[mPartIdx - 1]);
+            return MKDEV(major, mPartMinors[mPartIdx - 1]);
+        } 
+        else
+#endif
+		return MKDEV(mDiskMajor, mPartIdx);
     } else {
         return MKDEV(mDiskMajor, mDiskMinor);
     }
