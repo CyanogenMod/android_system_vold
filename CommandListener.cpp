@@ -290,7 +290,7 @@ void CommandListener::AsecCmd::listAsecsInDirectory(SocketClient *cli, const cha
                 !strcmp(&dent->d_name[name_len - 5], ".asec")) {
             char id[255];
             memset(id, 0, sizeof(id));
-            strlcpy(id, dent->d_name, name_len - 5);
+            strlcpy(id, dent->d_name, name_len - 4);
             cli->sendMsg(ResponseCode::AsecListResult, id, false);
         }
     }
