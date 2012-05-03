@@ -948,6 +948,19 @@ int VolumeManager::mountAsec(const char *id, const char *key, int ownerUid) {
         }
     }
 
+    /*
+     * The device mapper node needs to be created. Sometimes it takes a
+     * while. Wait for up to 1 second. We could also inspect incoming uevents,
+     * but that would take more effort.
+     */
+    int tries = 25;
+    while (tries--) {
+        if (!access(dmDevice, F_OK) || errno != ENOENT) {
+            break;
+        }
+        usleep(40 * 1000);
+    }
+
     int result;
     if (sb.c_opts & ASEC_SB_C_OPTS_EXT4) {
         result = Ext4::doMount(dmDevice, mountPoint, true, false, true);
