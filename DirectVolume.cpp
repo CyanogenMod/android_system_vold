@@ -275,6 +275,11 @@ void DirectVolume::handleDiskRemoved(const char *devpath, NetlinkEvent *evt) {
     int major = atoi(evt->findParam("MAJOR"));
     int minor = atoi(evt->findParam("MINOR"));
     char msg[255];
+    bool enabled;
+
+    if (mVm->shareEnabled(getLabel(), "ums", &enabled) == 0 && enabled) {
+        mVm->unshareVolume(getLabel(), "ums");
+    }
 
     SLOGD("Volume %s %s disk %d:%d removed\n", getLabel(), getMountpoint(), major, minor);
     snprintf(msg, sizeof(msg), "Volume %s %s disk removed (%d:%d)",
