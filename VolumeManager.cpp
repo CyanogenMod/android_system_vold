@@ -570,7 +570,7 @@ int VolumeManager::fixupAsecPermissions(const char *id, gid_t gid, const char* f
             result |= fchown(fd, AID_SYSTEM, privateFile? gid : AID_SYSTEM);
 
             if (ftsent->fts_info & FTS_D) {
-                result |= fchmod(fd, 0711);
+                result |= fchmod(fd, 0755);
             } else if (ftsent->fts_info & FTS_F) {
                 result |= fchmod(fd, privateFile ? 0640 : 0644);
             }
