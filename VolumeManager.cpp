@@ -571,7 +571,7 @@ int VolumeManager::fixupAsecPermissions(const char *id, gid_t gid, const char* f
 
             if (ftsent->fts_info & FTS_D) {
                 result |= fchmod(fd, 0711);
-            } else {
+            } else if (ftsent->fts_info & FTS_F) {
                 result |= fchmod(fd, privateFile ? 0640 : 0644);
             }
             close(fd);
