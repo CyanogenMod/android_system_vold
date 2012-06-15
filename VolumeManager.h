@@ -136,6 +136,7 @@ public:
     Volume *lookupVolume(const char *label);
     int getNumDirectVolumes(void);
     int getDirectVolumeList(struct volume_info *vol_list);
+    int unmountAllAsecsInDir(const char *directory);
 
 private:
     VolumeManager();
@@ -150,6 +151,7 @@ extern "C" {
     int vold_disableVol(const char *label);
     int vold_getNumDirectVolumes(void);
     int vold_getDirectVolumeList(struct volume_info *v);
+    int vold_unmountAllAsecs(void);
 #ifdef __cplusplus
 }
 #endif

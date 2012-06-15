@@ -1214,6 +1214,13 @@ int cryptfs_enable(char *howarg, char *passwd)
     property_set("vold.decrypt", "trigger_shutdown_framework");
     SLOGD("Just asked init to shut down class main\n");
 
+    if (vold_unmountAllAsecs()) {
+        /* Just report the error.  If any are left mounted,
+         * umounting /data below will fail and handle the error.
+         */
+        SLOGE("Error unmounting internal asecs");
+    }
+
     property_get("ro.crypto.fuse_sdcard", fuse_sdcard, "");
     if (!strcmp(fuse_sdcard, "true")) {
         /* This is a device using the fuse layer to emulate the sdcard semantics
