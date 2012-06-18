@@ -24,6 +24,7 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/mount.h>
+#include <dirent.h>
 
 #include <linux/kdev_t.h>
 
@@ -1358,6 +1359,62 @@ int VolumeManager::unmountVolume(const char *label, bool force, bool revert) {
     cleanupAsec(v, force);
 
     return v->unmountVol(force, revert);
+}
+
+extern "C" int vold_unmountAllAsecs(void) {
+    int rc;
+
+    VolumeManager *vm = VolumeManager::Instance();
+    rc = vm->unmountAllAsecsInDir(Volume::SEC_ASECDIR_EXT);
+    if (vm->unmountAllAsecsInDir(Volume::SEC_ASECDIR_INT)) {
+        rc = -1;
+    }
+    return rc;
+}
+
+#define ID_BUF_LEN 256
+#define ASEC_SUFFIX ".asec"
+#define ASEC_SUFFIX_LEN (sizeof(ASEC_SUFFIX) - 1)
+int VolumeManager::unmountAllAsecsInDir(const char *directory) {
+    DIR *d = opendir(directory);
+    int rc = 0;
+
+    if (!d) {
+        SLOGE("Could not open asec dir %s", directory);
+        return -1;
+    }
+
+    size_t dirent_len = offsetof(struct dirent, d_name) +
+            pathconf(directory, _PC_NAME_MAX) + 1;
+
+    struct dirent *dent = (struct dirent *) malloc(dirent_len);
+    if (dent == NULL) {
+        SLOGE("Failed to allocate memory for asec dir");
+        return -1;
+    }
+
+    struct dirent *result;
+    while (!readdir_r(d, dent, &result) && result != NULL) {
+        if (dent->d_name[0] == '.')
+            continue;
+        if (dent->d_type != DT_REG)
+            continue;
+        size_t name_len = strlen(dent->d_name);
+        if (name_len > 5 && name_len < (ID_BUF_LEN + ASEC_SUFFIX_LEN - 1) &&
+                !strcmp(&dent->d_name[name_len - 5], ASEC_SUFFIX)) {
+            char id[ID_BUF_LEN];
+            strlcpy(id, dent->d_name, name_len - 4);
+            if (unmountAsec(id, true)) {
+                /* Register the error, but try to unmount more asecs */
+                rc = -1;
+            }
+        }
+    }
+    closedir(d);
+
+    free(dent);
+
+    return rc;
 }
 
 /*
