@@ -1358,7 +1358,7 @@ int cryptfs_enable(char *howarg, char *passwd)
     } else {
         char value[PROPERTY_VALUE_MAX];
 
-        property_get("ro.vold.wipe_on_cyrypt_fail", value, "0");
+        property_get("ro.vold.wipe_on_crypt_fail", value, "0");
         if (!strcmp(value, "1")) {
             /* wipe data if encryption failed */
             SLOGE("encryption failed - rebooting into recovery to wipe data\n");
