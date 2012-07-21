@@ -40,16 +40,27 @@
 
 #include "Fat.h"
 
+#define EXT_FS_VERSION "ext4"
+
 static char FSCK_MSDOS_PATH[] = "/system/bin/fsck_msdos";
+static char FSCK_EXT_PATH[] = "/system/bin/e2fsck";
 static char MKDOSFS_PATH[] = "/system/bin/newfs_msdos";
 extern "C" int logwrap(int argc, const char **argv, int background);
 extern "C" int mount(const char *, const char *, const char *, unsigned long, const void *);
 
 int Fat::check(const char *fsPath) {
     bool rw = true;
-    if (access(FSCK_MSDOS_PATH, X_OK)) {
+    const bool no_executable_fsck_msdos = access(FSCK_MSDOS_PATH, X_OK);
+    const bool no_executable_fsck_extfs = access(FSCK_EXT_PATH, X_OK);
+    if (no_executable_fsck_msdos && no_executable_fsck_extfs) {
         SLOGW("Skipping fs checks\n");
         return 0;
+    }
+    if ( no_executable_fsck_extfs ) {
+        SLOGW("Filesystem check support for ext (e2fsck) missing\n");
+    }
+    if ( no_executable_fsck_msdos ) {
+        SLOGW("Filesystem check support for msdos (fsck_msdos) missing\n");
     }
 
     int pass = 1;
@@ -62,19 +73,65 @@ int Fat::check(const char *fsPath) {
         args[3] = fsPath;
         args[4] = NULL;
 
-        rc = logwrap(4, args, 1);
+        enum { FS_OK, FS_FIXED, FS_MISMATCH, FS_ERROR } status = FS_ERROR;
 
-        switch(rc) {
-        case 0:
+        if ( no_executable_fsck_msdos ) {
+            rc = FS_MISMATCH;
+        } else {
+            rc = logwrap(4, args, 1);
+        }
+        if (rc == 0) {
+            // if rc is 0, the check was ok
+            // That means the FileSystem is FAT
+            fsType = 1;
+            status = FS_OK;
+        } else if (rc == 2)
+            status = FS_MISMATCH;
+        else if (rc == 4)
+            status = FS_FIXED;
+        else
+            status = FS_ERROR;
+
+        if (status == FS_MISMATCH && !no_executable_fsck_extfs ) { // not FAT, let's try EXT
+            args[0] = FSCK_EXT_PATH;
+            args[1] = "-p";
+            args[2] = "-f";
+            args[3] = fsPath;
+            args[4] = NULL;
+            rc = logwrap(4, args, 1);
+            if (rc == 0) {
+                // if rc is 0, the check was ok
+                // That means the FileSystem is EXT
+                fsType = 2;
+                status = FS_OK;
+            } else if (rc == 1)
+                status = FS_FIXED;
+            else if (rc == 8)
+                status = FS_MISMATCH;
+            else
+                status = FS_ERROR;
+        }
+
+        switch(status) {
+        case FS_OK:
             SLOGI("Filesystem check completed OK");
+            // TODO: Remove this print.
+            const char *fsTypePrint;
+            if (fsType == 1)
+                fsTypePrint = "VFAT";
+            else if (fsType == 2)
+                fsTypePrint = "EXT";
+            else
+                fsTypePrint = "Unknown";
+            SLOGI("Filesystem type is: %s", fsTypePrint);
             return 0;
 
-        case 2:
-            SLOGE("Filesystem check failed (not a FAT filesystem)");
+        case FS_MISMATCH:
+            SLOGW("Filesystem check failed (not a FAT or EXT filesystem)");
             errno = ENODATA;
             return -1;
 
-        case 4:
+        case FS_FIXED:
             if (pass++ <= 3) {
                 SLOGW("Filesystem modified - rechecking (pass %d)",
                         pass);
@@ -100,6 +157,7 @@ int Fat::doMount(const char *fsPath, const char *mountPoint,
     int rc;
     unsigned long flags;
     char mountData[255];
+    const char *mntFSType;
 
     flags = MS_NODEV | MS_NOSUID | MS_DIRSYNC;
 
@@ -121,19 +179,25 @@ int Fat::doMount(const char *fsPath, const char *mountPoint,
         permMask = 0;
     }
 
-    sprintf(mountData,
-            "utf8,uid=%d,gid=%d,fmask=%o,dmask=%o,shortname=mixed",
-            ownerUid, ownerGid, permMask, permMask);
+    if (fsType == 2) {
+        sprintf(mountData, "noauto_da_alloc");
+        mntFSType = EXT_FS_VERSION;
+    } else {
+        sprintf(mountData,
+                "utf8,uid=%d,gid=%d,fmask=%o,dmask=%o,shortname=mixed",
+                ownerUid, ownerGid, permMask, permMask);
+        mntFSType = "vfat";
+    }
 
-    rc = mount(fsPath, mountPoint, "vfat", flags, mountData);
+    rc = mount(fsPath, mountPoint, mntFSType, flags, mountData);
 
     if (rc && errno == EROFS) {
         SLOGE("%s appears to be a read only filesystem - retrying mount RO", fsPath);
         flags |= MS_RDONLY;
-        rc = mount(fsPath, mountPoint, "vfat", flags, mountData);
+        rc = mount(fsPath, mountPoint, mntFSType, flags, mountData);
     }
 
-    if (rc == 0 && createLost) {
+    if (rc == 0 && createLost && fsType == 1) {
         char *lost_path;
         asprintf(&lost_path, "%s/LOST.DIR", mountPoint);
         if (access(lost_path, F_OK)) {

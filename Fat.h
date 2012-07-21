@@ -19,6 +19,8 @@
 
 #include <unistd.h>
 
+static int fsType;
+
 class Fat {
 public:
     static int check(const char *fsPath);
