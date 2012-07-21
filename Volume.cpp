@@ -435,7 +435,7 @@ int Volume::mountVol() {
         bool isFatFs = true;
         if (Fat::check(devicePath)) {
             if (errno == ENODATA) {
-                SLOGW("%s does not contain a FAT filesystem\n", devicePath);
+                SLOGW("%s does not contain a FAT or EXT filesystem\n", devicePath);
                 isFatFs = false;
             } else {
                 errno = EIO;
@@ -460,7 +460,7 @@ int Volume::mountVol() {
         if (isFatFs) {
             if (Fat::doMount(devicePath, "/mnt/secure/staging", false, false, false,
                     AID_SYSTEM, gid, 0702, true)) {
-                SLOGE("%s failed to mount via VFAT (%s)\n", devicePath, strerror(errno));
+                SLOGE("%s failed to mount via VFAT and EXT (%s)\n", devicePath, strerror(errno));
                 continue;
             }
         } else {
