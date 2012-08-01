@@ -54,4 +54,9 @@ void NetlinkHandler::onEvent(NetlinkEvent *evt) {
     if (!strcmp(subsys, "block")) {
         vm->handleBlockEvent(evt);
     }
+#if defined(BOARD_USES_HDMI) && defined(EXYNOS4_ENHANCEMENTS)
+    else if (!strcmp(subsys, "misc")) {
+        vm->handleHdmiEvent(evt);
+    }
+#endif
 }
