@@ -25,6 +25,10 @@
 
 #include "Volume.h"
 
+#if defined(BOARD_USES_HDMI) && defined(EXYNOS4_ENHANCEMENTS)
+#include "SecHdmiClient.h"
+#endif
+
 /* The length of an MD5 hash when encoded into ASCII hex characters */
 #define MD5_ASCII_LENGTH_PLUS_NULL ((MD5_DIGEST_LENGTH*2)+1)
 
@@ -76,6 +80,10 @@ private:
     int                    mVolManagerDisabled;
     int                    mNextLunNumber;
 
+#if defined(BOARD_USES_HDMI) && defined(EXYNOS4_ENHANCEMENTS)
+    android::SecHdmiClient *mHdmiClient;
+#endif
+
 public:
     virtual ~VolumeManager();
 
@@ -83,6 +91,10 @@ public:
     int stop();
 
     void handleBlockEvent(NetlinkEvent *evt);
+
+#if defined(BOARD_USES_HDMI) && defined(EXYNOS4_ENHANCEMENTS)
+    void handleHdmiEvent(NetlinkEvent *evt);
+#endif
 
     int addVolume(Volume *v);
 
