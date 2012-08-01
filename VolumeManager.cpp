@@ -72,6 +72,11 @@ VolumeManager::VolumeManager() {
     char dirtyratio[PROPERTY_VALUE_MAX];
     property_get("ro.vold.umsdirtyratio", dirtyratio, "0");
     mUmsDirtyRatio = atoi(dirtyratio);
+
+#if defined(BOARD_USES_HDMI) && defined(EXYNOS4_ENHANCEMENTS)
+    mHdmiClient = android::SecHdmiClient::getInstance();
+#endif
+
 }
 
 VolumeManager::~VolumeManager() {
@@ -155,6 +160,30 @@ void VolumeManager::handleBlockEvent(NetlinkEvent *evt) {
 #endif
     }
 }
+
+#if defined(BOARD_USES_HDMI)
+void VolumeManager::handleHdmiEvent(NetlinkEvent *evt)
+{
+    SLOGD("%s", __func__);
+    int action;
+    action = evt->getAction();
+    SLOGD("%s: action = %d", __func__, action);
+    if (action == NetlinkEvent::NlActionChange) {
+        const char *state = evt->findParam("HDMI_STATE");
+        if (state) {
+            if (!strcmp(state, "online")) {
+                SLOGD("HDMI: online\n");
+                mHdmiClient->setHdmiCableStatus(1);
+            } else {
+                SLOGD("HDMI: offline\n");
+                mHdmiClient->setHdmiCableStatus(0);
+            }
+        }
+    } else {
+        SLOGW("No handler implemented for action %d", action);
+    }
+}
+#endif
 
 int VolumeManager::listVolumes(SocketClient *cli) {
     VolumeCollection::iterator i;
