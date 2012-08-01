@@ -94,6 +94,14 @@ endif
 
 LOCAL_SHARED_LIBRARIES := $(common_shared_libraries)
 
+ifeq ($(EXYNOS4_ENHANCEMENTS),true)
+ifeq ($(BOARD_USES_HDMI),true)
+	LOCAL_CFLAGS += -DBOARD_USES_HDMI -DEXYNOS4_ENHANCEMENTS
+	LOCAL_SHARED_LIBRARIES += libhdmiclient
+	LOCAL_C_INCLUDES += hardware/samsung/$(TARGET_BOARD_PLATFORM)/hal/libhdmi/libhdmiservice
+endif
+endif
+
 LOCAL_STATIC_LIBRARIES := libfs_mgr
 
 include $(BUILD_EXECUTABLE)
