@@ -43,6 +43,7 @@
 #include "Volume.h"
 #include "VolumeManager.h"
 #include "ResponseCode.h"
+#include "Ext4.h"
 #include "Fat.h"
 #include "Ntfs.h"
 #include "Process.h"
@@ -450,6 +451,14 @@ int Volume::mountVol() {
             }
         }
 
+        bool isExt4Fs = false;
+        if (!isFatFs) {
+            if (Ext4::isExt4(devicePath)) {
+                SLOGI("%s does contain a EXT4 filesystem\n", devicePath);
+                isExt4Fs = true;
+            }
+        }
+
         /*
          * Mount the device on our internal staging mountpoint so we can
          * muck with it before exposing it to non priviledged users.
@@ -467,6 +476,28 @@ int Volume::mountVol() {
                 SLOGE("%s failed to mount via VFAT (%s)\n", devicePath, strerror(errno));
                 continue;
             }
+        } else if (isExt4Fs) {
+            // Use fuse daemon for mounting ext4 filesystems
+            // to avoid permission problems on data created by apps
+            const char* label = getLabel();
+            char* fuseSrc = (char*) malloc(strlen("/mnt/fuse/") + strlen(label));
+            sprintf(fuseSrc, "/mnt/fuse/%s", label);
+            const char* fuseDst = getMountpoint();
+
+            if (mkdir(fuseSrc, 0775)) {
+                SLOGE("Failed to create %s (%s)", fuseSrc, strerror(errno));
+                return -1;
+            }
+            if (Ext4::doMount(devicePath, fuseSrc, false, false, false)) {
+                SLOGE("%s failed to mount to %s via EXT4 (%s)\n", devicePath, fuseSrc, strerror(errno));
+                continue;
+            }
+            if (Ext4::doFuse(fuseSrc, fuseDst)) {
+                SLOGE("failed to fuse (%s) to (%s), error code(%s)\n", fuseSrc, fuseDst, strerror(errno));
+                continue;
+            }
+            // TODO: inform framework about being emulated storage
+            return -1;
         } else {
             if (Ntfs::doMount(devicePath, "/mnt/secure/staging", false, false, false,
                     AID_SYSTEM, gid, 0702, true)) {
