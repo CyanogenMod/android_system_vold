@@ -40,12 +40,101 @@
 
 #include "Ext4.h"
 
-#define MKEXT4FS_PATH "/system/bin/make_ext4fs";
+#define MAX 1024
+
+static char BLKID_PATH[] = "/system/xbin/blkid";
+static char E2FSCK_PATH[] = "/system/bin/e2fsck";
+static char MKEXT4FS_PATH[] = "/system/bin/make_ext4fs";
+static char STORAGE_DAEMON_PATH[] = "/system/bin/storage";
 
 extern "C" int logwrap(int argc, const char **argv, int background);
 
+int Ext4::isExt4(const char *fsPath) {
+    if (access(BLKID_PATH, X_OK)) {
+        SLOGW("Skipping EXT4 test\n");
+        return -1;
+    }
 
-int Ext4::doMount(const char *fsPath, const char *mountPoint, bool ro, bool remount,
+    int rc = false;
+    FILE *pipe_reader;
+    char pipe_buff[MAX];
+    char fstype[] = "ext4";
+    char fstype2[] = "EXT4";
+    void *strptr = NULL;
+
+    if ((pipe_reader = popen(BLKID_PATH, "r")) != NULL) {
+        while(1)
+        {
+            if(fgets(pipe_buff, MAX, pipe_reader) == NULL)
+            break;
+        }
+        pclose(pipe_reader);
+    } else {
+        return rc;
+    }
+    
+    strptr = strstr(pipe_buff, fstype);
+    if (strptr == NULL) {
+        strptr = strstr(pipe_buff, fstype2);
+        if (strptr == NULL) {
+            SLOGI("Filesystem type of %s is not EXT4", fsPath);
+        } else {
+            rc = true;
+        }
+    } else {
+        rc = true;
+    }
+
+    return rc;
+}
+
+int Ext4::check(const char *fsPath) {
+    bool rw = true;
+    if (access(E2FSCK_PATH, X_OK)) {
+        SLOGW("Skipping fs checks\n");
+        return 0;
+    }
+
+    int rc = -1;
+    do {
+        const char *args[5];
+        args[0] = E2FSCK_PATH;
+        args[1] = "-p";
+        args[2] = "-f";
+        args[3] = fsPath;
+        args[4] = NULL;
+
+        rc = logwrap(4, args, 1);
+
+        switch(rc) {
+        case 0:
+            SLOGI("EXT4 Filesystem check completed OK");
+            return 0;
+        case 1:
+            SLOGI("EXT4 Filesystem check completed, errors corrected OK");
+            return 0;
+        case 2:
+            SLOGE("EXT4 Filesystem check completed, errors corrected, need reboot");
+            return 0;
+        case 4:
+            SLOGE("EXT4 Filesystem errors left uncorrected");
+            errno = EIO;
+            return -1;
+        case 8:
+            SLOGE("E2FSCK Operational error");
+            errno = EIO;
+            return -1;
+        default:
+            SLOGE("EXT4 Filesystem check failed (unknown exit code %d)", rc);
+            errno = EIO;
+            return -1;
+        }
+    } while (0);
+
+    return 0;
+}
+
+int Ext4::doMount(const char *fsPath, char *mountPoint, bool ro, bool remount,
         bool executable) {
     int rc;
     unsigned long flags;
@@ -67,16 +156,38 @@ int Ext4::doMount(const char *fsPath, const char *mountPoint, bool ro, bool remo
     return rc;
 }
 
+int Ext4::doFuse(char *src, char *dst) {
+    char *args[6];
+    pid_t fusePid;
+
+    args[0] = (char*) "storage";
+    args[1] = src;
+    args[2] = dst;
+    args[3] = (char*) "1023";
+    args[4] = (char*) "1023";
+    args[5] = NULL;
+
+    fusePid=fork();
+
+    if (fusePid == 0) {       
+        SLOGW("Firing up storage daemon (%s) -> (%s)", src, dst);
+        execv(STORAGE_DAEMON_PATH, args);
+        exit(0);
+    }
+
+    return 0;
+}
+
 int Ext4::format(const char *fsPath) {
     int fd;
-    const char *args[4];
     int rc;
+    const char *args[4];
 
     args[0] = MKEXT4FS_PATH;
     args[1] = "-J";
     args[2] = fsPath;
     args[3] = NULL;
-    rc = logwrap(3, args, 1);
+    rc = logwrap(4, args, 1);
 
     if (rc == 0) {
         SLOGI("Filesystem (ext4) formatted OK");
