@@ -43,10 +43,13 @@
 #include "Volume.h"
 #include "VolumeManager.h"
 #include "ResponseCode.h"
+#include "Ext4.h"
 #include "Fat.h"
 #include "Ntfs.h"
 #include "Process.h"
 #include "cryptfs.h"
+
+static char STORAGE_DAEMON_PATH[] = "/system/bin/storage";
 
 extern "C" void dos_partition_dec(void const *pp, struct dos_partition *d);
 extern "C" void dos_partition_enc(void *pp, struct dos_partition *d);
@@ -436,17 +439,33 @@ int Volume::mountVol() {
         errno = 0;
         setState(Volume::State_Checking);
 
-        bool isFatFs = true;
-        if (Fat::check(devicePath)) {
-            if (errno == ENODATA) {
-                SLOGW("%s does not contain a FAT filesystem\n", devicePath);
-                isFatFs = false;
-            } else {
-                errno = EIO;
-                /* Badness - abort the mount */
-                SLOGE("%s failed FS checks (%s)", devicePath, strerror(errno));
-                setState(Volume::State_Idle);
-                return -1;
+        bool isFatFs = false;
+        if (Fat::isFat(devicePath)) {
+            isFatFs = true;
+            if (Fat::check(devicePath)) {
+                if (errno == EIO) {
+                    /* Badness - abort the mount */
+                    SLOGE("%s failed FS checks (%s)", devicePath, strerror(errno));
+                    setState(Volume::State_Idle);
+                    return -1;
+                }
+            }
+        }
+
+        bool isExt4Fs = false;
+        if (!isFatFs) {
+            errno = 0;
+            if (Ext4::isExt4(devicePath)) {
+                isExt4Fs = true;
+                if (Ext4::check(devicePath)) {
+                    if (errno == EIO) {
+                        /* Badness - abort the mount */
+                        SLOGE("%s failed FS checks (%s)", devicePath, strerror(errno));
+                        isExt4Fs = false;
+                        setState(Volume::State_Idle);
+                        return -1;
+                    }
+                }
             }
         }
 
@@ -465,6 +484,11 @@ int Volume::mountVol() {
             if (Fat::doMount(devicePath, "/mnt/secure/staging", false, false, false,
                     AID_SYSTEM, gid, 0702, true)) {
                 SLOGE("%s failed to mount via VFAT (%s)\n", devicePath, strerror(errno));
+                continue;
+            }
+        } else if (isExt4Fs) {
+            if (Ext4::doMount(devicePath, (char*) "/mnt/secure/staging", false, false, false)) {
+                SLOGE("%s failed to mount to %s via EXT4 (%s)\n", devicePath, "/mnt/secure/staging", strerror(errno));
                 continue;
             }
         } else {
@@ -491,11 +515,43 @@ int Volume::mountVol() {
          * Now that the bindmount trickery is done, atomically move the
          * whole subtree to expose it to non priviledged users.
          */
-        if (doMoveMount("/mnt/secure/staging", getMountpoint(), false)) {
-            SLOGE("Failed to move mount (%s)", strerror(errno));
-            umount("/mnt/secure/staging");
-            setState(Volume::State_Idle);
-            return -1;
+        if (isExt4Fs) {
+            /*
+             * In case of a EXT4 filesystem we're using the storage daemon
+             * to expose the subtree to non priviledged users
+             * to avoid permission problems on data created by apps.
+             */
+            const char* label = getLabel();
+            char* fuseSrc = (char*) malloc(strlen("/mnt/fuse/") + strlen(label) + 1);
+            sprintf(fuseSrc, "/mnt/fuse/%s", label);
+            char* fuseDst = (char*) getMountpoint();
+            // Create FUSE dir if it doesn't exist
+            if (access(fuseSrc, R_OK | W_OK)) {
+                if (mkdir(fuseSrc, 0775)) {
+                    SLOGE("Failed to create %s (%s)", fuseSrc, strerror(errno));
+                    return -1;
+                }
+            }
+            // Move subtree to our FUSE dir
+            if (doMoveMount("/mnt/secure/staging", fuseSrc, false)) {
+                SLOGE("Failed to move mount (%s)", strerror(errno));
+                umount("/mnt/secure/staging");
+                setState(Volume::State_Idle);
+                return -1;
+            }
+            // Invoke the FUSE daemon to expose it
+            if(doFuseMount(fuseSrc, fuseDst)) {
+                SLOGE("Failed to fuse mount (%s) -> (%s)", fuseSrc, fuseDst);
+                setState(Volume::State_Idle);
+                return -1;
+            }
+        } else {
+            if (doMoveMount("/mnt/secure/staging", getMountpoint(), false)) {
+                SLOGE("Failed to move mount (%s)", strerror(errno));
+                umount("/mnt/secure/staging");
+                setState(Volume::State_Idle);
+                return -1;
+            }
         }
         setState(Volume::State_Mounted);
         mCurrentlyMountedKdev = deviceNodes[i];
@@ -605,6 +661,32 @@ int Volume::doMoveMount(const char *src, const char *dst, bool force) {
     return -1;
 }
 
+int Volume::doFuseMount(char *src, char *dst) {
+    if (access(STORAGE_DAEMON_PATH, X_OK)) {
+        SLOGE("Can't invoke storage daemon.\n");
+        return -1;
+    }
+    char *args[6];
+    pid_t fusePid;
+
+    args[0] = (char*) "storage";
+    args[1] = src;
+    args[2] = dst;
+    args[3] = (char*) "1023";
+    args[4] = (char*) "1023";
+    args[5] = NULL;
+
+    fusePid=fork();
+
+    if (fusePid == 0) {
+        SLOGW("Invoking storage daemon (%s) -> (%s)", src, dst);
+        execv(STORAGE_DAEMON_PATH, args);
+        exit(0);
+    }
+
+    return 0;
+}
+
 int Volume::doUnmount(const char *path, bool force) {
     int retries = 10;
 
@@ -642,6 +724,9 @@ int Volume::doUnmount(const char *path, bool force) {
 int Volume::unmountVol(bool force, bool revert) {
     int i, rc;
     const char* externalStorage = getenv("EXTERNAL_STORAGE");
+    const char* label = getLabel();
+    char* fuseDir = (char*) malloc(strlen("/mnt/fuse/") + strlen(label) + 1);
+    sprintf(fuseDir, "/mnt/fuse/%s", label);
 
     if (getState() != Volume::State_Mounted) {
         SLOGE("Volume %s unmount request when not mounted", getLabel());
@@ -684,6 +769,16 @@ int Volume::unmountVol(bool force, bool revert) {
         if (doUnmount(Volume::SEC_ASECDIR_EXT, force)) {
             SLOGE("Failed to remove bindmount on %s (%s)", SEC_ASECDIR_EXT, strerror(errno));
             goto fail_remount_tmpfs;
+        }
+    }
+
+    /*
+     * Unmount the actual block device from FUSE dir if exists
+     */
+    if (!access(fuseDir, R_OK | W_OK)) {
+        if (doUnmount(fuseDir, force)) {
+            SLOGE("Failed to unmount %s (%s)", fuseDir, strerror(errno));
+            goto out_nomedia;
         }
     }
 

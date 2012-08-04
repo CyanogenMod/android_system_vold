@@ -40,20 +40,62 @@
 
 #include "Fat.h"
 
+#define MAX_BUFFER 1024
+
+static char BLKID_PATH[] = "/system/xbin/blkid";
 static char FSCK_MSDOS_PATH[] = "/system/bin/fsck_msdos";
 static char MKDOSFS_PATH[] = "/system/bin/newfs_msdos";
+
 extern "C" int logwrap(int argc, const char **argv, int background);
 extern "C" int mount(const char *, const char *, const char *, unsigned long, const void *);
+
+int Fat::isFat(const char *fsPath) {
+    if (access(BLKID_PATH, X_OK)) {
+        SLOGW("Skipping FAT test.\n");
+        return -1;
+    }
+
+    int rc = false;
+    FILE *pipe_reader;
+    char pipe_buff[MAX_BUFFER];
+    char fstype[] = "vfat";
+    void *strptr = NULL;
+    char* blkid = (char*) malloc(strlen(BLKID_PATH) + strlen(fsPath) + 2);
+    sprintf(blkid, "%s %s", BLKID_PATH, fsPath);
+
+    if ((pipe_reader = popen(blkid, "r")) != NULL) {
+        while(1)
+        {
+            if(fgets(pipe_buff, MAX_BUFFER, pipe_reader) == NULL)
+            break;
+        }
+        pclose(pipe_reader);
+    } else {
+        SLOGI("Determining of filesystem type for %s failed.\n", fsPath);
+        return false;
+    }
+
+    strptr = strstr(pipe_buff, fstype);
+    if (strptr == NULL) {
+        SLOGI("Filesystem type of %s is not FAT.\n", fsPath);
+        return false;
+    } else {
+        SLOGI("%s contains a FAT filesystem.\n", fsPath);
+        return true;
+    }
+
+    return false;
+}
 
 int Fat::check(const char *fsPath) {
     bool rw = true;
     if (access(FSCK_MSDOS_PATH, X_OK)) {
-        SLOGW("Skipping fs checks\n");
+        SLOGW("Skipping fs checks.\n");
         return 0;
     }
 
     int pass = 1;
-    int rc = 0;
+    int rc = -1;
     do {
         const char *args[5];
         args[0] = FSCK_MSDOS_PATH;
@@ -66,26 +108,26 @@ int Fat::check(const char *fsPath) {
 
         switch(rc) {
         case 0:
-            SLOGI("Filesystem check completed OK");
+            SLOGI("FAT Filesystem check completed OK.\n");
             return 0;
 
         case 2:
-            SLOGE("Filesystem check failed (not a FAT filesystem)");
+            SLOGE("Filesystem check failed (not a FAT filesystem).\n");
             errno = ENODATA;
             return -1;
 
         case 4:
             if (pass++ <= 3) {
-                SLOGW("Filesystem modified - rechecking (pass %d)",
+                SLOGW("FAT Filesystem modified - rechecking (pass %d).\n",
                         pass);
                 continue;
             }
-            SLOGE("Failing check after too many rechecks");
+            SLOGE("FAT Failing check after too many rechecks.\n");
             errno = EIO;
             return -1;
 
         default:
-            SLOGE("Filesystem check failed (unknown exit code %d)", rc);
+            SLOGE("FAT Filesystem check failed (unknown exit code %d).\n", rc);
             errno = EIO;
             return -1;
         }
