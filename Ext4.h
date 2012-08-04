@@ -21,8 +21,11 @@
 
 class Ext4 {
 public:
-    static int doMount(const char *fsPath, const char *mountPoint, bool ro, bool remount,
-            bool executable);
+    static int isExt4(const char *fsPath);
+    static int check(const char *fsPath);
+    static int doMount(const char *fsPath, char *mountPoint, bool ro, bool remount,
+        bool executable);
+    static int doFuse(char *src, char *dst);
     static int format(const char *fsPath);
 };
 

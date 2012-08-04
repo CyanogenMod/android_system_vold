@@ -43,6 +43,7 @@
 #include "Volume.h"
 #include "VolumeManager.h"
 #include "ResponseCode.h"
+#include "Ext4.h"
 #include "Fat.h"
 #include "Ntfs.h"
 #include "Process.h"
@@ -436,17 +437,35 @@ int Volume::mountVol() {
         errno = 0;
         setState(Volume::State_Checking);
 
-        bool isFatFs = true;
-        if (Fat::check(devicePath)) {
-            if (errno == ENODATA) {
-                SLOGW("%s does not contain a FAT filesystem\n", devicePath);
-                isFatFs = false;
-            } else {
-                errno = EIO;
-                /* Badness - abort the mount */
-                SLOGE("%s failed FS checks (%s)", devicePath, strerror(errno));
-                setState(Volume::State_Idle);
-                return -1;
+        bool isFatFs = false;
+        if (Fat::isFat(devicePath)) {
+            SLOGI("%s does contain a FAT filesystem\n", devicePath);
+            isFatFs = true;
+            if (Fat::check(devicePath)) {
+                if (errno == EIO) {
+                    /* Badness - abort the mount */
+                    SLOGE("%s failed FS checks (%s)", devicePath, strerror(errno));
+                    setState(Volume::State_Idle);
+                    return -1;
+                }
+            }
+        }
+
+        bool isExt4Fs = false;
+        if (!isFatFs) {
+            errno = 0;
+            if (Ext4::isExt4(devicePath)) {
+                SLOGI("%s does contain a EXT4 filesystem\n", devicePath);
+                isExt4Fs = true;
+                if (Ext4::check(devicePath)) {
+                    if (errno == EIO) {
+                        /* Badness - abort the mount */
+                        SLOGE("%s failed FS checks (%s)", devicePath, strerror(errno));
+                        isExt4Fs = false;
+                        setState(Volume::State_Idle);
+                        return -1;
+                    }
+                }
             }
         }
 
@@ -467,6 +486,33 @@ int Volume::mountVol() {
                 SLOGE("%s failed to mount via VFAT (%s)\n", devicePath, strerror(errno));
                 continue;
             }
+        } else if (isExt4Fs) {
+            // Use fuse daemon for mounting ext4 filesystems
+            // to avoid permission problems on data created by apps
+            const char* label = getLabel();
+            char* fuseSrc = (char*) malloc(strlen("/mnt/fuse/") + strlen(label));
+            sprintf(fuseSrc, "/mnt/fuse/%s", label);
+            char* fuseDst = (char*) getMountpoint();
+
+            // Create FUSE dir if not exists
+            if (access(fuseSrc, R_OK | W_OK)) {
+                if (mkdir(fuseSrc, 0775)) {
+                    SLOGE("Failed to create %s (%s)", fuseSrc, strerror(errno));
+                    return -1;
+                }
+            }
+
+            // Mount to FUSE dir
+            if (Ext4::doMount(devicePath, fuseSrc, false, false, false)) {
+                SLOGE("%s failed to mount to %s via EXT4 (%s)\n", devicePath, fuseSrc, strerror(errno));
+                continue;
+            }
+
+            // FUSE and state it mounted
+            Ext4::doFuse(fuseSrc, fuseDst);
+            setState(Volume::State_Mounted);
+            mCurrentlyMountedKdev = deviceNodes[i];
+            return 0;
         } else {
             if (Ntfs::doMount(devicePath, "/mnt/secure/staging", false, false, false,
                     AID_SYSTEM, gid, 0702, true)) {
@@ -642,6 +688,9 @@ int Volume::doUnmount(const char *path, bool force) {
 int Volume::unmountVol(bool force, bool revert) {
     int i, rc;
     const char* externalStorage = getenv("EXTERNAL_STORAGE");
+    const char* label = getLabel();
+    char* fuseDir = (char*) malloc(strlen("/mnt/fuse/") + strlen(label));
+    sprintf(fuseDir, "/mnt/fuse/%s", label);
 
     if (getState() != Volume::State_Mounted) {
         SLOGE("Volume %s unmount request when not mounted", getLabel());
@@ -684,6 +733,16 @@ int Volume::unmountVol(bool force, bool revert) {
         if (doUnmount(Volume::SEC_ASECDIR_EXT, force)) {
             SLOGE("Failed to remove bindmount on %s (%s)", SEC_ASECDIR_EXT, strerror(errno));
             goto fail_remount_tmpfs;
+        }
+    }
+
+    /*
+     * Unmount the actual block device from FUSE dir if exists
+     */
+    if (!access(fuseDir, R_OK | W_OK)) {
+        if (doUnmount(fuseDir, force)) {
+            SLOGE("Failed to unmount %s (%s)", fuseDir, strerror(errno));
+            goto out_nomedia;
         }
     }
 
