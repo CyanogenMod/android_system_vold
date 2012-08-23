@@ -1179,11 +1179,14 @@ int cryptfs_enable(char *howarg, char *passwd)
     snprintf(lockid, sizeof(lockid), "enablecrypto%d", (int) getpid());
     acquire_wake_lock(PARTIAL_WAKE_LOCK, lockid);
 
-     /* Get the sdcard mount point */
-     sd_mnt_point = getenv("EXTERNAL_STORAGE");
-     if (! sd_mnt_point) {
-         sd_mnt_point = "/mnt/sdcard";
-     }
+    /* Get the sdcard mount point */
+    sd_mnt_point = getenv("MULTIUSER_EXTERNAL_STORAGE");
+    if (!sd_mnt_point) {
+       sd_mnt_point = getenv("EXTERNAL_STORAGE");
+    }
+    if (!sd_mnt_point) {
+        sd_mnt_point = "/mnt/sdcard";
+    }
 
     num_vols=vold_getNumDirectVolumes();
     vol_list = malloc(sizeof(struct volume_info) * num_vols);
