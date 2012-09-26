@@ -447,7 +447,7 @@ int CommandListener::ObbCmd::runCommand(SocketClient *cli,
             dumpArgs(argc, argv, 3);
             if (argc != 5) {
                 cli->sendMsg(ResponseCode::CommandSyntaxError,
-                        "Usage: obb mount <filename> <key> <ownerUid>", false);
+                        "Usage: obb mount <filename> <key> <ownerGid>", false);
                 return 0;
             }
             rc = vm->mountObb(argv[2], argv[3], atoi(argv[4]));
