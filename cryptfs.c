@@ -59,6 +59,8 @@
 #define EXT4_FS 1
 #define FAT_FS 2
 
+#define TABLE_LOAD_RETRIES 10
+
 char *me = "cryptfs";
 
 static unsigned char saved_master_key[KEY_LEN_BYTES];
@@ -385,6 +387,7 @@ static int create_crypto_blk_dev(struct crypt_mnt_ftr *crypt_ftr, unsigned char 
   struct dm_target_spec *tgt;
   unsigned int minor;
   int fd;
+  int i;
   int retval = -1;
 
   if ((fd = open("/dev/device-mapper", O_RDWR)) < 0 ) {
@@ -427,9 +430,18 @@ static int create_crypto_blk_dev(struct crypt_mnt_ftr *crypt_ftr, unsigned char 
   crypt_params = (char *) (((unsigned long)crypt_params + 7) & ~8); /* Align to an 8 byte boundary */
   tgt->next = crypt_params - buffer;
 
-  if (ioctl(fd, DM_TABLE_LOAD, io)) {
+  for (i = 0; i < TABLE_LOAD_RETRIES; i++) {
+    if (! ioctl(fd, DM_TABLE_LOAD, io)) {
+      break;
+    }
+    usleep(500000);
+  }
+
+  if (i == TABLE_LOAD_RETRIES) {
       SLOGE("Cannot load dm-crypt mapping table.\n");
       goto errout;
+  } else if (i) {
+      SLOGI("Took %d tries to load dmcrypt table.\n", i + 1);
   }
 
   /* Resume this device to activate it */
