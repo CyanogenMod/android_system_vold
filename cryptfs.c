@@ -1192,7 +1192,7 @@ int cryptfs_enable(char *howarg, char *passwd)
     acquire_wake_lock(PARTIAL_WAKE_LOCK, lockid);
 
     /* Get the sdcard mount point */
-    sd_mnt_point = getenv("MULTIUSER_EXTERNAL_STORAGE");
+    sd_mnt_point = getenv("EMULATED_STORAGE_SOURCE");
     if (!sd_mnt_point) {
        sd_mnt_point = getenv("EXTERNAL_STORAGE");
     }
