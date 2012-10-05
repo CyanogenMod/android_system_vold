@@ -608,41 +608,29 @@ int Volume::unmountVol(bool force, bool revert) {
     usleep(1000 * 1000); // Give the framework some time to react
 
     /*
-     * First move the mountpoint back to our internal staging point
-     * so nobody else can muck with it while we work.
-     */
-    if (doMoveMount(getMountpoint(), SEC_STGDIR, force)) {
-        SLOGE("Failed to move mount %s => %s (%s)", getMountpoint(), SEC_STGDIR, strerror(errno));
-        setState(Volume::State_Mounted);
-        return -1;
-    }
-
-    protectFromAutorunStupidity();
-
-    /*
-     * Unmount the tmpfs which was obscuring the asec image directory
-     * from non root users
-     */
-
-    if (doUnmount(Volume::SEC_STG_SECIMGDIR, force)) {
-        SLOGE("Failed to unmount tmpfs on %s (%s)", SEC_STG_SECIMGDIR, strerror(errno));
-        goto fail_republish;
-    }
-
-    /*
      * Remove the bindmount we were using to keep a reference to
      * the previously obscured directory.
      */
-
     if (doUnmount(Volume::SEC_ASECDIR_EXT, force)) {
         SLOGE("Failed to remove bindmount on %s (%s)", SEC_ASECDIR_EXT, strerror(errno));
         goto fail_remount_tmpfs;
     }
 
     /*
+     * Unmount the tmpfs which was obscuring the asec image directory
+     * from non root users
+     */
+    char secure_dir[PATH_MAX];
+    snprintf(secure_dir, PATH_MAX, "%s/.android_secure", getMountpoint());
+    if (doUnmount(secure_dir, force)) {
+        SLOGE("Failed to unmount tmpfs on %s (%s)", secure_dir, strerror(errno));
+        goto fail_republish;
+    }
+
+    /*
      * Finally, unmount the actual block device from the staging dir
      */
-    if (doUnmount(Volume::SEC_STGDIR, force)) {
+    if (doUnmount(getMountpoint(), force)) {
         SLOGE("Failed to unmount %s (%s)", SEC_STGDIR, strerror(errno));
         goto fail_recreate_bindmount;
     }
