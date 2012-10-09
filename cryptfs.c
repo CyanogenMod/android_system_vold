@@ -688,6 +688,9 @@ int cryptfs_restart(void)
     property_set("vold.decrypt", "trigger_reset_main");
     SLOGD("Just asked init to shut down class main\n");
 
+    /* Give everything a chance to shutdown */
+    sleep(1);
+
     /* Now that the framework is shutdown, we should be able to umount()
      * the tmpfs filesystem, and mount the real one.
      */
