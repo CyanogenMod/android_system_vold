@@ -125,6 +125,8 @@ public:
     int unmountObb(const char *fileName, bool force);
     int getObbMountPath(const char *id, char *buffer, int maxlen);
 
+    Volume* getVolumeForFile(const char *fileName);
+
     /* Shared between ASEC and Loopback images */
     int unmountLoopImage(const char *containerId, const char *loopId,
             const char *fileName, const char *mountPoint, bool force);
