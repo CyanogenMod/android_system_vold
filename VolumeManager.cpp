@@ -379,8 +379,12 @@ int VolumeManager::createAsec(const char *id, unsigned int numSectors, const cha
 
     if (wantFilesystem) {
         int formatStatus;
+        char mountPoint[255];
+
+        snprintf(mountPoint, sizeof(mountPoint), "%s/%s", Volume::ASECDIR, id);
+
         if (usingExt4) {
-            formatStatus = Ext4::format(dmDevice);
+            formatStatus = Ext4::format(dmDevice, mountPoint);
         } else {
             formatStatus = Fat::format(dmDevice, numImgSectors);
         }
@@ -395,9 +399,6 @@ int VolumeManager::createAsec(const char *id, unsigned int numSectors, const cha
             return -1;
         }
 
-        char mountPoint[255];
-
-        snprintf(mountPoint, sizeof(mountPoint), "%s/%s", Volume::ASECDIR, id);
         if (mkdir(mountPoint, 0000)) {
             if (errno != EEXIST) {
                 SLOGE("Mountpoint creation failed (%s)", strerror(errno));
