@@ -688,8 +688,12 @@ int cryptfs_restart(void)
     property_set("vold.decrypt", "trigger_reset_main");
     SLOGD("Just asked init to shut down class main\n");
 
-    /* Give everything a chance to shutdown */
-    sleep(1);
+    /* Ugh, shutting down the framework is not synchronous, so until it
+     * can be fixed, this horrible hack will wait a moment for it all to
+     * shut down before proceeding.  Without it, some devices cannot
+     * restart the graphics services.
+     */
+    sleep(2);
 
     /* Now that the framework is shutdown, we should be able to umount()
      * the tmpfs filesystem, and mount the real one.
@@ -1274,6 +1278,13 @@ int cryptfs_enable(char *howarg, char *passwd)
         if (prep_data_fs()) {
             goto error_shutting_down;
         }
+
+        /* Ugh, shutting down the framework is not synchronous, so until it
+         * can be fixed, this horrible hack will wait a moment for it all to
+         * shut down before proceeding.  Without it, some devices cannot
+         * restart the graphics services.
+         */
+        sleep(2);
 
         /* startup service classes main and late_start */
         property_set("vold.decrypt", "trigger_restart_min_framework");
