@@ -123,6 +123,7 @@ Volume::Volume(VolumeManager *vm, const char *label, const char *mount_point) {
     mCurrentlyMountedKdev = -1;
     mPartIdx = -1;
     mRetryMount = false;
+    mLunNumber = -1;
 
     property_get("persist.sys.vold.switchexternal", switchable, "0");
     if (!strcmp(switchable,"1")) {
@@ -198,6 +199,10 @@ int Volume::handleBlockEvent(NetlinkEvent *evt) {
 bool Volume::isPrimaryStorage() {
     const char* externalStorage = getenv("EXTERNAL_STORAGE") ? : "/mnt/sdcard";
     return !strcmp(getMountpoint(), externalStorage);
+}
+
+void Volume::setLunNumber(int lunNumber) {
+    mLunNumber = lunNumber;
 }
 
 void Volume::setState(int state) {

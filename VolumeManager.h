@@ -74,6 +74,7 @@ private:
     int                    mSavedDirtyRatio;
     int                    mUmsDirtyRatio;
     int                    mVolManagerDisabled;
+    int                    mNextLunNumber;
 
 public:
     virtual ~VolumeManager();

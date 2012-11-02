@@ -66,6 +66,7 @@ VolumeManager::VolumeManager() {
     mUmsSharingCount = 0;
     mSavedDirtyRatio = -1;
     mVolManagerDisabled = 0;
+    mNextLunNumber = 0;
 
     // set dirty ratio to ro.vold.umsdirtyratio (default 0) when UMS is active
     char dirtyratio[PROPERTY_VALUE_MAX];
@@ -127,6 +128,7 @@ int VolumeManager::stop() {
 }
 
 int VolumeManager::addVolume(Volume *v) {
+    v->setLunNumber(mNextLunNumber++);
     mVolumes->push_back(v);
     return 0;
 }
@@ -1269,12 +1271,8 @@ int VolumeManager::shareVolume(const char *label, const char *method) {
              sizeof(nodepath), "/dev/block/vold/%d:%d",
              MAJOR(d), MINOR(d));
 
-    // TODO: Currently only two mounts are supported, defaulting
-    // /mnt/sdcard to lun0 and anything else to lun1. Fix this.
-    if (v->isPrimaryStorage()) {
-        lun_number = 0;
-    } else {
-        lun_number = SECOND_LUN_NUM;
+    if ((lun_number = v->getLunNumber()) == -1) {
+        return -1;
     }
 
     if ((fd = openLun(lun_number)) < 0) {
@@ -1325,14 +1323,10 @@ int VolumeManager::unshareVolume(const char *label, const char *method) {
         return -1;
     }
 
-    int fd;
-    int lun_number;
+    int fd, lun_number;
 
-    // /mnt/sdcard to lun0 and anything else to lun1. Fix this.
-    if (v->isPrimaryStorage()) {
-        lun_number = 0;
-    } else {
-        lun_number = SECOND_LUN_NUM;
+    if ((lun_number = v->getLunNumber()) == -1) {
+        return -1;
     }
 
     if ((fd = openLun(lun_number)) < 0) {
