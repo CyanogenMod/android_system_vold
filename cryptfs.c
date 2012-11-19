@@ -59,6 +59,8 @@
 #define EXT4_FS 1
 #define FAT_FS 2
 
+#define TABLE_LOAD_RETRIES 10
+
 char *me = "cryptfs";
 
 static unsigned char saved_master_key[KEY_LEN_BYTES];
@@ -385,6 +387,7 @@ static int create_crypto_blk_dev(struct crypt_mnt_ftr *crypt_ftr, unsigned char 
   struct dm_target_spec *tgt;
   unsigned int minor;
   int fd;
+  int i;
   int retval = -1;
 
   if ((fd = open("/dev/device-mapper", O_RDWR)) < 0 ) {
@@ -427,9 +430,18 @@ static int create_crypto_blk_dev(struct crypt_mnt_ftr *crypt_ftr, unsigned char 
   crypt_params = (char *) (((unsigned long)crypt_params + 7) & ~8); /* Align to an 8 byte boundary */
   tgt->next = crypt_params - buffer;
 
-  if (ioctl(fd, DM_TABLE_LOAD, io)) {
+  for (i = 0; i < TABLE_LOAD_RETRIES; i++) {
+    if (! ioctl(fd, DM_TABLE_LOAD, io)) {
+      break;
+    }
+    usleep(500000);
+  }
+
+  if (i == TABLE_LOAD_RETRIES) {
       SLOGE("Cannot load dm-crypt mapping table.\n");
       goto errout;
+  } else if (i) {
+      SLOGI("Took %d tries to load dmcrypt table.\n", i + 1);
   }
 
   /* Resume this device to activate it */
@@ -675,6 +687,13 @@ int cryptfs_restart(void)
      */
     property_set("vold.decrypt", "trigger_reset_main");
     SLOGD("Just asked init to shut down class main\n");
+
+    /* Ugh, shutting down the framework is not synchronous, so until it
+     * can be fixed, this horrible hack will wait a moment for it all to
+     * shut down before proceeding.  Without it, some devices cannot
+     * restart the graphics services.
+     */
+    sleep(2);
 
     /* Now that the framework is shutdown, we should be able to umount()
      * the tmpfs filesystem, and mount the real one.
@@ -1179,11 +1198,14 @@ int cryptfs_enable(char *howarg, char *passwd)
     snprintf(lockid, sizeof(lockid), "enablecrypto%d", (int) getpid());
     acquire_wake_lock(PARTIAL_WAKE_LOCK, lockid);
 
-     /* Get the sdcard mount point */
-     sd_mnt_point = getenv("EXTERNAL_STORAGE");
-     if (! sd_mnt_point) {
-         sd_mnt_point = "/mnt/sdcard";
-     }
+    /* Get the sdcard mount point */
+    sd_mnt_point = getenv("EMULATED_STORAGE_SOURCE");
+    if (!sd_mnt_point) {
+       sd_mnt_point = getenv("EXTERNAL_STORAGE");
+    }
+    if (!sd_mnt_point) {
+        sd_mnt_point = "/mnt/sdcard";
+    }
 
     num_vols=vold_getNumDirectVolumes();
     vol_list = malloc(sizeof(struct volume_info) * num_vols);
@@ -1256,6 +1278,13 @@ int cryptfs_enable(char *howarg, char *passwd)
         if (prep_data_fs()) {
             goto error_shutting_down;
         }
+
+        /* Ugh, shutting down the framework is not synchronous, so until it
+         * can be fixed, this horrible hack will wait a moment for it all to
+         * shut down before proceeding.  Without it, some devices cannot
+         * restart the graphics services.
+         */
+        sleep(2);
 
         /* startup service classes main and late_start */
         property_set("vold.decrypt", "trigger_restart_min_framework");
@@ -1365,12 +1394,12 @@ int cryptfs_enable(char *howarg, char *passwd)
     } else {
         char value[PROPERTY_VALUE_MAX];
 
-        property_get("ro.vold.wipe_on_cyrypt_fail", value, "0");
+        property_get("ro.vold.wipe_on_crypt_fail", value, "0");
         if (!strcmp(value, "1")) {
             /* wipe data if encryption failed */
             SLOGE("encryption failed - rebooting into recovery to wipe data\n");
             mkdir("/cache/recovery", 0700);
-            int fd = open("/cache/recovery/command", O_RDWR|O_CREAT|O_TRUNC);
+            int fd = open("/cache/recovery/command", O_RDWR|O_CREAT|O_TRUNC, 0600);
             if (fd >= 0) {
                 write(fd, "--wipe_data", strlen("--wipe_data") + 1);
                 close(fd);

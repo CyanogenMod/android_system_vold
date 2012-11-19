@@ -1005,7 +1005,7 @@ Volume* VolumeManager::getVolumeForFile(const char *fileName) {
 /**
  * Mounts an image file <code>img</code>.
  */
-int VolumeManager::mountObb(const char *img, const char *key, int ownerUid) {
+int VolumeManager::mountObb(const char *img, const char *key, int ownerGid) {
     char mountPoint[255];
 
     char idHash[33];
@@ -1089,7 +1089,7 @@ int VolumeManager::mountObb(const char *img, const char *key, int ownerUid) {
         }
     }
 
-    if (Fat::doMount(dmDevice, mountPoint, true, false, true, ownerUid, 0,
+    if (Fat::doMount(dmDevice, mountPoint, true, false, true, 0, ownerGid,
                      0227, false)) {
         SLOGE("Image mount failed (%s)", strerror(errno));
         if (cleanupDm) {
