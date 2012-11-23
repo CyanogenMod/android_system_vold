@@ -657,24 +657,27 @@ int Volume::unmountVol(bool force, bool revert) {
     setState(Volume::State_Unmounting);
     usleep(1000 * 1000); // Give the framework some time to react
 
-    /*
-     * Remove the bindmount we were using to keep a reference to
-     * the previously obscured directory.
-     */
-    if (doUnmount(Volume::SEC_ASECDIR_EXT, force)) {
-        SLOGE("Failed to remove bindmount on %s (%s)", SEC_ASECDIR_EXT, strerror(errno));
-        goto fail_remount_tmpfs;
-    }
+    /* Undo createBindMounts(), which is only called for primary storage */
+    if (isPrimaryStorage()) {
+        /*
+         * Remove the bindmount we were using to keep a reference to
+         * the previously obscured directory.
+         */
+        if (doUnmount(Volume::SEC_ASECDIR_EXT, force)) {
+            SLOGE("Failed to remove bindmount on %s (%s)", SEC_ASECDIR_EXT, strerror(errno));
+            goto fail_remount_tmpfs;
+        }
 
-    /*
-     * Unmount the tmpfs which was obscuring the asec image directory
-     * from non root users
-     */
-    char secure_dir[PATH_MAX];
-    snprintf(secure_dir, PATH_MAX, "%s/.android_secure", getMountpoint());
-    if (doUnmount(secure_dir, force)) {
-        SLOGE("Failed to unmount tmpfs on %s (%s)", secure_dir, strerror(errno));
-        goto fail_republish;
+        /*
+         * Unmount the tmpfs which was obscuring the asec image directory
+         * from non root users
+         */
+        char secure_dir[PATH_MAX];
+        snprintf(secure_dir, PATH_MAX, "%s/.android_secure", getMountpoint());
+        if (doUnmount(secure_dir, force)) {
+            SLOGE("Failed to unmount tmpfs on %s (%s)", secure_dir, strerror(errno));
+            goto fail_republish;
+        }
     }
 
     /*
