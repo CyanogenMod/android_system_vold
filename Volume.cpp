@@ -468,13 +468,13 @@ int Volume::mountVol() {
 
         if (isFatFs) {
             if (Fat::doMount(devicePath, "/mnt/secure/staging", false, false, false,
-                    AID_SYSTEM, gid, 0702, true)) {
+                    AID_ROOT, gid, 0702, true)) {
                 SLOGE("%s failed to mount via VFAT (%s)\n", devicePath, strerror(errno));
                 continue;
             }
         } else {
             if (Ntfs::doMount(devicePath, "/mnt/secure/staging", false, false, false,
-                    AID_SYSTEM, gid, 0702, true)) {
+                    AID_ROOT, gid, 0702, true)) {
                 SLOGE("%s failed to mount via NTFS (%s)\n", devicePath, strerror(errno));
                 continue;
             }
