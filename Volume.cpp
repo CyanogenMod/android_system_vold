@@ -426,7 +426,7 @@ int Volume::mountVol() {
             gid = AID_MEDIA_RW;
         }
         if (Fat::doMount(devicePath, "/mnt/secure/staging", false, false, false,
-                AID_SYSTEM, gid, 0702, true)) {
+                AID_ROOT, gid, 0702, true)) {
             SLOGE("%s failed to mount via VFAT (%s)\n", devicePath, strerror(errno));
             continue;
         }
