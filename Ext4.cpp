@@ -39,6 +39,7 @@
 #include <cutils/properties.h>
 
 #include "Ext4.h"
+#include "VoldUtil.h"
 
 #define MKEXT4FS_PATH "/system/bin/make_ext4fs";
 
@@ -69,7 +70,7 @@ int Ext4::doMount(const char *fsPath, const char *mountPoint, bool ro, bool remo
 
 int Ext4::format(const char *fsPath, const char *mountpoint) {
     int fd;
-    const char *args[6];
+    const char *args[5];
     int rc;
 
     args[0] = MKEXT4FS_PATH;
@@ -77,8 +78,7 @@ int Ext4::format(const char *fsPath, const char *mountpoint) {
     args[2] = "-a";
     args[3] = mountpoint;
     args[4] = fsPath;
-    args[5] = NULL;
-    rc = logwrap(5, args, 1);
+    rc = logwrap(ARRAY_SIZE(args), args, 1);
 
     if (rc == 0) {
         SLOGI("Filesystem (ext4) formatted OK");

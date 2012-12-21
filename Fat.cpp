@@ -39,6 +39,7 @@
 #include <cutils/properties.h>
 
 #include "Fat.h"
+#include "VoldUtil.h"
 
 static char FSCK_MSDOS_PATH[] = "/system/bin/fsck_msdos";
 static char MKDOSFS_PATH[] = "/system/bin/newfs_msdos";
@@ -55,14 +56,13 @@ int Fat::check(const char *fsPath) {
     int pass = 1;
     int rc = 0;
     do {
-        const char *args[5];
+        const char *args[4];
         args[0] = FSCK_MSDOS_PATH;
         args[1] = "-p";
         args[2] = "-f";
         args[3] = fsPath;
-        args[4] = NULL;
 
-        rc = logwrap(4, args, 1);
+        rc = logwrap(ARRAY_SIZE(args), args, 1);
 
         switch(rc) {
         case 0:
@@ -153,7 +153,7 @@ int Fat::doMount(const char *fsPath, const char *mountPoint,
 
 int Fat::format(const char *fsPath, unsigned int numSectors) {
     int fd;
-    const char *args[11];
+    const char *args[10];
     int rc;
 
     args[0] = MKDOSFS_PATH;
@@ -171,12 +171,10 @@ int Fat::format(const char *fsPath, unsigned int numSectors) {
         args[7] = "-s";
         args[8] = size;
         args[9] = fsPath;
-        args[10] = NULL;
-        rc = logwrap(11, args, 1);
+        rc = logwrap(ARRAY_SIZE(args), args, 1);
     } else {
         args[7] = fsPath;
-        args[8] = NULL;
-        rc = logwrap(9, args, 1);
+        rc = logwrap(8, args, 1);
     }
 
     if (rc == 0) {
