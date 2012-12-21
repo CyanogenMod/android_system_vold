@@ -100,7 +100,7 @@ void child(int argc, const char**argv) {
     if (execv(argv_child[0], argv_child)) {
         ALOG(LOG_ERROR, "logwrapper",
             "executing %s failed: %s", argv_child[0], strerror(errno));
-        exit(-1);
+        _exit(-1);
     }
 }
 
@@ -139,7 +139,7 @@ int logwrap(int argc, const char* argv[], int background)
         if (child_ptty < 0) {
             close(parent_ptty);
             ALOG(LOG_ERROR, "logwrapper", "Problem with child ptty");
-            return -errno;
+            _exit(-errno);
         }
 
         // redirect stdout and stderr
