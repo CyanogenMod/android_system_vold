@@ -15,6 +15,8 @@
  */
 
 #include <string.h>
+#include <sys/select.h>
+#include <sys/socket.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <stdio.h>
@@ -22,75 +24,93 @@
 #include <unistd.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <pthread.h>
 
 #include "private/android_filesystem_config.h"
 #include "cutils/log.h"
 #include "cutils/sched_policy.h"
 
-int parent(const char *tag, int parent_read) {
+struct monitor_data {
+    const char *tag;
+    int fd;
+};
+
+static int parent(const char *tag, int parent_read, int monitor_read) {
     int status;
     char buffer[4096];
+    fd_set fds;
+    int maxfd;
+    int rc = -EAGAIN;
 
     int a = 0;  // start index of unprocessed data
     int b = 0;  // end index of unprocessed data
     int sz;
-    while ((sz = read(parent_read, &buffer[b], sizeof(buffer) - 1 - b)) > 0) {
 
-        sz += b;
-        // Log one line at a time
-        for (b = 0; b < sz; b++) {
-            if (buffer[b] == '\r') {
-                buffer[b] = '\0';
-            } else if (buffer[b] == '\n') {
-                buffer[b] = '\0';
+    maxfd = 1 + (parent_read > monitor_read ? parent_read : monitor_read);
 
+    do {
+        FD_ZERO(&fds);
+        FD_SET(parent_read, &fds);
+        FD_SET(monitor_read, &fds);
+
+        if (select(maxfd, &fds, NULL, NULL, NULL) <= 0) {
+            ALOG(LOG_INFO, "logwrapper", "select failed");
+            break;
+        }
+
+        if (FD_ISSET(parent_read, &fds)) {
+            sz = read(parent_read, &buffer[b], sizeof(buffer) - 1 - b);
+
+            sz += b;
+            // Log one line at a time
+            for (b = 0; b < sz; b++) {
+                if (buffer[b] == '\r') {
+                    buffer[b] = '\0';
+                } else if (buffer[b] == '\n') {
+                    buffer[b] = '\0';
+
+                    ALOG(LOG_INFO, tag, "%s", &buffer[a]);
+                    a = b + 1;
+                }
+            }
+
+            if (a == 0 && b == sizeof(buffer) - 1) {
+                // buffer is full, flush
+                buffer[b] = '\0';
                 ALOG(LOG_INFO, tag, "%s", &buffer[a]);
-                a = b + 1;
+                b = 0;
+            } else if (a != b) {
+                // Keep left-overs
+                b -= a;
+                memmove(buffer, &buffer[a], b);
+                a = 0;
+            } else {
+                a = 0;
+                b = 0;
             }
         }
 
-        if (a == 0 && b == sizeof(buffer) - 1) {
-            // buffer is full, flush
-            buffer[b] = '\0';
-            ALOG(LOG_INFO, tag, "%s", &buffer[a]);
-            b = 0;
-        } else if (a != b) {
-            // Keep left-overs
-            b -= a;
-            memmove(buffer, &buffer[a], b);
-            a = 0;
-        } else {
-            a = 0;
-            b = 0;
+        // Child exited, get return status and exit loop
+        if (FD_ISSET(monitor_read, &fds)) {
+            if (read(monitor_read, &rc, sizeof(rc)) != sizeof(rc)) {
+                ALOG(LOG_ERROR, "logwrapper", "Unable to read child return "
+                        "status");
+                rc = -ECHILD;
+            }
+            break;
         }
+    } while (1);
 
-    }
     // Flush remaining data
     if (a != b) {
         buffer[b] = '\0';
         ALOG(LOG_INFO, tag, "%s", &buffer[a]);
     }
-    status = 0xAAAA;
-    if (wait(&status) != -1) {  // Wait for child
-        if (WIFEXITED(status)) {
-            if (WEXITSTATUS(status) != 0) {
-                ALOG(LOG_INFO, "logwrapper", "%s terminated by exit(%d)", tag,
-                        WEXITSTATUS(status));
-            }
-            return WEXITSTATUS(status);
-        } else if (WIFSIGNALED(status))
-            ALOG(LOG_INFO, "logwrapper", "%s terminated by signal %d", tag,
-                    WTERMSIG(status));
-        else if (WIFSTOPPED(status))
-            ALOG(LOG_INFO, "logwrapper", "%s stopped by signal %d", tag,
-                    WSTOPSIG(status));
-    } else
-        ALOG(LOG_INFO, "logwrapper", "%s wait() failed: %s (%d)", tag,
-                strerror(errno), errno);
-    return -EAGAIN;
+
+    return rc;
 }
 
-void child(int argc, const char**argv) {
+static void child(int argc, const char**argv) {
     // create null terminated argv_child array
     char* argv_child[argc + 1];
     memcpy(argv_child, argv, argc * sizeof(char *));
@@ -102,6 +122,33 @@ void child(int argc, const char**argv) {
             "executing %s failed: %s", argv_child[0], strerror(errno));
         _exit(-1);
     }
+}
+
+static void *monitor(void *arg)
+{
+    struct monitor_data *data = arg;
+    int status;
+    int rc = -EAGAIN;
+
+    if (wait(&status) != -1) {  // Wait for child
+        if (WIFEXITED(status)) {
+            if (WEXITSTATUS(status) != 0) {
+                ALOG(LOG_INFO, "logwrapper", "%s terminated by exit(%d)",
+                        data->tag, WEXITSTATUS(status));
+            }
+            rc = WEXITSTATUS(status);
+        } else if (WIFSIGNALED(status))
+            ALOG(LOG_INFO, "logwrapper", "%s terminated by signal %d",
+                    data->tag, WTERMSIG(status));
+        else if (WIFSTOPPED(status))
+            ALOG(LOG_INFO, "logwrapper", "%s stopped by signal %d", data->tag,
+                    WSTOPSIG(status));
+    } else
+        ALOG(LOG_INFO, "logwrapper", "%s wait() failed: %s (%d)", data->tag,
+                strerror(errno), errno);
+
+    write(data->fd, &rc, sizeof(rc));
+    return NULL;
 }
 
 int logwrap(int argc, const char* argv[], int background)
@@ -135,15 +182,14 @@ int logwrap(int argc, const char* argv[], int background)
         /*
          * Child
          */
+        close(parent_ptty);
         child_ptty = open(child_devname, O_RDWR);
         if (child_ptty < 0) {
-            close(parent_ptty);
             ALOG(LOG_ERROR, "logwrapper", "Problem with child ptty");
             _exit(-errno);
         }
 
         // redirect stdout and stderr
-        close(parent_ptty);
         dup2(child_ptty, 1);
         dup2(child_ptty, 2);
         close(child_ptty);
@@ -161,8 +207,29 @@ int logwrap(int argc, const char* argv[], int background)
         /*
          * Parent
          */
-        int rc = parent(argv[0], parent_ptty);
+        int rc, err;
+        int sockets[2];
+        pthread_t thread_id;
+        struct monitor_data data;
+
+        if (socketpair(AF_UNIX, SOCK_STREAM, 0, sockets)) {
+            err = errno;
+            ALOG(LOG_ERROR, "logwrapper", "Unable to create monitoring "
+                    "socket: %s (%d)", strerror(err), err);
+            exit(-err);
+        }
+        data.tag = argv[0];
+        data.fd = sockets[1];
+        err = pthread_create(&thread_id, NULL, monitor, &data);
+        if (err != 0) {
+            ALOG(LOG_ERROR, "logwrapper", "Unable to create monitoring "
+                    "thread: %s (%d)", strerror(err), err);
+            exit(-err);
+        }
+        rc = parent(argv[0], parent_ptty, sockets[0]);
         close(parent_ptty);
+        close(sockets[0]);
+        close(sockets[1]);
         return rc;
     }
 
