@@ -8,7 +8,6 @@ common_src_files := \
 	NetlinkHandler.cpp \
 	Volume.cpp \
 	DirectVolume.cpp \
-	logwrapper.c \
 	Process.cpp \
 	Ext4.cpp \
 	Fat.cpp \
@@ -28,6 +27,7 @@ common_shared_libraries := \
 	libcutils \
 	libdiskconfig \
 	libhardware_legacy \
+	liblogwrap \
 	libcrypto
 
 include $(CLEAR_VARS)
