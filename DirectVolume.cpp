@@ -160,7 +160,17 @@ void DirectVolume::handleDiskAdded(const char *devpath, NetlinkEvent *evt) {
 
     int partmask = 0;
     int i;
+#ifdef VOLD_EMMC_PRIMARY_PARTITIONS
+    for (i = 1; i <= mDiskNumParts + 4 - VOLD_EMMC_PRIMARY_PARTITIONS; i++) {
+        if (i <= 4 && i > VOLD_EMMC_PRIMARY_PARTITIONS) {
+#ifdef PARTITION_DEBUG
+            SLOGD("Dv::diskIns - Skipping partition %d we were told does not exist!", i);
+#endif
+            continue;
+        }
+#else
     for (i = 1; i <= mDiskNumParts; i++) {
+#endif
         partmask |= (1 << i);
     }
     mPendingPartMap = partmask;
