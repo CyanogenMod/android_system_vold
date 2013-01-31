@@ -47,10 +47,13 @@
 #include "Volume.h"
 #include "VolumeManager.h"
 #include "ResponseCode.h"
+#include "Ext4.h"
 #include "Fat.h"
 #include "Ntfs.h"
 #include "Process.h"
 #include "cryptfs.h"
+
+static char SDCARD_DAEMON_PATH[] = "/system/bin/sdcard";
 
 extern "C" void dos_partition_dec(void const *pp, struct dos_partition *d);
 extern "C" void dos_partition_enc(void *pp, struct dos_partition *d);
@@ -90,6 +93,12 @@ const char *Volume::ASECDIR           = "/mnt/asec";
  * Path to where OBBs are mounted
  */
 const char *Volume::LOOPDIR           = "/mnt/obb";
+
+/*
+ * Path for fuse
+ */
+const char *Volume::FUSEDIR           = "/mnt/fuse";
+
 
 static const char *stateToStr(int state) {
     if (state == Volume::State_Init)
@@ -467,6 +476,7 @@ int Volume::mountVol() {
     for (i = 0; i < n; i++) {
         char devicePath[255];
         char *fstype = NULL;
+        bool isExt4Fs = false;
 
         sprintf(devicePath, "/dev/block/vold/%d:%d", MAJOR(deviceNodes[i]),
                 MINOR(deviceNodes[i]));
@@ -507,6 +517,24 @@ int Volume::mountVol() {
                     continue;
                 }
 
+            } else if (strcmp(fstype, "ext4") == 0) {
+
+                isExt4Fs = true;
+                if (Ext4::check(devicePath)) {
+                    errno = EIO;
+                    isExt4Fs = false;
+                    /* Badness - abort the mount */
+                    SLOGE("%s failed FS checks (%s)", devicePath, strerror(errno));
+                    setState(Volume::State_Idle);
+                    free(fstype);
+                    return -1;
+                }
+
+                if (Ext4::doMount(devicePath, "/mnt/secure/staging", false, false, false)) {
+                    SLOGE("%s failed to mount via NTFS (%s)\n", devicePath, strerror(errno));
+                    continue;
+                }
+
             } else if (strcmp(fstype, "ntfs") == 0) {
 
                 if (Ntfs::doMount(devicePath, "/mnt/secure/staging", false, false, false,
@@ -541,11 +569,49 @@ int Volume::mountVol() {
          * Now that the bindmount trickery is done, atomically move the
          * whole subtree to expose it to non priviledged users.
          */
-        if (doMoveMount("/mnt/secure/staging", getMountpoint(), false)) {
-            SLOGE("Failed to move mount (%s)", strerror(errno));
-            umount("/mnt/secure/staging");
-            setState(Volume::State_Idle);
-            return -1;
+        if (isExt4Fs) {
+            /*
+             * In case of a ext4 filesystem we're using the sdcard daemon
+             * to expose the subtree to non privileged users to avoid
+             * permission issues for data created by apps.
+             */
+            const char* label = getLabel();
+            char* fuseSrc = (char*) malloc(strlen(FUSEDIR) + +strlen("/") + strlen(label) + 1);
+            sprintf(fuseSrc, "%s/%s", FUSEDIR, label);
+            char* fuseDst = (char*) getMountpoint();
+
+            // Create fuse dir if not exists
+            if (access(fuseSrc, R_OK | W_OK)) {
+                if (mkdir(fuseSrc, 0775)) {
+                    SLOGE("Failed to create %s (%s)", fuseSrc, strerror(errno));
+                    setState(Volume::State_Idle);
+                    return -1;
+                }
+            }
+
+            // Move subtree to our fuse dir
+            if (doMoveMount("/mnt/secure/staging", fuseSrc, false)) {
+                SLOGE("Failed to move mount (%s)", strerror(errno));
+                umount("/mnt/secure/staging");
+                setState(Volume::State_Idle);
+                return -1;
+            }
+
+            // Invoke the sdcard daemon to expose it
+            if(doFuseMount(fuseSrc, fuseDst)) {
+                SLOGE("Failed to fuse mount (%s) -> (%s)", fuseSrc, fuseDst);
+                setState(Volume::State_Idle);
+                return -1;
+            }
+        } else {
+
+            if (doMoveMount("/mnt/secure/staging", getMountpoint(), false)) {
+                SLOGE("Failed to move mount (%s)", strerror(errno));
+                umount("/mnt/secure/staging");
+                setState(Volume::State_Idle);
+                return -1;
+            }
+
         }
         setState(Volume::State_Mounted);
         mCurrentlyMountedKdev = deviceNodes[i];
@@ -655,6 +721,34 @@ int Volume::doMoveMount(const char *src, const char *dst, bool force) {
     return -1;
 }
 
+int Volume::doFuseMount(char *src, char *dst) {
+    if (access(SDCARD_DAEMON_PATH, X_OK)) {
+        SLOGE("Can't invoke sdcard daemon.\n");
+        return -1;
+    }
+    char *args[6];
+    pid_t fusePid;
+
+    args[0] = (char*) "sdcard";
+    args[1] = src;
+    args[2] = dst;
+    args[3] = (char*) "1023";
+    args[4] = (char*) "1023";
+    args[5] = NULL;
+
+    fusePid=fork();
+
+    if (fusePid == 0) {
+        SLOGW("Invoking sdcard daemon (%s) -> (%s)", src, dst);
+        if (execv(SDCARD_DAEMON_PATH, args) == -1) {
+            SLOGE("Failed to invoke the sdcard daemon!");
+            return -1;
+        }
+    }
+
+    return 0;
+}
+
 int Volume::doUnmount(const char *path, bool force) {
     int retries = 10;
 
@@ -692,6 +786,9 @@ int Volume::doUnmount(const char *path, bool force) {
 int Volume::unmountVol(bool force, bool revert) {
     int i, rc;
     const char* externalStorage = getenv("EXTERNAL_STORAGE");
+    const char* label = getLabel();
+    char* fuseDir = (char*) malloc(strlen(FUSEDIR) + strlen("/") + strlen(label) + 1);
+    sprintf(fuseDir, "%s/%s", FUSEDIR, label);
 
     if (getState() != Volume::State_Mounted) {
         SLOGE("Volume %s unmount request when not mounted", getLabel());
@@ -726,6 +823,16 @@ int Volume::unmountVol(bool force, bool revert) {
     }
 
     /*
+     * Unmount the actual block device from fuse dir if exists
+     */
+    if (!access(fuseDir, R_OK | W_OK)) {
+        if (doUnmount(fuseDir, force)) {
+            SLOGE("Failed to unmount %s (%s)", fuseDir, strerror(errno));
+            goto out_nomedia;
+        }
+    }
+
+    /*
      * Finally, unmount the actual block device from the staging dir
      */
     if (doUnmount(getMountpoint(), force)) {
@@ -747,6 +854,7 @@ int Volume::unmountVol(bool force, bool revert) {
 
     setState(Volume::State_Idle);
     mCurrentlyMountedKdev = -1;
+    free(fuseDir);
     return 0;
 
     /*
@@ -773,6 +881,7 @@ fail_republish:
 
 out_nomedia:
     setState(Volume::State_NoMedia);
+    free(fuseDir);
     return -1;
 }
 int Volume::initializeMbr(const char *deviceNode) {
