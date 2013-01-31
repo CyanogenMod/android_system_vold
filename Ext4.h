@@ -25,6 +25,7 @@ public:
             bool executable);
     static int format(const char *fsPath, unsigned int numSectors, const char *mountpoint);
     static int resize(const char *fsPath, unsigned int numSectors);
+    static int check(const char *fsPath);
 };
 
 #endif
