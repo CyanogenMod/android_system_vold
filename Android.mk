@@ -24,7 +24,8 @@ common_c_includes := \
 	$(KERNEL_HEADERS) \
 	system/extras/ext4_utils \
 	external/openssl/include \
-	external/scrypt/lib/crypto
+	external/scrypt/lib/crypto \
+	external/e2fsprogs/lib
 
 common_shared_libraries := \
 	libsysutils \
@@ -34,7 +35,8 @@ common_shared_libraries := \
 	libhardware_legacy \
 	liblogwrap \
 	libext4_utils \
-	libcrypto
+	libcrypto \
+	libext2_blkid
 
 common_static_libraries := \
 	libfs_mgr \
