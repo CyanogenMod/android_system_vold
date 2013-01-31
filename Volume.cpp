@@ -36,6 +36,10 @@
 
 #include <private/android_filesystem_config.h>
 
+#include <blkid/blkid.h>
+#include <blkid/blkidP.h>
+#include <blkid/probe.h>
+
 #define LOG_TAG "Vold"
 
 #include <cutils/log.h>
@@ -50,7 +54,6 @@
 
 extern "C" void dos_partition_dec(void const *pp, struct dos_partition *d);
 extern "C" void dos_partition_enc(void *pp, struct dos_partition *d);
-
 
 /*
  * Secure directory - stuff that only root can see
@@ -183,6 +186,37 @@ dev_t Volume::getDiskDevice() {
 
 dev_t Volume::getShareDevice() {
     return getDiskDevice();
+}
+
+char *getFsType(const char * devicePath) {
+    blkid_dev dev;
+    blkid_cache cache;
+    char *fstype = NULL;
+    int ret;
+
+    SLOGD("Trying to get filesystem type for %s \n", devicePath);
+
+    if ((ret = blkid_get_cache(&cache, "/dev/null")) != 0) {
+        SLOGE("%s: error creating cache (%d)\n", __func__, ret);
+        return NULL;
+    }
+
+    dev = blkid_get_dev(cache, devicePath, BLKID_DEV_NORMAL);
+    if (!dev) {
+        SLOGE("%s: %s has an unsupported type\n", __func__, devicePath);
+        return NULL;
+    }
+
+    if (dev->bid_type) {
+        fstype = (char*) malloc(strlen(dev->bid_type) + 1);
+        strcpy(fstype, dev->bid_type);
+        SLOGD("Found %s filesystem on %s\n", fstype, devicePath);
+    } else {
+        SLOGE("Found no filesystem on %s\n", devicePath);
+    }
+
+    blkid_free_dev(dev);
+    return fstype;
 }
 
 void Volume::handleVolumeShared() {
@@ -432,6 +466,7 @@ int Volume::mountVol() {
 
     for (i = 0; i < n; i++) {
         char devicePath[255];
+        char *fstype = NULL;
 
         sprintf(devicePath, "/dev/block/vold/%d:%d", MAJOR(deviceNodes[i]),
                 MINOR(deviceNodes[i]));
@@ -440,20 +475,6 @@ int Volume::mountVol() {
 
         errno = 0;
         setState(Volume::State_Checking);
-
-        bool isFatFs = true;
-        if (Fat::check(devicePath)) {
-            if (errno == ENODATA) {
-                SLOGW("%s does not contain a FAT filesystem\n", devicePath);
-                isFatFs = false;
-            } else {
-                errno = EIO;
-                /* Badness - abort the mount */
-                SLOGE("%s failed FS checks (%s)", devicePath, strerror(errno));
-                setState(Volume::State_Idle);
-                return -1;
-            }
-        }
 
         /*
          * Mount the device on our internal staging mountpoint so we can
@@ -466,20 +487,44 @@ int Volume::mountVol() {
         // prevented users from writing to it. We don't want that.
         gid = AID_SDCARD_RW;
 
-        if (isFatFs) {
-            if (Fat::doMount(devicePath, "/mnt/secure/staging", false, false, false,
-                    AID_SYSTEM, gid, 0702, true)) {
-                SLOGE("%s failed to mount via VFAT (%s)\n", devicePath, strerror(errno));
-                continue;
-            }
-        } else {
-            if (Ntfs::doMount(devicePath, "/mnt/secure/staging", false, false, false,
-                    AID_SYSTEM, gid, 0702, true)) {
-                SLOGE("%s failed to mount via NTFS (%s)\n", devicePath, strerror(errno));
-                continue;
-            }
-        }
+        fstype = getFsType((const char *)devicePath);
 
+        if (fstype != NULL) {
+            if (strcmp(fstype, "vfat") == 0) {
+
+                if (Fat::check(devicePath)) {
+                    errno = EIO;
+                    /* Badness - abort the mount */
+                    SLOGE("%s failed FS checks (%s)", devicePath, strerror(errno));
+                    setState(Volume::State_Idle);
+                    free(fstype);
+                    return -1;
+                }
+
+                if (Fat::doMount(devicePath, "/mnt/secure/staging", false, false, false,
+                        AID_SYSTEM, gid, 0702, true)) {
+                    SLOGE("%s failed to mount via VFAT (%s)\n", devicePath, strerror(errno));
+                    continue;
+                }
+
+            } else if (strcmp(fstype, "ntfs") == 0) {
+
+                if (Ntfs::doMount(devicePath, "/mnt/secure/staging", false, false, false,
+                        AID_SYSTEM, gid, 0702, true)) {
+                    SLOGE("%s failed to mount via NTFS (%s)\n", devicePath, strerror(errno));
+                    continue;
+                }
+
+            } else {
+                // Unsupported filesystem
+                errno = ENODATA;
+                setState(Volume::State_Idle);
+                free(fstype);
+                return -1;
+            }
+
+            free(fstype);
+        }
         SLOGI("Device %s, target %s mounted @ /mnt/secure/staging", devicePath, getMountpoint());
 
         protectFromAutorunStupidity();
