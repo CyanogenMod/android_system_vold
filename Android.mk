@@ -23,14 +23,16 @@ common_src_files := \
 common_c_includes := \
 	$(KERNEL_HEADERS) \
 	system/extras/ext4_utils \
-	external/openssl/include
+	external/openssl/include \
+	external/e2fsprogs/lib
 
 common_shared_libraries := \
 	libsysutils \
 	libcutils \
 	libdiskconfig \
 	libhardware_legacy \
-	libcrypto
+	libcrypto \
+	libext2_blkid
 
 include $(CLEAR_VARS)
 
@@ -54,7 +56,8 @@ LOCAL_C_INCLUDES := $(common_c_includes)
 
 LOCAL_SHARED_LIBRARIES := $(common_shared_libraries)
 
-LOCAL_STATIC_LIBRARIES := libfs_mgr
+LOCAL_STATIC_LIBRARIES := \
+	libfs_mgr
 
 LOCAL_MODULE_TAGS := eng tests
 
@@ -94,7 +97,8 @@ endif
 
 LOCAL_SHARED_LIBRARIES := $(common_shared_libraries)
 
-LOCAL_STATIC_LIBRARIES := libfs_mgr
+LOCAL_STATIC_LIBRARIES := \
+	libfs_mgr
 
 include $(BUILD_EXECUTABLE)
 
