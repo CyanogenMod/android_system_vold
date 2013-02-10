@@ -31,7 +31,6 @@
 #include <sys/mount.h>
 
 #include <linux/kdev_t.h>
-#include <linux/fs.h>
 
 #define LOG_TAG "Vold"
 
