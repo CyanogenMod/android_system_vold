@@ -67,8 +67,8 @@ static unsigned char saved_master_key[KEY_LEN_BYTES];
 static char *saved_data_blkdev;
 static char *saved_mount_point;
 static int  master_key_saved = 0;
-#define FSTAB_PREFIX "/fstab."
-static char fstab_filename[PROPERTY_VALUE_MAX + sizeof(FSTAB_PREFIX)];
+
+extern struct fstab *fstab;
 
 static void ioctl_init(struct dm_ioctl *io, size_t dataSize, const char *name, unsigned flags)
 {
@@ -126,19 +126,6 @@ static unsigned int get_blkdev_size(int fd)
   return nr_sec;
 }
 
-/* Get and cache the name of the fstab file so we don't
- * keep talking over the socket to the property service.
- */
-static char *get_fstab_filename(void)
-{
-    if (fstab_filename[0] == 0) {
-        strcpy(fstab_filename, FSTAB_PREFIX);
-        property_get("ro.hardware", fstab_filename + sizeof(FSTAB_PREFIX) - 1, "");
-    }
-
-    return fstab_filename;
-}
-
 /* key or salt can be NULL, in which case just skip writing that value.  Useful to
  * update the failed mount count but not change the key.
  */
@@ -153,7 +140,7 @@ static int put_crypt_ftr_and_key(char *real_blk_name, struct crypt_mnt_ftr *cryp
   char key_loc[PROPERTY_VALUE_MAX];
   struct stat statbuf;
 
-  fs_mgr_get_crypt_info(get_fstab_filename(), key_loc, 0, sizeof(key_loc));
+  fs_mgr_get_crypt_info(fstab, key_loc, 0, sizeof(key_loc));
 
   if (!strcmp(key_loc, KEY_IN_FOOTER)) {
     fname = real_blk_name;
@@ -252,7 +239,7 @@ static int get_crypt_ftr_and_key(char *real_blk_name, struct crypt_mnt_ftr *cryp
   char *fname;
   struct stat statbuf;
 
-  fs_mgr_get_crypt_info(get_fstab_filename(), key_loc, 0, sizeof(key_loc));
+  fs_mgr_get_crypt_info(fstab, key_loc, 0, sizeof(key_loc));
 
   if (!strcmp(key_loc, KEY_IN_FOOTER)) {
     fname = real_blk_name;
@@ -777,7 +764,7 @@ int cryptfs_restart(void)
 
     if (! (rc = wait_and_unmount(DATA_MNT_POINT)) ) {
         /* If that succeeded, then mount the decrypted filesystem */
-        fs_mgr_do_mount(get_fstab_filename(), DATA_MNT_POINT, crypto_blkdev, 0);
+        fs_mgr_do_mount(fstab, DATA_MNT_POINT, crypto_blkdev, 0);
 
         property_set("vold.decrypt", "trigger_load_persist_props");
         /* Create necessary paths on /data */
@@ -815,10 +802,10 @@ static int do_crypto_complete(char *mount_point)
     return 1;
   }
 
-  fs_mgr_get_crypt_info(get_fstab_filename(), 0, real_blkdev, sizeof(real_blkdev));
+  fs_mgr_get_crypt_info(fstab, 0, real_blkdev, sizeof(real_blkdev));
 
   if (get_crypt_ftr_and_key(real_blkdev, &crypt_ftr, encrypted_master_key, salt)) {
-    fs_mgr_get_crypt_info(get_fstab_filename(), key_loc, 0, sizeof(key_loc));
+    fs_mgr_get_crypt_info(fstab, key_loc, 0, sizeof(key_loc));
 
     /*
      * Only report this error if key_loc is a file and it exists.
@@ -865,7 +852,7 @@ static int test_mount_encrypted_fs(char *passwd, char *mount_point, char *label)
     return -1;
   }
 
-  fs_mgr_get_crypt_info(get_fstab_filename(), 0, real_blkdev, sizeof(real_blkdev));
+  fs_mgr_get_crypt_info(fstab, 0, real_blkdev, sizeof(real_blkdev));
 
   if (get_crypt_ftr_and_key(real_blkdev, &crypt_ftr, encrypted_master_key, salt)) {
     SLOGE("Error getting crypt footer and key\n");
@@ -894,7 +881,7 @@ static int test_mount_encrypted_fs(char *passwd, char *mount_point, char *label)
    */
   sprintf(tmp_mount_point, "%s/tmp_mnt", mount_point);
   mkdir(tmp_mount_point, 0755);
-  if (fs_mgr_do_mount(get_fstab_filename(), DATA_MNT_POINT, crypto_blkdev, tmp_mount_point)) {
+  if (fs_mgr_do_mount(fstab, DATA_MNT_POINT, crypto_blkdev, tmp_mount_point)) {
     SLOGE("Error temp mounting decrypted block device\n");
     delete_crypto_blk_dev(label);
     crypt_ftr.failed_decrypt_count++;
@@ -1025,7 +1012,7 @@ int cryptfs_verify_passwd(char *passwd)
         return -1;
     }
 
-    fs_mgr_get_crypt_info(get_fstab_filename(), 0, real_blkdev, sizeof(real_blkdev));
+    fs_mgr_get_crypt_info(fstab, 0, real_blkdev, sizeof(real_blkdev));
 
     if (get_crypt_ftr_and_key(real_blkdev, &crypt_ftr, encrypted_master_key, salt)) {
         SLOGE("Error getting crypt footer and key\n");
@@ -1227,7 +1214,7 @@ int cryptfs_enable(char *howarg, char *passwd)
         goto error_unencrypted;
     }
 
-    fs_mgr_get_crypt_info(get_fstab_filename(), key_loc, 0, sizeof(key_loc));
+    fs_mgr_get_crypt_info(fstab, key_loc, 0, sizeof(key_loc));
 
     if (!strcmp(howarg, "wipe")) {
       how = CRYPTO_ENABLE_WIPE;
@@ -1238,7 +1225,7 @@ int cryptfs_enable(char *howarg, char *passwd)
       goto error_unencrypted;
     }
 
-    fs_mgr_get_crypt_info(get_fstab_filename(), 0, real_blkdev, sizeof(real_blkdev));
+    fs_mgr_get_crypt_info(fstab, 0, real_blkdev, sizeof(real_blkdev));
 
     /* Get the size of the real block device */
     fd = open(real_blkdev, O_RDONLY);
@@ -1531,7 +1518,7 @@ int cryptfs_changepw(char *newpw)
         return -1;
     }
 
-    fs_mgr_get_crypt_info(get_fstab_filename(), 0, real_blkdev, sizeof(real_blkdev));
+    fs_mgr_get_crypt_info(fstab, 0, real_blkdev, sizeof(real_blkdev));
     if (strlen(real_blkdev) == 0) {
         SLOGE("Can't find real blkdev");
         return -1;
