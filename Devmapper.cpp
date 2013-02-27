@@ -124,7 +124,7 @@ void Devmapper::ioctlInit(struct dm_ioctl *io, size_t dataSize,
     io->version[2] = 0;
     io->flags = flags;
     if (name) {
-        int ret = strlcpy(io->name, name, sizeof(io->name));
+        size_t ret = strlcpy(io->name, name, sizeof(io->name));
 	if (ret >= sizeof(io->name))
 		abort();
     }
