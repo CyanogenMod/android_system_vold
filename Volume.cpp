@@ -28,7 +28,6 @@
 #include <sys/param.h>
 
 #include <linux/kdev_t.h>
-#include <linux/fs.h>
 
 #include <cutils/properties.h>
 

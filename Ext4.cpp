@@ -32,7 +32,6 @@
 #include <sys/wait.h>
 
 #include <linux/kdev_t.h>
-#include <linux/fs.h>
 
 #define LOG_TAG "Vold"
 
