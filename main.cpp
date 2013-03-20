@@ -27,6 +27,7 @@
 
 #define LOG_TAG "Vold"
 
+#include "cutils/klog.h"
 #include "cutils/log.h"
 #include "cutils/properties.h"
 
@@ -51,6 +52,9 @@ int main() {
     SLOGI("Vold 2.1 (the revenge) firing up");
 
     mkdir("/dev/block/vold", 0755);
+
+    /* For when cryptfs checks and mounts an encrypted filesystem */
+    klog_set_level(6);
 
     /* Create our singleton managers */
     if (!(vm = VolumeManager::Instance())) {
