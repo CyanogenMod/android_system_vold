@@ -78,6 +78,13 @@ private:
         virtual ~CryptfsCmd() {}
         int runCommand(SocketClient *c, int argc, char ** argv);
     };
+
+    class FstrimCmd : public VoldCommand {
+    public:
+        FstrimCmd();
+        virtual ~FstrimCmd() {}
+        int runCommand(SocketClient *c, int argc, char ** argv);
+    };
 };
 
 #endif
