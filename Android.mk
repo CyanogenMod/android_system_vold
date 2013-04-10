@@ -26,6 +26,7 @@ common_c_includes := \
 common_shared_libraries := \
 	libsysutils \
 	libcutils \
+	liblog \
 	libdiskconfig \
 	libhardware_legacy \
 	liblogwrap \
