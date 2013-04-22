@@ -26,6 +26,7 @@ public:
     static const int VolumeListResult         = 110;
     static const int AsecListResult           = 111;
     static const int StorageUsersListResult   = 112;
+    static const int CryptfsGetfieldResult    = 113;
 
     // 200 series - Requested action has been successfully completed
     static const int CommandOkay              = 200;
