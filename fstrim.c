@@ -23,10 +23,11 @@
 #include <limits.h>
 #include <linux/fs.h>
 #include <fs_mgr.h>
+#include <pthread.h>
 #define LOG_TAG "fstrim"
 #include "cutils/log.h"
 
-int fstrim_filesystems(void)
+static void *do_fstrim_filesystems(void *ignored)
 {
     int i;
     int fd;
@@ -81,6 +82,36 @@ int fstrim_filesystems(void)
     }
     SLOGI("Finished fstrim work.\n");
 
-    return ret;
+    return (void *)ret;
 }
 
+int fstrim_filesystems(void)
+{
+    pthread_t t;
+    int ret;
+
+    /* Depending on the emmc chip and size, this can take upwards
+     * of a few minutes.  If done in the same thread as the caller
+     * of this function, that would block vold from accepting any
+     * commands until the trim is finished.  So start another thread
+     * to do the work, and return immediately.
+     *
+     * This function should not be called more than once per day, but
+     * even if it is called a second time before the first one finishes,
+     * the kernel will "do the right thing" and split the work between
+     * the two ioctls invoked in separate threads.
+     */
+    ret = pthread_create(&t, NULL, do_fstrim_filesystems, NULL);
+    if (ret) {
+        SLOGE("Cannot create thread to do fstrim");
+        return ret;
+    }
+
+    ret = pthread_detach(t);
+    if (ret) {
+        SLOGE("Cannot detach thread doing fstrim");
+        return ret;
+    }
+
+    return 0;
+}
