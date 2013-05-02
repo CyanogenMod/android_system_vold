@@ -26,6 +26,9 @@
 #include <pthread.h>
 #define LOG_TAG "fstrim"
 #include "cutils/log.h"
+#include "hardware_legacy/power.h"
+
+#define FSTRIM_WAKELOCK "dofstrim"
 
 static void *do_fstrim_filesystems(void *ignored)
 {
@@ -82,6 +85,9 @@ static void *do_fstrim_filesystems(void *ignored)
     }
     SLOGI("Finished fstrim work.\n");
 
+    /* Release the wakelock that let us work */
+    release_wake_lock(FSTRIM_WAKELOCK);
+
     return (void *)ret;
 }
 
@@ -89,6 +95,11 @@ int fstrim_filesystems(void)
 {
     pthread_t t;
     int ret;
+
+    /* Get a wakelock as this may take a while, and we don't want the
+     * device to sleep on us.
+     */
+    acquire_wake_lock(PARTIAL_WAKE_LOCK, FSTRIM_WAKELOCK);
 
     /* Depending on the emmc chip and size, this can take upwards
      * of a few minutes.  If done in the same thread as the caller
