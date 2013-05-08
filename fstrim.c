@@ -22,13 +22,33 @@
 #include <string.h>
 #include <limits.h>
 #include <linux/fs.h>
+#include <time.h>
 #include <fs_mgr.h>
 #include <pthread.h>
 #define LOG_TAG "fstrim"
 #include "cutils/log.h"
 #include "hardware_legacy/power.h"
 
+/* These numbers must match what the MountService specified in
+ * frameworks/base/services/java/com/android/server/EventLogTags.logtags
+ */
+#define LOG_FSTRIM_START  2755
+#define LOG_FSTRIM_FINISH 2756
+
 #define FSTRIM_WAKELOCK "dofstrim"
+
+static unsigned long long get_boot_time_ms(void)
+{
+    struct timespec t;
+    unsigned long long time_ms;
+
+    t.tv_sec = 0;
+    t.tv_nsec = 0;
+    clock_gettime(CLOCK_BOOTTIME, &t);
+    time_ms = (t.tv_sec * 1000LL) + (t.tv_nsec / 1000000);
+
+    return time_ms;
+}
 
 static void *do_fstrim_filesystems(void *ignored)
 {
@@ -40,6 +60,9 @@ static void *do_fstrim_filesystems(void *ignored)
     extern struct fstab *fstab;
 
     SLOGI("Starting fstrim work...\n");
+
+    /* Log the start time in the event log */
+    LOG_EVENT_LONG(LOG_FSTRIM_START, get_boot_time_ms());
 
     for (i = 0; i < fstab->num_entries; i++) {
         /* Skip raw partitions */
@@ -84,6 +107,10 @@ static void *do_fstrim_filesystems(void *ignored)
         }
         close(fd);
     }
+
+    /* Log the finish time in the event log */
+    LOG_EVENT_LONG(LOG_FSTRIM_FINISH, get_boot_time_ms());
+
     SLOGI("Finished fstrim work.\n");
 
     /* Release the wakelock that let us work */
