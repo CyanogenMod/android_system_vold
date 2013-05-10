@@ -1121,7 +1121,7 @@ static int test_mount_encrypted_fs(char *passwd, char *mount_point, char *label)
     return -1;
   }
 
-  /* If init detects an encrypted filesystme, it writes a file for each such
+  /* If init detects an encrypted filesystem, it writes a file for each such
    * encrypted fs into the tmpfs /data filesystem, and then the framework finds those
    * files and passes that data to me */
   /* Create a tmp mount point to try mounting the decryptd fs
