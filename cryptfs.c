@@ -673,7 +673,7 @@ static int wait_and_unmount(char *mountpoint)
     return rc;
 }
 
-#define DATA_PREP_TIMEOUT 100
+#define DATA_PREP_TIMEOUT 200
 static int prep_data_fs(void)
 {
     int i;
@@ -683,7 +683,7 @@ static int prep_data_fs(void)
     property_set("vold.decrypt", "trigger_post_fs_data");
     SLOGD("Just triggered post_fs_data\n");
 
-    /* Wait a max of 25 seconds, hopefully it takes much less */
+    /* Wait a max of 50 seconds, hopefully it takes much less */
     for (i=0; i<DATA_PREP_TIMEOUT; i++) {
         char p[PROPERTY_VALUE_MAX];
 
@@ -696,6 +696,7 @@ static int prep_data_fs(void)
     }
     if (i == DATA_PREP_TIMEOUT) {
         /* Ugh, we failed to prep /data in time.  Bail. */
+        SLOGE("post_fs_data timed out!\n");
         return -1;
     } else {
         SLOGD("post_fs_data done\n");
