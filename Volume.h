@@ -67,7 +67,7 @@ public:
 
     int mountVol();
     int unmountVol(bool force, bool revert);
-    int formatVol();
+    int formatVol(bool wipe);
 
     const char *getLabel() { return mLabel; }
     const char *getMountpoint() { return mMountpoint; }

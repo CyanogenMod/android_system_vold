@@ -30,6 +30,8 @@
 #include <sys/mman.h>
 #include <sys/mount.h>
 #include <sys/wait.h>
+#include <linux/fs.h>
+#include <sys/ioctl.h>
 
 #include <linux/kdev_t.h>
 
@@ -167,11 +169,15 @@ int Fat::doMount(const char *fsPath, const char *mountPoint,
     return rc;
 }
 
-int Fat::format(const char *fsPath, unsigned int numSectors) {
+int Fat::format(const char *fsPath, unsigned int numSectors, bool wipe) {
     int fd;
     const char *args[10];
     int rc;
     int status;
+
+    if (wipe) {
+        Fat::wipe(fsPath, numSectors);
+    }
 
     args[0] = MKDOSFS_PATH;
     args[1] = "-F";
@@ -219,4 +225,31 @@ int Fat::format(const char *fsPath, unsigned int numSectors) {
         return -1;
     }
     return 0;
+}
+
+void Fat::wipe(const char *fsPath, unsigned int numSectors) {
+    int fd;
+    unsigned long long range[2];
+
+    fd = open(fsPath, O_RDWR);
+    if (fd >= 0) {
+        if (numSectors == 0) {
+            numSectors = get_blkdev_size(fd);
+        }
+        if (numSectors == 0) {
+            SLOGE("Fat wipe failed to determine size of %s", fsPath);
+            close(fd);
+            return;
+        }
+        range[0] = 0;
+        range[1] = (unsigned long long)numSectors * 512;
+        if (ioctl(fd, BLKDISCARD, &range) < 0) {
+            SLOGE("Fat wipe failed to discard blocks on %s", fsPath);
+        } else {
+            SLOGI("Fat wipe %d sectors on %s succeeded", numSectors, fsPath);
+        }
+        close(fd);
+    } else {
+        SLOGE("Fat wipe failed to open device %s", fsPath);
+    }
 }

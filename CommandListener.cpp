@@ -162,11 +162,16 @@ int CommandListener::VolumeCmd::runCommand(SocketClient *cli,
         }
         rc = vm->unmountVolume(argv[2], force, revert);
     } else if (!strcmp(argv[1], "format")) {
-        if (argc != 3) {
-            cli->sendMsg(ResponseCode::CommandSyntaxError, "Usage: volume format <path>", false);
+        if (argc < 3 || argc > 4 ||
+            (argc == 4 && strcmp(argv[3], "wipe"))) {
+            cli->sendMsg(ResponseCode::CommandSyntaxError, "Usage: volume format <path> [wipe]", false);
             return 0;
         }
-        rc = vm->formatVolume(argv[2]);
+        bool wipe = false;
+        if (argc >= 4 && !strcmp(argv[3], "wipe")) {
+            wipe = true;
+        }
+        rc = vm->formatVolume(argv[2], wipe);
     } else if (!strcmp(argv[1], "share")) {
         if (argc != 4) {
             cli->sendMsg(ResponseCode::CommandSyntaxError,

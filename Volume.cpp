@@ -206,7 +206,7 @@ int Volume::createDeviceNode(const char *path, int major, int minor) {
     return 0;
 }
 
-int Volume::formatVol() {
+int Volume::formatVol(bool wipe) {
 
     if (getState() == Volume::State_NoMedia) {
         errno = ENODEV;
@@ -250,7 +250,7 @@ int Volume::formatVol() {
         SLOGI("Formatting volume %s (%s)", getLabel(), devicePath);
     }
 
-    if (Fat::format(devicePath, 0)) {
+    if (Fat::format(devicePath, 0, wipe)) {
         SLOGE("Failed to format (%s)", strerror(errno));
         goto err;
     }

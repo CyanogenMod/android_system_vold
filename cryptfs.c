@@ -46,6 +46,7 @@
 #include "cutils/properties.h"
 #include "hardware_legacy/power.h"
 #include "VolumeManager.h"
+#include "VoldUtil.h"
 
 #define DM_CRYPT_BUF_SIZE 4096
 #define DATA_MNT_POINT "/data"
@@ -113,17 +114,6 @@ static unsigned int get_fs_size(char *dev)
 
     /* return length in sectors */
     return (unsigned int) (len / 512);
-}
-
-static unsigned int get_blkdev_size(int fd)
-{
-  unsigned int nr_sec;
-
-  if ( (ioctl(fd, BLKGETSIZE, &nr_sec)) == -1) {
-    nr_sec = 0;
-  }
-
-  return nr_sec;
 }
 
 static int get_crypt_ftr_info(char **metadata_fname, off64_t *off)

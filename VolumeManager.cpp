@@ -167,7 +167,7 @@ int VolumeManager::listVolumes(SocketClient *cli) {
     return 0;
 }
 
-int VolumeManager::formatVolume(const char *label) {
+int VolumeManager::formatVolume(const char *label, bool wipe) {
     Volume *v = lookupVolume(label);
 
     if (!v) {
@@ -180,7 +180,7 @@ int VolumeManager::formatVolume(const char *label) {
         return -1;
     }
 
-    return v->formatVol();
+    return v->formatVol(wipe);
 }
 
 int VolumeManager::getObbMountPath(const char *sourceFile, char *mountPath, int mountPathLen) {
@@ -414,7 +414,7 @@ int VolumeManager::createAsec(const char *id, unsigned int numSectors, const cha
         if (usingExt4) {
             formatStatus = Ext4::format(dmDevice, mountPoint);
         } else {
-            formatStatus = Fat::format(dmDevice, numImgSectors);
+            formatStatus = Fat::format(dmDevice, numImgSectors, 0);
         }
 
         if (formatStatus < 0) {
