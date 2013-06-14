@@ -49,8 +49,16 @@
 #define CRYPT_MNT_MAGIC 0xD0B5B1C4
 #define PERSIST_DATA_MAGIC 0xE950CD44
 
+#define SCRYPT_PROP "ro.crypto.scrypt_params"
+#define SCRYPT_DEFAULTS { 15, 3, 1 }
+
+/* Key Derivation Function algorithms */
+#define KDF_PBKDF2 1
+#define KDF_SCRYPT 2
+
 #define __le32 unsigned int
-#define __le16 unsigned short int 
+#define __le16 unsigned short int
+#define __le8  unsigned char
 
 struct crypt_mnt_ftr {
   __le32 magic;		/* See above */
@@ -75,6 +83,13 @@ struct crypt_mnt_ftr {
 
   __le32 persist_data_size;       /* The number of bytes allocated to each copy of the
                                    * persistent data table*/
+
+  __le8  kdf_type; /* The key derivation function used. */
+
+  /* scrypt parameters. See www.tarsnap.com/scrypt/scrypt.pdf */
+  __le8  N_factor; /* (1 << N) */
+  __le8  r_factor; /* (1 << r) */
+  __le8  p_factor; /* (1 << p) */
 };
 
 /* Persistant data that should be available before decryption.
@@ -118,6 +133,9 @@ struct volume_info {
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+  typedef void (*kdf_func)(char *passwd, unsigned char *salt, unsigned char *ikey, void *params);
+
   int cryptfs_crypto_complete(void);
   int cryptfs_check_passwd(char *pw);
   int cryptfs_verify_passwd(char *newpw);

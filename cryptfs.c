@@ -47,6 +47,7 @@
 #include "hardware_legacy/power.h"
 #include "VolumeManager.h"
 #include "VoldUtil.h"
+#include "crypto_scrypt.h"
 
 #define DM_CRYPT_BUF_SIZE 4096
 #define DATA_MNT_POINT "/data"
@@ -83,6 +84,55 @@ static void ioctl_init(struct dm_ioctl *io, size_t dataSize, const char *name, u
     if (name) {
         strncpy(io->name, name, sizeof(io->name));
     }
+}
+
+/**
+ * Gets the default device scrypt parameters for key derivation time tuning.
+ * The parameters should lead to about one second derivation time for the
+ * given device.
+ */
+static void get_device_scrypt_params(struct crypt_mnt_ftr *ftr) {
+    const int default_params[] = SCRYPT_DEFAULTS;
+    int params[] = SCRYPT_DEFAULTS;
+    char paramstr[PROPERTY_VALUE_MAX];
+    char *token;
+    char *saveptr;
+    int i;
+
+    property_get(SCRYPT_PROP, paramstr, "");
+    if (paramstr[0] != '\0') {
+        /*
+         * The token we're looking for should be three integers separated by
+         * colons (e.g., "12:8:1"). Scan the property to make sure it matches.
+         */
+        for (token = strtok_r(paramstr, ":", &saveptr); token != NULL && i < 3;
+                i++, token = strtok_r(NULL, ":", &saveptr)) {
+            char *endptr;
+            params[i] = strtol(token, &endptr, 10);
+
+            /*
+             * Check that there was a valid number and it's 8-bit. If not,
+             * break out and the end check will take the default values.
+             */
+            if ((*token == '\0') || (*endptr != '\0') || params[i] < 0 || params[i] > 255) {
+                break;
+            }
+        }
+
+        /*
+         * If there were not enough tokens or a token was malformed (not an
+         * integer), it will end up here and the default parameters can be
+         * taken.
+         */
+        if ((i != 3) || (token != NULL)) {
+            SLOGW("bad scrypt parameters '%s' should be like '12:8:1'; using defaults", paramstr);
+            memcpy(params, default_params, sizeof(params));
+        }
+    }
+
+    ftr->N_factor = params[0];
+    ftr->r_factor = params[1];
+    ftr->p_factor = params[2];
 }
 
 static unsigned int get_fs_size(char *dev)
@@ -257,6 +307,8 @@ static void upgrade_crypt_ftr(int fd, struct crypt_mnt_ftr *crypt_ftr, off64_t o
         struct crypt_persist_data *pdata;
         off64_t pdata_offset = offset + CRYPT_FOOTER_TO_PERSIST_OFFSET;
 
+        SLOGW("upgrading crypto footer to 1.1");
+
         pdata = malloc(CRYPT_PERSIST_DATA_SIZE);
         if (pdata == NULL) {
             SLOGE("Cannot allocate persisent data\n");
@@ -281,6 +333,13 @@ static void upgrade_crypt_ftr(int fd, struct crypt_mnt_ftr *crypt_ftr, off64_t o
         crypt_ftr->persist_data_offset[0] = pdata_offset;
         crypt_ftr->persist_data_offset[1] = pdata_offset + CRYPT_PERSIST_DATA_SIZE;
         crypt_ftr->minor_version = 1;
+    }
+
+    if ((crypt_ftr->major_version == 1) && (crypt_ftr->minor_version)) {
+        SLOGW("upgrading crypto footer to 1.2");
+        crypt_ftr->kdf_type = KDF_PBKDF2;
+        get_device_scrypt_params(crypt_ftr);
+        crypt_ftr->minor_version = 2;
     }
 
     if ((orig_major != crypt_ftr->major_version) || (orig_minor != crypt_ftr->minor_version)) {
@@ -793,24 +852,37 @@ errout:
 
 }
 
-static void pbkdf2(char *passwd, unsigned char *salt, unsigned char *ikey)
-{
+static void pbkdf2(char *passwd, unsigned char *salt, unsigned char *ikey, void *params) {
     /* Turn the password into a key and IV that can decrypt the master key */
     PKCS5_PBKDF2_HMAC_SHA1(passwd, strlen(passwd), salt, SALT_LEN,
                            HASH_COUNT, KEY_LEN_BYTES+IV_LEN_BYTES, ikey);
 }
 
+static void scrypt(char *passwd, unsigned char *salt, unsigned char *ikey, void *params) {
+    struct crypt_mnt_ftr *ftr = (struct crypt_mnt_ftr *) params;
+
+    int N = 1 << ftr->N_factor;
+    int r = 1 << ftr->r_factor;
+    int p = 1 << ftr->p_factor;
+
+    /* Turn the password into a key and IV that can decrypt the master key */
+    crypto_scrypt((unsigned char *) passwd, strlen(passwd), salt, SALT_LEN, N, r, p, ikey,
+            KEY_LEN_BYTES + IV_LEN_BYTES);
+}
+
 static int encrypt_master_key(char *passwd, unsigned char *salt,
                               unsigned char *decrypted_master_key,
-                              unsigned char *encrypted_master_key)
+                              unsigned char *encrypted_master_key,
+                              struct crypt_mnt_ftr *crypt_ftr)
 {
     unsigned char ikey[32+32] = { 0 }; /* Big enough to hold a 256 bit key and 256 bit IV */
     EVP_CIPHER_CTX e_ctx;
     int encrypted_len, final_len;
 
     /* Turn the password into a key and IV that can decrypt the master key */
-    pbkdf2(passwd, salt, ikey);
-  
+    get_device_scrypt_params(crypt_ftr);
+    scrypt(passwd, salt, ikey, crypt_ftr);
+
     /* Initialize the decryption engine */
     if (! EVP_EncryptInit(&e_ctx, EVP_aes_128_cbc(), ikey, ikey+KEY_LEN_BYTES)) {
         SLOGE("EVP_EncryptInit failed\n");
@@ -839,14 +911,15 @@ static int encrypt_master_key(char *passwd, unsigned char *salt,
 
 static int decrypt_master_key(char *passwd, unsigned char *salt,
                               unsigned char *encrypted_master_key,
-                              unsigned char *decrypted_master_key)
+                              unsigned char *decrypted_master_key,
+                              kdf_func kdf, void *kdf_params)
 {
   unsigned char ikey[32+32] = { 0 }; /* Big enough to hold a 256 bit key and 256 bit IV */
   EVP_CIPHER_CTX d_ctx;
   int decrypted_len, final_len;
 
   /* Turn the password into a key and IV that can decrypt the master key */
-  pbkdf2(passwd, salt, ikey);
+  kdf(passwd, salt, ikey, kdf_params);
 
   /* Initialize the decryption engine */
   if (! EVP_DecryptInit(&d_ctx, EVP_aes_128_cbc(), ikey, ikey+KEY_LEN_BYTES)) {
@@ -869,8 +942,47 @@ static int decrypt_master_key(char *passwd, unsigned char *salt,
   }
 }
 
-static int create_encrypted_random_key(char *passwd, unsigned char *master_key, unsigned char *salt)
+static void get_kdf_func(struct crypt_mnt_ftr *ftr, kdf_func *kdf, void** kdf_params)
 {
+    if (ftr->kdf_type == KDF_SCRYPT) {
+        *kdf = scrypt;
+        *kdf_params = ftr;
+    } else {
+        *kdf = pbkdf2;
+        *kdf_params = NULL;
+    }
+}
+
+static int decrypt_master_key_and_upgrade(char *passwd, unsigned char *decrypted_master_key,
+        struct crypt_mnt_ftr *crypt_ftr)
+{
+    kdf_func kdf;
+    void *kdf_params;
+    int ret;
+
+    get_kdf_func(crypt_ftr, &kdf, &kdf_params);
+    ret = decrypt_master_key(passwd, crypt_ftr->salt, crypt_ftr->master_key, decrypted_master_key, kdf,
+            kdf_params);
+    if (ret != 0) {
+        SLOGW("failure decrypting master key");
+        return ret;
+    }
+
+    /*
+     * Upgrade if we're not using the latest KDF.
+     */
+    if (crypt_ftr->kdf_type != KDF_SCRYPT) {
+        crypt_ftr->kdf_type = KDF_SCRYPT;
+        encrypt_master_key(passwd, crypt_ftr->salt, decrypted_master_key, crypt_ftr->master_key,
+                crypt_ftr);
+        put_crypt_ftr_and_key(crypt_ftr);
+    }
+
+    return ret;
+}
+
+static int create_encrypted_random_key(char *passwd, unsigned char *master_key, unsigned char *salt,
+        struct crypt_mnt_ftr *crypt_ftr) {
     int fd;
     unsigned char key_buf[KEY_LEN_BYTES];
     EVP_CIPHER_CTX e_ctx;
@@ -883,7 +995,7 @@ static int create_encrypted_random_key(char *passwd, unsigned char *master_key, 
     close(fd);
 
     /* Now encrypt it with the password */
-    return encrypt_master_key(passwd, salt, key_buf, master_key);
+    return encrypt_master_key(passwd, salt, key_buf, master_key, crypt_ftr);
 }
 
 static int wait_and_unmount(char *mountpoint)
@@ -1085,6 +1197,8 @@ static int test_mount_encrypted_fs(char *passwd, char *mount_point, char *label)
   unsigned int orig_failed_decrypt_count;
   char encrypted_state[PROPERTY_VALUE_MAX];
   int rc;
+  kdf_func kdf;
+  void *kdf_params;
 
   property_get("ro.crypto.state", encrypted_state, "");
   if ( master_key_saved || strcmp(encrypted_state, "encrypted") ) {
@@ -1103,7 +1217,7 @@ static int test_mount_encrypted_fs(char *passwd, char *mount_point, char *label)
   orig_failed_decrypt_count = crypt_ftr.failed_decrypt_count;
 
   if (! (crypt_ftr.flags & CRYPT_MNT_KEY_UNENCRYPTED) ) {
-    decrypt_master_key(passwd, crypt_ftr.salt, crypt_ftr.master_key, decrypted_master_key);
+    decrypt_master_key_and_upgrade(passwd, decrypted_master_key, &crypt_ftr);
   }
 
   if (create_crypto_blk_dev(&crypt_ftr, decrypted_master_key,
@@ -1256,8 +1370,7 @@ int cryptfs_verify_passwd(char *passwd)
         /* If the device has no password, then just say the password is valid */
         rc = 0;
     } else {
-        decrypt_master_key(passwd, crypt_ftr.salt, crypt_ftr.master_key,
-                           decrypted_master_key);
+        decrypt_master_key_and_upgrade(passwd, decrypted_master_key, &crypt_ftr);
         if (!memcmp(decrypted_master_key, saved_master_key, crypt_ftr.keysize)) {
             /* They match, the password is correct */
             rc = 0;
@@ -1286,6 +1399,9 @@ static void cryptfs_init_crypt_mnt_ftr(struct crypt_mnt_ftr *ftr)
     ftr->minor_version = CURRENT_MINOR_VERSION;
     ftr->ftr_size = sizeof(struct crypt_mnt_ftr);
     ftr->keysize = KEY_LEN_BYTES;
+
+    ftr->kdf_type = KDF_SCRYPT;
+    get_device_scrypt_params(ftr);
 
     ftr->persist_data_size = CRYPT_PERSIST_DATA_SIZE;
     if (get_crypt_ftr_info(NULL, &off) == 0) {
@@ -1592,7 +1708,7 @@ int cryptfs_enable(char *howarg, char *passwd)
     strcpy((char *)crypt_ftr.crypto_type_name, "aes-cbc-essiv:sha256");
 
     /* Make an encrypted master key */
-    if (create_encrypted_random_key(passwd, crypt_ftr.master_key, crypt_ftr.salt)) {
+    if (create_encrypted_random_key(passwd, crypt_ftr.master_key, crypt_ftr.salt, &crypt_ftr)) {
         SLOGE("Cannot create encrypted master key\n");
         goto error_unencrypted;
     }
@@ -1614,7 +1730,7 @@ int cryptfs_enable(char *howarg, char *passwd)
         save_persistent_data();
     }
 
-    decrypt_master_key(passwd, crypt_ftr.salt, crypt_ftr.master_key, decrypted_master_key);
+    decrypt_master_key_and_upgrade(passwd, decrypted_master_key, &crypt_ftr);
     create_crypto_blk_dev(&crypt_ftr, decrypted_master_key, real_blkdev, crypto_blkdev,
                           "userdata");
 
@@ -1762,7 +1878,7 @@ int cryptfs_changepw(char *newpw)
       return -1;
     }
 
-    encrypt_master_key(newpw, crypt_ftr.salt, saved_master_key, crypt_ftr.master_key);
+    encrypt_master_key(newpw, crypt_ftr.salt, saved_master_key, crypt_ftr.master_key, &crypt_ftr);
 
     /* save the key */
     put_crypt_ftr_and_key(&crypt_ftr);
