@@ -250,46 +250,46 @@ static void init_empty_persist_data(struct crypt_persist_data *pdata, int len)
  */
 static void upgrade_crypt_ftr(int fd, struct crypt_mnt_ftr *crypt_ftr, off64_t offset)
 {
-    struct crypt_persist_data *pdata;
-    off64_t pdata_offset = offset + CRYPT_FOOTER_TO_PERSIST_OFFSET;
+    int orig_major = crypt_ftr->major_version;
+    int orig_minor = crypt_ftr->minor_version;
 
-    /* This routine can currently only handle upgrading from 1.0 to 1.1.
-     * Do nothing if the passed structure is not version 1.0
-     */
+    if ((crypt_ftr->major_version == 1) && (crypt_ftr->minor_version == 0)) {
+        struct crypt_persist_data *pdata;
+        off64_t pdata_offset = offset + CRYPT_FOOTER_TO_PERSIST_OFFSET;
 
-    if ((crypt_ftr->major_version != 1) && (crypt_ftr->minor_version != 0)) {
-        return;
+        pdata = malloc(CRYPT_PERSIST_DATA_SIZE);
+        if (pdata == NULL) {
+            SLOGE("Cannot allocate persisent data\n");
+            return;
+        }
+        memset(pdata, 0, CRYPT_PERSIST_DATA_SIZE);
+
+        /* Need to initialize the persistent data area */
+        if (lseek64(fd, pdata_offset, SEEK_SET) == -1) {
+            SLOGE("Cannot seek to persisent data offset\n");
+            return;
+        }
+        /* Write all zeros to the first copy, making it invalid */
+        unix_write(fd, pdata, CRYPT_PERSIST_DATA_SIZE);
+
+        /* Write a valid but empty structure to the second copy */
+        init_empty_persist_data(pdata, CRYPT_PERSIST_DATA_SIZE);
+        unix_write(fd, pdata, CRYPT_PERSIST_DATA_SIZE);
+
+        /* Update the footer */
+        crypt_ftr->persist_data_size = CRYPT_PERSIST_DATA_SIZE;
+        crypt_ftr->persist_data_offset[0] = pdata_offset;
+        crypt_ftr->persist_data_offset[1] = pdata_offset + CRYPT_PERSIST_DATA_SIZE;
+        crypt_ftr->minor_version = 1;
     }
 
-    pdata = malloc(CRYPT_PERSIST_DATA_SIZE);
-    if (pdata == NULL) {
-        SLOGE("Cannot allocate persisent data\n");
-        return;
+    if ((orig_major != crypt_ftr->major_version) || (orig_minor != crypt_ftr->minor_version)) {
+        if (lseek64(fd, offset, SEEK_SET) == -1) {
+            SLOGE("Cannot seek to crypt footer\n");
+            return;
+        }
+        unix_write(fd, crypt_ftr, sizeof(struct crypt_mnt_ftr));
     }
-    memset(pdata, 0, CRYPT_PERSIST_DATA_SIZE);
-
-    /* Need to initialize the persistent data area */
-    if (lseek64(fd, pdata_offset, SEEK_SET) == -1) {
-        SLOGE("Cannot seek to persisent data offset\n");
-        return;
-    }
-    /* Write all zeros to the first copy, making it invalid */
-    unix_write(fd, pdata, CRYPT_PERSIST_DATA_SIZE);
-
-    /* Write a valid but empty structure to the second copy */
-    init_empty_persist_data(pdata, CRYPT_PERSIST_DATA_SIZE);
-    unix_write(fd, pdata, CRYPT_PERSIST_DATA_SIZE);
-
-    /* Update the footer */
-    crypt_ftr->persist_data_size = CRYPT_PERSIST_DATA_SIZE;
-    crypt_ftr->persist_data_offset[0] = pdata_offset;
-    crypt_ftr->persist_data_offset[1] = pdata_offset + CRYPT_PERSIST_DATA_SIZE;
-    crypt_ftr->minor_version = 1;
-    if (lseek64(fd, offset, SEEK_SET) == -1) {
-        SLOGE("Cannot seek to crypt footer\n");
-        return;
-    }
-    unix_write(fd, crypt_ftr, sizeof(struct crypt_mnt_ftr));
 }
 
 
