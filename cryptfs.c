@@ -339,21 +339,21 @@ static int get_crypt_ftr_and_key(struct crypt_mnt_ftr *crypt_ftr)
     goto errout;
   }
 
-  if (crypt_ftr->major_version != 1) {
-    SLOGE("Cannot understand major version %d real block device footer\n",
-          crypt_ftr->major_version);
+  if (crypt_ftr->major_version != CURRENT_MAJOR_VERSION) {
+    SLOGE("Cannot understand major version %d real block device footer; expected %d\n",
+          crypt_ftr->major_version, CURRENT_MAJOR_VERSION);
     goto errout;
   }
 
-  if ((crypt_ftr->minor_version != 0) && (crypt_ftr->minor_version != 1)) {
-    SLOGW("Warning: crypto footer minor version %d, expected 0 or 1, continuing...\n",
-          crypt_ftr->minor_version);
+  if (crypt_ftr->minor_version > CURRENT_MINOR_VERSION) {
+    SLOGW("Warning: crypto footer minor version %d, expected <= %d, continuing...\n",
+          crypt_ftr->minor_version, CURRENT_MINOR_VERSION);
   }
 
   /* If this is a verion 1.0 crypt_ftr, make it a 1.1 crypt footer, and update the
    * copy on disk before returning.
    */
-  if (crypt_ftr->minor_version == 0) {
+  if (crypt_ftr->minor_version < CURRENT_MINOR_VERSION) {
     upgrade_crypt_ftr(fd, crypt_ftr, starting_off);
   }
 
@@ -1282,8 +1282,8 @@ static void cryptfs_init_crypt_mnt_ftr(struct crypt_mnt_ftr *ftr)
 
     memset(ftr, 0, sizeof(struct crypt_mnt_ftr));
     ftr->magic = CRYPT_MNT_MAGIC;
-    ftr->major_version = 1;
-    ftr->minor_version = 1;
+    ftr->major_version = CURRENT_MAJOR_VERSION;
+    ftr->minor_version = CURRENT_MINOR_VERSION;
     ftr->ftr_size = sizeof(struct crypt_mnt_ftr);
     ftr->keysize = KEY_LEN_BYTES;
 

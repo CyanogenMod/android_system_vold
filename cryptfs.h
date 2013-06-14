@@ -28,6 +28,10 @@
 
 #include <cutils/properties.h>
 
+/* The current cryptfs version */
+#define CURRENT_MAJOR_VERSION 1
+#define CURRENT_MINOR_VERSION 2
+
 #define CRYPT_FOOTER_OFFSET 0x4000
 #define CRYPT_FOOTER_TO_PERSIST_OFFSET 0x1000
 #define CRYPT_PERSIST_DATA_SIZE 0x1000
