@@ -21,8 +21,6 @@
 
 #include "Volume.h"
 
-#define MAX_PARTS 4
-
 typedef android::List<char *> PathCollection;
 
 class DirectVolume : public Volume {
