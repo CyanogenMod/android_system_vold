@@ -35,15 +35,14 @@
 #include <openssl/evp.h>
 #include <openssl/sha.h>
 #include <errno.h>
-#include <cutils/android_reboot.h>
 #include <ext4.h>
 #include <linux/kdev_t.h>
 #include <fs_mgr.h>
 #include "cryptfs.h"
 #define LOG_TAG "Cryptfs"
-#include "cutils/android_reboot.h"
 #include "cutils/log.h"
 #include "cutils/properties.h"
+#include "cutils/android_reboot.h"
 #include "hardware_legacy/power.h"
 #include "VolumeManager.h"
 #include "VoldUtil.h"
@@ -71,6 +70,19 @@ static int  master_key_saved = 0;
 static struct crypt_persist_data *persist_data = NULL;
 
 extern struct fstab *fstab;
+
+static void cryptfs_reboot(int recovery)
+{
+    if (recovery) {
+        property_set(ANDROID_RB_PROPERTY, "reboot,recovery");
+    } else {
+        property_set(ANDROID_RB_PROPERTY, "reboot");
+    }
+    sleep(20);
+
+    /* Shouldn't get here, reboot should happen before sleep times out */
+    return;
+}
 
 static void ioctl_init(struct dm_ioctl *io, size_t dataSize, const char *name, unsigned flags)
 {
@@ -1803,7 +1815,7 @@ int cryptfs_enable(char *howarg, char *passwd)
         put_crypt_ftr_and_key(&crypt_ftr);
 
         sleep(2); /* Give the UI a chance to show 100% progress */
-        android_reboot(ANDROID_RB_RESTART, 0, 0);
+        cryptfs_reboot(0);
     } else {
         char value[PROPERTY_VALUE_MAX];
 
@@ -1819,7 +1831,7 @@ int cryptfs_enable(char *howarg, char *passwd)
             } else {
                 SLOGE("could not open /cache/recovery/command\n");
             }
-            android_reboot(ANDROID_RB_RESTART2, 0, "recovery");
+            cryptfs_reboot(1);
         } else {
             /* set property to trigger dialog */
             property_set("vold.encrypt_progress", "error_partially_encrypted");
@@ -1850,7 +1862,7 @@ error_shutting_down:
      * vold to restart the system.
      */
     SLOGE("Error enabling encryption after framework is shutdown, no data changed, restarting system");
-    android_reboot(ANDROID_RB_RESTART, 0, 0);
+    cryptfs_reboot(0);
 
     /* shouldn't get here */
     property_set("vold.encrypt_progress", "error_shutting_down");
