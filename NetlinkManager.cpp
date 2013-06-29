@@ -64,7 +64,7 @@ int NetlinkManager::start() {
     }
 
     if (setsockopt(mSock, SOL_SOCKET, SO_RCVBUFFORCE, &sz, sizeof(sz)) < 0) {
-        SLOGE("Unable to set uevent socket SO_RECBUFFORCE option: %s", strerror(errno));
+        SLOGE("Unable to set uevent socket SO_RCVBUFFORCE option: %s", strerror(errno));
         return -1;
     }
 
