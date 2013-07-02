@@ -65,31 +65,38 @@ int NetlinkManager::start() {
 
     if (setsockopt(mSock, SOL_SOCKET, SO_RCVBUFFORCE, &sz, sizeof(sz)) < 0) {
         SLOGE("Unable to set uevent socket SO_RCVBUFFORCE option: %s", strerror(errno));
-        return -1;
+        goto out;
     }
 
     if (setsockopt(mSock, SOL_SOCKET, SO_PASSCRED, &on, sizeof(on)) < 0) {
         SLOGE("Unable to set uevent socket SO_PASSCRED option: %s", strerror(errno));
-        return -1;
+        goto out;
     }
 
     if (bind(mSock, (struct sockaddr *) &nladdr, sizeof(nladdr)) < 0) {
         SLOGE("Unable to bind uevent socket: %s", strerror(errno));
-        return -1;
+        goto out;
     }
 
     mHandler = new NetlinkHandler(mSock);
     if (mHandler->start()) {
         SLOGE("Unable to start NetlinkHandler: %s", strerror(errno));
-        return -1;
+        goto out;
     }
+
     return 0;
+
+out:
+    close(mSock);
+    return -1;
 }
 
 int NetlinkManager::stop() {
+    int status = 0;
+
     if (mHandler->stop()) {
         SLOGE("Unable to stop NetlinkHandler: %s", strerror(errno));
-        return -1;
+        status = -1;
     }
     delete mHandler;
     mHandler = NULL;
@@ -97,5 +104,5 @@ int NetlinkManager::stop() {
     close(mSock);
     mSock = -1;
 
-    return 0;
+    return status;
 }
