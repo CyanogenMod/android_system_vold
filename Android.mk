@@ -14,6 +14,7 @@ common_src_files := \
 	Ext4.cpp \
 	Fat.cpp \
 	Ntfs.cpp \
+	Exfat.cpp \
 	Loop.cpp \
 	Devmapper.cpp \
 	ResponseCode.cpp \
