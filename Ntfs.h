@@ -1,5 +1,6 @@
 /*
  * Copyright (C) 2008 The Android Open Source Project
+ * Copyright (C) 2012 Freescale Semiconductor, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,7 +27,6 @@ public:
                        bool ro, bool remount, bool executable,
                        int ownerUid, int ownerGid, int permMask,
                        bool createLost);
-    static int format(const char *fsPath, unsigned int numSectors);
 };
 
 #endif
