@@ -33,11 +33,8 @@
 
 // #define PARTITION_DEBUG
 
-DirectVolume::DirectVolume(VolumeManager *vm, const char *label,
-                           const char *mount_point, int partIdx) :
-              Volume(vm, label, mount_point) {
-    mPartIdx = partIdx;
-
+DirectVolume::DirectVolume(VolumeManager *vm, const fstab_rec* rec, int flags) :
+        Volume(vm, rec, flags) {
     mPaths = new PathCollection();
     for (int i = 0; i < MAX_PARTITIONS; i++)
         mPartMinors[i] = -1;
@@ -45,6 +42,18 @@ DirectVolume::DirectVolume(VolumeManager *vm, const char *label,
     mDiskMajor = -1;
     mDiskMinor = -1;
     mDiskNumParts = 0;
+
+    if (strcmp(rec->mount_point, "auto") != 0) {
+        ALOGE("Vold managed volumes must have auto mount point; ignoring %s",
+              rec->mount_point);
+    }
+
+    char mount[PATH_MAX];
+
+    snprintf(mount, PATH_MAX, "%s/%s", Volume::MEDIA_DIR, rec->label);
+    mMountpoint = strdup(mount);
+    snprintf(mount, PATH_MAX, "%s/%s", Volume::FUSE_DIR, rec->label);
+    mFuseMountpoint = strdup(mount);
 
     setState(Volume::State_NoMedia);
 }
@@ -60,10 +69,6 @@ DirectVolume::~DirectVolume() {
 int DirectVolume::addPath(const char *path) {
     mPaths->push_back(strdup(path));
     return 0;
-}
-
-void DirectVolume::setFlags(int flags) {
-    mFlags = flags;
 }
 
 dev_t DirectVolume::getDiskDevice() {
@@ -119,7 +124,7 @@ int DirectVolume::handleBlockEvent(NetlinkEvent *evt) {
 
                     snprintf(msg, sizeof(msg),
                              "Volume %s %s disk inserted (%d:%d)", getLabel(),
-                             getMountpoint(), mDiskMajor, mDiskMinor);
+                             getFuseMountpoint(), mDiskMajor, mDiskMinor);
                     mVm->getBroadcaster()->sendBroadcast(ResponseCode::VolumeDiskInserted,
                                                          msg, false);
                 }
@@ -286,7 +291,7 @@ void DirectVolume::handleDiskRemoved(const char *devpath, NetlinkEvent *evt) {
 
     SLOGD("Volume %s %s disk %d:%d removed\n", getLabel(), getMountpoint(), major, minor);
     snprintf(msg, sizeof(msg), "Volume %s %s disk removed (%d:%d)",
-             getLabel(), getMountpoint(), major, minor);
+             getLabel(), getFuseMountpoint(), major, minor);
     mVm->getBroadcaster()->sendBroadcast(ResponseCode::VolumeDiskRemoved,
                                              msg, false);
     setState(Volume::State_NoMedia);
@@ -317,7 +322,7 @@ void DirectVolume::handlePartitionRemoved(const char *devpath, NetlinkEvent *evt
          */
 
         snprintf(msg, sizeof(msg), "Volume %s %s bad removal (%d:%d)",
-                 getLabel(), getMountpoint(), major, minor);
+                 getLabel(), getFuseMountpoint(), major, minor);
         mVm->getBroadcaster()->sendBroadcast(ResponseCode::VolumeBadRemoval,
                                              msg, false);
 
@@ -452,7 +457,7 @@ int DirectVolume::getVolInfo(struct volume_info *v)
 {
     strcpy(v->label, mLabel);
     strcpy(v->mnt_point, mMountpoint);
-    v->flags=mFlags;
+    v->flags = getFlags();
     /* Other fields of struct volume_info are filled in by the caller or cryptfs.c */
 
     return 0;
