@@ -32,6 +32,8 @@
 #include <sys/mount.h>
 
 #include <linux/kdev_t.h>
+#include <logwrap/logwrap.h>
+#include "VoldUtil.h"
 
 #define LOG_TAG "Vold"
 
@@ -42,7 +44,6 @@
 
 static char NTFS_FIX_PATH[] = "/system/bin/ntfsfix";
 static char NTFS_MOUNT_PATH[] = "/system/bin/ntfs-3g";
-extern "C" int logwrap(int argc, const char **argv, int background);
 
 int Ntfs::check(const char *fsPath) {
 
@@ -52,6 +53,7 @@ int Ntfs::check(const char *fsPath) {
     }
 
     int rc = 0;
+    int status;
     const char *args[4];
     /* we first use -n to do ntfs detection */
     args[0] = NTFS_FIX_PATH;
@@ -59,7 +61,8 @@ int Ntfs::check(const char *fsPath) {
     args[2] = fsPath;
     args[3] = NULL;
 
-    rc = logwrap(3, args, 1);
+    rc = android_fork_execvp(ARRAY_SIZE(args), (char **)args, &status, false,
+            true);
     if (rc) {
         errno = ENODATA;
         return -1;
@@ -72,7 +75,8 @@ int Ntfs::check(const char *fsPath) {
     args[1] = fsPath;
     args[2] = NULL;
 
-    rc = logwrap(2, args, 1);
+    rc = android_fork_execvp(ARRAY_SIZE(args), (char **)args, &status, false,
+            true);
     if (rc) {
         errno = EIO;
         SLOGE("Filesystem check failed (unknown exit code %d)", rc);
@@ -89,6 +93,7 @@ int Ntfs::doMount(const char *fsPath, const char *mountPoint,
     int rc;
     char mountData[255];
     const char *args[6];
+    int status;
 
     /*
      * Note: This is a temporary hack. If the sampling profiler is enabled,
@@ -125,12 +130,15 @@ int Ntfs::doMount(const char *fsPath, const char *mountPoint,
     args[4] = mountPoint;
     args[5] = NULL;
 
-    rc = logwrap(5, args, 1);
+    rc = android_fork_execvp(ARRAY_SIZE(args), (char **)args, &status, false,
+            true);
 
     if (rc && errno == EROFS) {
         SLOGE("%s appears to be a read only filesystem - retrying mount RO", fsPath);
         strcat(mountData, ",ro");
-        rc = logwrap(5, args, 1);
+        rc = android_fork_execvp(ARRAY_SIZE(args), (char **)args, &status, false,
+            true);
+
     }
 
     if (rc == 0 && createLost) {

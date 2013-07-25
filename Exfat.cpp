@@ -33,6 +33,8 @@
 #include <sys/wait.h>
 
 #include <linux/kdev_t.h>
+#include <logwrap/logwrap.h>
+#include "VoldUtil.h"
 
 #define LOG_TAG "Vold"
 
@@ -45,8 +47,6 @@ static char EXFAT_FSCK[] = "/system/bin/fsck.exfat";
 static char EXFAT_MKFS[] = "/system/bin/mkfs.exfat";
 static char EXFAT_MOUNT[] = "/system/bin/mount.exfat";
 
-extern "C" int logwrap(int argc, const char **argv, int background);
-
 int Exfat::doMount(const char *fsPath, const char *mountPoint,
                  bool ro, bool remount, bool executable,
                  int ownerUid, int ownerGid, int permMask) {
@@ -54,6 +54,7 @@ int Exfat::doMount(const char *fsPath, const char *mountPoint,
     int rc = -1;
     char mountData[255];
     const char *args[6];
+    int status;
 
     if (access(EXFAT_MOUNT, X_OK)) {
         SLOGE("Unable to mount, exFAT FUSE helper not found!");
@@ -75,12 +76,14 @@ int Exfat::doMount(const char *fsPath, const char *mountPoint,
 
     SLOGW("Executing exFAT mount (%s) -> (%s)", fsPath, mountPoint);
 
-    rc = logwrap(5, args, 1);
+    rc = android_fork_execvp(ARRAY_SIZE(args), (char **)args, &status, false,
+            true);
 
     if (rc && errno == EROFS) {
         SLOGE("%s appears to be a read only filesystem - retrying mount RO", fsPath);
         strcat(mountData, ",ro");
-        rc = logwrap(5, args, 1);
+        rc = android_fork_execvp(ARRAY_SIZE(args), (char **)args, &status, false,
+            true);
     }
 
     return rc;
@@ -90,6 +93,7 @@ int Exfat::check(const char *fsPath) {
 
     bool rw = true;
     int rc = -1;
+    int status;
 
     if (access(EXFAT_FSCK, X_OK)) {
         SLOGW("Skipping fs checks, exfatfsck not found.\n");
@@ -102,7 +106,8 @@ int Exfat::check(const char *fsPath) {
         args[1] = fsPath;
         args[2] = NULL;
 
-        rc = logwrap(3, args, 1);
+        rc = android_fork_execvp(ARRAY_SIZE(args), (char **)args, &status, false,
+            true);
 
         switch(rc) {
         case 0:
@@ -136,6 +141,7 @@ int Exfat::format(const char *fsPath) {
     int fd;
     const char *args[3];
     int rc = -1;
+    int status;
 
     if (access(EXFAT_MKFS, X_OK)) {
         SLOGE("Unable to format, mkexfatfs not found.");
@@ -146,7 +152,8 @@ int Exfat::format(const char *fsPath) {
     args[1] = fsPath;
     args[2] = NULL;
 
-    rc = logwrap(3, args, 1);
+    rc = android_fork_execvp(ARRAY_SIZE(args), (char **)args, &status, false,
+            true);
 
     if (rc == 0) {
         SLOGI("Filesystem (exFAT) formatted OK");
