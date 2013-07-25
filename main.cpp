@@ -32,7 +32,6 @@
 #include "CommandListener.h"
 #include "NetlinkManager.h"
 #include "DirectVolume.h"
-#include "AutoVolume.h"
 #include "cryptfs.h"
 
 static int process_config(VolumeManager *vm);
@@ -163,34 +162,9 @@ static int process_config(VolumeManager *vm) {
     FILE *fp;
     int n = 0;
     char line[255];
-    Volume *vol = 0;
-
-    if ((fp = fopen("/proc/cmdline", "r"))) {
-        while (fscanf(fp, "%s", line) > 0) {
-            if (!strncmp(line, "SDCARD=", 7)) {
-                const char *sdcard = line + 7;
-                if (*sdcard) {
-                    // FIXME: should not hardcode the label and mount_point
-                    if ((vol = new AutoVolume(vm, "sdcard", "/mnt/sdcard", sdcard))) {
-                        vm->addVolume(vol);
-                        break;
-                    }
-                }
-            }
-        }
-        fclose(fp);
-    }
 
     if (!(fp = fopen("/etc/vold.fstab", "r"))) {
-        // no volume added yet, create a AutoVolume object
-        // to mount USB/MMC/SD automatically
-        if (!vol) {
-            // FIXME: should not hardcode the label and mount_point
-            vol = new AutoVolume(vm, "sdcard", "/mnt/sdcard");
-            if (vol)
-                vm->addVolume(vol);
-        }
-        return vol ? 0 : -ENOMEM;
+        return -1;
     }
 
     while(fgets(line, sizeof(line), fp)) {
@@ -231,17 +205,13 @@ static int process_config(VolumeManager *vm) {
                 goto out_syntax;
             }
 
-            const char *sdcard = 0;
+            if (!strcmp(part, "auto")) {
+                dv = new DirectVolume(vm, label, mount_point, -1);
+            } else {
+                dv = new DirectVolume(vm, label, mount_point, atoi(part));
+            }
+
             while ((sysfs_path = strtok_r(NULL, delim, &save_ptr))) {
-                if ((sdcard = strncmp(sysfs_path, "SDCARD=", 7) ? 0 : sysfs_path + 7))
-                    break;
-                if (!dv) {
-                     if (!strcmp(part, "auto")) {
-                        dv = new DirectVolume(vm, label, mount_point, -1);
-                    } else {
-                        dv = new DirectVolume(vm, label, mount_point, atoi(part));
-                    }
-                }
                 if (*sysfs_path != '/') {
                     /* If the first character is not a '/', it must be flags */
                     break;
@@ -251,10 +221,6 @@ static int process_config(VolumeManager *vm) {
                          label);
                     goto out_fail;
                 }
-            }
-
-            if (!dv) {
-                dv = new AutoVolume(vm, label, mount_point, sdcard);
             }
 
             /* If sysfs_path is non-null at this point, then it contains
