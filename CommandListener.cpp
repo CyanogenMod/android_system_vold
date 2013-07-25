@@ -38,6 +38,7 @@
 #include "Loop.h"
 #include "Devmapper.h"
 #include "cryptfs.h"
+#include "fstrim.h"
 
 #define DUMP_ARGS 0
 
@@ -50,6 +51,7 @@ CommandListener::CommandListener() :
     registerCmd(new StorageCmd());
     registerCmd(new XwarpCmd());
     registerCmd(new CryptfsCmd());
+    registerCmd(new FstrimCmd());
 }
 
 void CommandListener::dumpArgs(int argc, char **argv, int argObscure) {
@@ -274,7 +276,7 @@ void CommandListener::AsecCmd::listAsecsInDirectory(SocketClient *cli, const cha
     }
 
     size_t dirent_len = offsetof(struct dirent, d_name) +
-            pathconf(directory, _PC_NAME_MAX) + 1;
+            fpathconf(dirfd(d), _PC_NAME_MAX) + 1;
 
     struct dirent *dent = (struct dirent *) malloc(dirent_len);
     if (dent == NULL) {
@@ -599,6 +601,44 @@ int CommandListener::CryptfsCmd::runCommand(SocketClient *cli,
     } else {
         dumpArgs(argc, argv, -1);
         cli->sendMsg(ResponseCode::CommandSyntaxError, "Unknown cryptfs cmd", false);
+    }
+
+    // Always report that the command succeeded and return the error code.
+    // The caller will check the return value to see what the error was.
+    char msg[255];
+    snprintf(msg, sizeof(msg), "%d", rc);
+    cli->sendMsg(ResponseCode::CommandOkay, msg, false);
+
+    return 0;
+}
+
+CommandListener::FstrimCmd::FstrimCmd() :
+                 VoldCommand("fstrim") {
+}
+int CommandListener::FstrimCmd::runCommand(SocketClient *cli,
+                                                      int argc, char **argv) {
+    if ((cli->getUid() != 0) && (cli->getUid() != AID_SYSTEM)) {
+        cli->sendMsg(ResponseCode::CommandNoPermission, "No permission to run fstrim commands", false);
+        return 0;
+    }
+
+    if (argc < 2) {
+        cli->sendMsg(ResponseCode::CommandSyntaxError, "Missing Argument", false);
+        return 0;
+    }
+
+    int rc = 0;
+
+    if (!strcmp(argv[1], "dotrim")) {
+        if (argc != 2) {
+            cli->sendMsg(ResponseCode::CommandSyntaxError, "Usage: fstrim dotrim", false);
+            return 0;
+        }
+        dumpArgs(argc, argv, -1);
+        rc = fstrim_filesystems();
+    } else {
+        dumpArgs(argc, argv, -1);
+        cli->sendMsg(ResponseCode::CommandSyntaxError, "Unknown fstrim cmd", false);
     }
 
     // Always report that the command succeeded and return the error code.

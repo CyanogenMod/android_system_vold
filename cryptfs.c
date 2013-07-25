@@ -67,8 +67,8 @@ static unsigned char saved_master_key[KEY_LEN_BYTES];
 static char *saved_data_blkdev;
 static char *saved_mount_point;
 static int  master_key_saved = 0;
-#define FSTAB_PREFIX "/fstab."
-static char fstab_filename[PROPERTY_VALUE_MAX + sizeof(FSTAB_PREFIX)];
+
+extern struct fstab *fstab;
 
 static void ioctl_init(struct dm_ioctl *io, size_t dataSize, const char *name, unsigned flags)
 {
@@ -126,19 +126,6 @@ static unsigned int get_blkdev_size(int fd)
   return nr_sec;
 }
 
-/* Get and cache the name of the fstab file so we don't
- * keep talking over the socket to the property service.
- */
-static char *get_fstab_filename(void)
-{
-    if (fstab_filename[0] == 0) {
-        strcpy(fstab_filename, FSTAB_PREFIX);
-        property_get("ro.hardware", fstab_filename + sizeof(FSTAB_PREFIX) - 1, "");
-    }
-
-    return fstab_filename;
-}
-
 /* key or salt can be NULL, in which case just skip writing that value.  Useful to
  * update the failed mount count but not change the key.
  */
@@ -153,7 +140,7 @@ static int put_crypt_ftr_and_key(char *real_blk_name, struct crypt_mnt_ftr *cryp
   char key_loc[PROPERTY_VALUE_MAX];
   struct stat statbuf;
 
-  fs_mgr_get_crypt_info(get_fstab_filename(), key_loc, 0, sizeof(key_loc));
+  fs_mgr_get_crypt_info(fstab, key_loc, 0, sizeof(key_loc));
 
   if (!strcmp(key_loc, KEY_IN_FOOTER)) {
     fname = real_blk_name;
@@ -252,7 +239,7 @@ static int get_crypt_ftr_and_key(char *real_blk_name, struct crypt_mnt_ftr *cryp
   char *fname;
   struct stat statbuf;
 
-  fs_mgr_get_crypt_info(get_fstab_filename(), key_loc, 0, sizeof(key_loc));
+  fs_mgr_get_crypt_info(fstab, key_loc, 0, sizeof(key_loc));
 
   if (!strcmp(key_loc, KEY_IN_FOOTER)) {
     fname = real_blk_name;
@@ -377,6 +364,86 @@ void convert_key_to_hex_ascii(unsigned char *master_key, unsigned int keysize,
 
 }
 
+static int load_crypto_mapping_table(struct crypt_mnt_ftr *crypt_ftr, unsigned char *master_key,
+                                     char *real_blk_name, const char *name, int fd,
+                                     char *extra_params)
+{
+  char buffer[DM_CRYPT_BUF_SIZE];
+  struct dm_ioctl *io;
+  struct dm_target_spec *tgt;
+  char *crypt_params;
+  char master_key_ascii[129]; /* Large enough to hold 512 bit key and null */
+  int i;
+
+  io = (struct dm_ioctl *) buffer;
+
+  /* Load the mapping table for this device */
+  tgt = (struct dm_target_spec *) &buffer[sizeof(struct dm_ioctl)];
+
+  ioctl_init(io, DM_CRYPT_BUF_SIZE, name, 0);
+  io->target_count = 1;
+  tgt->status = 0;
+  tgt->sector_start = 0;
+  tgt->length = crypt_ftr->fs_size;
+  strcpy(tgt->target_type, "crypt");
+
+  crypt_params = buffer + sizeof(struct dm_ioctl) + sizeof(struct dm_target_spec);
+  convert_key_to_hex_ascii(master_key, crypt_ftr->keysize, master_key_ascii);
+  sprintf(crypt_params, "%s %s 0 %s 0 %s", crypt_ftr->crypto_type_name,
+          master_key_ascii, real_blk_name, extra_params);
+  crypt_params += strlen(crypt_params) + 1;
+  crypt_params = (char *) (((unsigned long)crypt_params + 7) & ~8); /* Align to an 8 byte boundary */
+  tgt->next = crypt_params - buffer;
+
+  for (i = 0; i < TABLE_LOAD_RETRIES; i++) {
+    if (! ioctl(fd, DM_TABLE_LOAD, io)) {
+      break;
+    }
+    usleep(500000);
+  }
+
+  if (i == TABLE_LOAD_RETRIES) {
+    /* We failed to load the table, return an error */
+    return -1;
+  } else {
+    return i + 1;
+  }
+}
+
+
+static int get_dm_crypt_version(int fd, const char *name,  int *version)
+{
+    char buffer[DM_CRYPT_BUF_SIZE];
+    struct dm_ioctl *io;
+    struct dm_target_versions *v;
+    int i;
+
+    io = (struct dm_ioctl *) buffer;
+
+    ioctl_init(io, DM_CRYPT_BUF_SIZE, name, 0);
+
+    if (ioctl(fd, DM_LIST_VERSIONS, io)) {
+        return -1;
+    }
+
+    /* Iterate over the returned versions, looking for name of "crypt".
+     * When found, get and return the version.
+     */
+    v = (struct dm_target_versions *) &buffer[sizeof(struct dm_ioctl)];
+    while (v->next) {
+        if (! strcmp(v->name, "crypt")) {
+            /* We found the crypt driver, return the version, and get out */
+            version[0] = v->version[0];
+            version[1] = v->version[1];
+            version[2] = v->version[2];
+            return 0;
+        }
+        v = (struct dm_target_versions *)(((char *)v) + v->next);
+    }
+
+    return -1;
+}
+
 static int create_crypto_blk_dev(struct crypt_mnt_ftr *crypt_ftr, unsigned char *master_key,
                                     char *real_blk_name, char *crypto_blk_name, const char *name)
 {
@@ -389,6 +456,9 @@ static int create_crypto_blk_dev(struct crypt_mnt_ftr *crypt_ftr, unsigned char 
   int fd;
   int i;
   int retval = -1;
+  int version[3];
+  char *extra_params;
+  int load_count;
 
   if ((fd = open("/dev/device-mapper", O_RDWR)) < 0 ) {
     SLOGE("Cannot open device-mapper\n");
@@ -412,40 +482,27 @@ static int create_crypto_blk_dev(struct crypt_mnt_ftr *crypt_ftr, unsigned char 
   minor = (io->dev & 0xff) | ((io->dev >> 12) & 0xfff00);
   snprintf(crypto_blk_name, MAXPATHLEN, "/dev/block/dm-%u", minor);
 
-  /* Load the mapping table for this device */
-  tgt = (struct dm_target_spec *) &buffer[sizeof(struct dm_ioctl)];
-
-  ioctl_init(io, 4096, name, 0);
-  io->target_count = 1;
-  tgt->status = 0;
-  tgt->sector_start = 0;
-  tgt->length = crypt_ftr->fs_size;
-  strcpy(tgt->target_type, "crypt");
-
-  crypt_params = buffer + sizeof(struct dm_ioctl) + sizeof(struct dm_target_spec);
-  convert_key_to_hex_ascii(master_key, crypt_ftr->keysize, master_key_ascii);
-  sprintf(crypt_params, "%s %s 0 %s 0", crypt_ftr->crypto_type_name,
-          master_key_ascii, real_blk_name);
-  crypt_params += strlen(crypt_params) + 1;
-  crypt_params = (char *) (((unsigned long)crypt_params + 7) & ~8); /* Align to an 8 byte boundary */
-  tgt->next = crypt_params - buffer;
-
-  for (i = 0; i < TABLE_LOAD_RETRIES; i++) {
-    if (! ioctl(fd, DM_TABLE_LOAD, io)) {
-      break;
-    }
-    usleep(500000);
+  extra_params = "";
+  if (! get_dm_crypt_version(fd, name, version)) {
+      /* Support for allow_discards was added in version 1.11.0 */
+      if ((version[0] >= 2) ||
+          ((version[0] == 1) && (version[1] >= 11))) {
+          extra_params = "1 allow_discards";
+          SLOGI("Enabling support for allow_discards in dmcrypt.\n");
+      }
   }
 
-  if (i == TABLE_LOAD_RETRIES) {
+  load_count = load_crypto_mapping_table(crypt_ftr, master_key, real_blk_name, name,
+                                         fd, extra_params);
+  if (load_count < 0) {
       SLOGE("Cannot load dm-crypt mapping table.\n");
       goto errout;
-  } else if (i) {
-      SLOGI("Took %d tries to load dmcrypt table.\n", i + 1);
+  } else if (load_count > 1) {
+      SLOGI("Took %d tries to load dmcrypt table.\n", load_count);
   }
 
   /* Resume this device to activate it */
-  ioctl_init(io, 4096, name, 0);
+  ioctl_init(io, DM_CRYPT_BUF_SIZE, name, 0);
 
   if (ioctl(fd, DM_DEV_SUSPEND, io)) {
     SLOGE("Cannot resume the dm-crypt device\n");
@@ -616,7 +673,7 @@ static int wait_and_unmount(char *mountpoint)
     return rc;
 }
 
-#define DATA_PREP_TIMEOUT 100
+#define DATA_PREP_TIMEOUT 200
 static int prep_data_fs(void)
 {
     int i;
@@ -626,7 +683,7 @@ static int prep_data_fs(void)
     property_set("vold.decrypt", "trigger_post_fs_data");
     SLOGD("Just triggered post_fs_data\n");
 
-    /* Wait a max of 25 seconds, hopefully it takes much less */
+    /* Wait a max of 50 seconds, hopefully it takes much less */
     for (i=0; i<DATA_PREP_TIMEOUT; i++) {
         char p[PROPERTY_VALUE_MAX];
 
@@ -639,6 +696,7 @@ static int prep_data_fs(void)
     }
     if (i == DATA_PREP_TIMEOUT) {
         /* Ugh, we failed to prep /data in time.  Bail. */
+        SLOGE("post_fs_data timed out!\n");
         return -1;
     } else {
         SLOGD("post_fs_data done\n");
@@ -707,7 +765,7 @@ int cryptfs_restart(void)
 
     if (! (rc = wait_and_unmount(DATA_MNT_POINT)) ) {
         /* If that succeeded, then mount the decrypted filesystem */
-        fs_mgr_do_mount(get_fstab_filename(), DATA_MNT_POINT, crypto_blkdev, 0);
+        fs_mgr_do_mount(fstab, DATA_MNT_POINT, crypto_blkdev, 0);
 
         property_set("vold.decrypt", "trigger_load_persist_props");
         /* Create necessary paths on /data */
@@ -745,10 +803,10 @@ static int do_crypto_complete(char *mount_point)
     return 1;
   }
 
-  fs_mgr_get_crypt_info(get_fstab_filename(), 0, real_blkdev, sizeof(real_blkdev));
+  fs_mgr_get_crypt_info(fstab, 0, real_blkdev, sizeof(real_blkdev));
 
   if (get_crypt_ftr_and_key(real_blkdev, &crypt_ftr, encrypted_master_key, salt)) {
-    fs_mgr_get_crypt_info(get_fstab_filename(), key_loc, 0, sizeof(key_loc));
+    fs_mgr_get_crypt_info(fstab, key_loc, 0, sizeof(key_loc));
 
     /*
      * Only report this error if key_loc is a file and it exists.
@@ -795,7 +853,7 @@ static int test_mount_encrypted_fs(char *passwd, char *mount_point, char *label)
     return -1;
   }
 
-  fs_mgr_get_crypt_info(get_fstab_filename(), 0, real_blkdev, sizeof(real_blkdev));
+  fs_mgr_get_crypt_info(fstab, 0, real_blkdev, sizeof(real_blkdev));
 
   if (get_crypt_ftr_and_key(real_blkdev, &crypt_ftr, encrypted_master_key, salt)) {
     SLOGE("Error getting crypt footer and key\n");
@@ -824,7 +882,7 @@ static int test_mount_encrypted_fs(char *passwd, char *mount_point, char *label)
    */
   sprintf(tmp_mount_point, "%s/tmp_mnt", mount_point);
   mkdir(tmp_mount_point, 0755);
-  if (fs_mgr_do_mount(get_fstab_filename(), DATA_MNT_POINT, crypto_blkdev, tmp_mount_point)) {
+  if (fs_mgr_do_mount(fstab, DATA_MNT_POINT, crypto_blkdev, tmp_mount_point)) {
     SLOGE("Error temp mounting decrypted block device\n");
     delete_crypto_blk_dev(label);
     crypt_ftr.failed_decrypt_count++;
@@ -955,7 +1013,7 @@ int cryptfs_verify_passwd(char *passwd)
         return -1;
     }
 
-    fs_mgr_get_crypt_info(get_fstab_filename(), 0, real_blkdev, sizeof(real_blkdev));
+    fs_mgr_get_crypt_info(fstab, 0, real_blkdev, sizeof(real_blkdev));
 
     if (get_crypt_ftr_and_key(real_blkdev, &crypt_ftr, encrypted_master_key, salt)) {
         SLOGE("Error getting crypt footer and key\n");
@@ -1157,7 +1215,7 @@ int cryptfs_enable(char *howarg, char *passwd)
         goto error_unencrypted;
     }
 
-    fs_mgr_get_crypt_info(get_fstab_filename(), key_loc, 0, sizeof(key_loc));
+    fs_mgr_get_crypt_info(fstab, key_loc, 0, sizeof(key_loc));
 
     if (!strcmp(howarg, "wipe")) {
       how = CRYPTO_ENABLE_WIPE;
@@ -1168,7 +1226,7 @@ int cryptfs_enable(char *howarg, char *passwd)
       goto error_unencrypted;
     }
 
-    fs_mgr_get_crypt_info(get_fstab_filename(), 0, real_blkdev, sizeof(real_blkdev));
+    fs_mgr_get_crypt_info(fstab, 0, real_blkdev, sizeof(real_blkdev));
 
     /* Get the size of the real block device */
     fd = open(real_blkdev, O_RDONLY);
@@ -1461,7 +1519,7 @@ int cryptfs_changepw(char *newpw)
         return -1;
     }
 
-    fs_mgr_get_crypt_info(get_fstab_filename(), 0, real_blkdev, sizeof(real_blkdev));
+    fs_mgr_get_crypt_info(fstab, 0, real_blkdev, sizeof(real_blkdev));
     if (strlen(real_blkdev) == 0) {
         SLOGE("Can't find real blkdev");
         return -1;

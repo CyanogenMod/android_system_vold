@@ -14,17 +14,9 @@
  * limitations under the License.
  */
 
-#ifndef _EXT4_H
-#define _EXT4_H
+#ifndef _VOLDUTIL_H
+#define _VOLDUTIL_H
 
-#include <unistd.h>
-
-class Ext4 {
-public:
-    static int doMount(const char *fsPath, const char *mountPoint, bool ro, bool remount,
-            bool executable);
-    static int check(const char *fsPath);
-    static int format(const char *fsPath, const char *mountpoint);
-};
+#define ARRAY_SIZE(a) (sizeof(a) / sizeof(*(a)))
 
 #endif
