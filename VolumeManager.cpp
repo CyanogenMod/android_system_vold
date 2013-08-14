@@ -416,6 +416,7 @@ int VolumeManager::createAsec(const char *id, unsigned int numSectors, const cha
         }
 
         if (usingExt4) {
+            SLOGI("createAsec: Formatting Device=%s mountPoint=%s", dmDevice, mountPoint);
             formatStatus = Ext4::format(dmDevice, mountPoint);
         } else {
             formatStatus = Fat::format(dmDevice, numImgSectors);
@@ -445,6 +446,7 @@ int VolumeManager::createAsec(const char *id, unsigned int numSectors, const cha
 
         int mountStatus;
         if (usingExt4) {
+            SLOGI("createAsec: Mounting Device=%s mountPoint=%s", dmDevice, mountPoint);
             mountStatus = Ext4::doMount(dmDevice, mountPoint, false, false, false);
         } else {
             mountStatus = Fat::doMount(dmDevice, mountPoint, false, false, false, ownerUid, 0, 0000,
