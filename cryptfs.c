@@ -117,7 +117,8 @@ static void get_device_scrypt_params(struct crypt_mnt_ftr *ftr) {
          * The token we're looking for should be three integers separated by
          * colons (e.g., "12:8:1"). Scan the property to make sure it matches.
          */
-        for (token = strtok_r(paramstr, ":", &saveptr); token != NULL && i < 3;
+        for (i = 0, token = strtok_r(paramstr, ":", &saveptr);
+                token != NULL && i < 3;
                 i++, token = strtok_r(NULL, ":", &saveptr)) {
             char *endptr;
             params[i] = strtol(token, &endptr, 10);
