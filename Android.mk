@@ -32,13 +32,13 @@ common_shared_libraries := \
 	libdiskconfig \
 	libhardware_legacy \
 	liblogwrap \
+	libext4_utils \
 	libcrypto
 
 common_static_libraries := \
 	libfs_mgr \
 	libscrypt_static \
-	libmincrypt \
-	libext4_utils_static
+	libmincrypt
 
 include $(CLEAR_VARS)
 
