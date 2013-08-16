@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2012 The Android Open Source Project
+ * Copyright (C) 2013 The CyanogenMod Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,13 +14,27 @@
  * limitations under the License.
  */
 
-#ifndef _VOLDUTIL_H
-#define _VOLDUTIL_H
+#ifndef _VOLD_LOG_H
+#define _VOLD_LOG_H
 
-#ifndef HELPER_PATH
-#define HELPER_PATH "/system/bin/"
+#ifndef MINIVOLD
+#include <cutils/log.h>
+#else
+#include <stdio.h>
+#include <unistd.h>
+#include <cutils/klog.h>
+
+#ifndef LOG_TAG
+#define LOG_TAG "minivold"
 #endif
 
-#define ARRAY_SIZE(a) (sizeof(a) / sizeof(*(a)))
+#define SLOGI(...) fprintf(stdout, __VA_ARGS__)
+#define SLOGD(...) fprintf(stdout, __VA_ARGS__)
+#define SLOGV(...) fprintf(stdout, __VA_ARGS__)
 
-#endif
+#define SLOGE(...) fprintf(stderr, __VA_ARGS__)
+#define SLOGW(...) fprintf(stderr, __VA_ARGS__)
+
+#endif 
+
+#endif // _VOLD_LOG_H
