@@ -34,7 +34,6 @@
 #include <linux/kdev_t.h>
 
 #define LOG_TAG "Vold"
-
 #include <cutils/log.h>
 #include <cutils/properties.h>
 
@@ -43,8 +42,8 @@
 #include "Fat.h"
 #include "VoldUtil.h"
 
-static char FSCK_MSDOS_PATH[] = "/system/bin/fsck_msdos";
-static char MKDOSFS_PATH[] = "/system/bin/newfs_msdos";
+static char FSCK_MSDOS_PATH[] = HELPER_PATH "fsck_msdos";
+static char MKDOSFS_PATH[] = HELPER_PATH "newfs_msdos";
 extern "C" int mount(const char *, const char *, const char *, unsigned long, const void *);
 
 int Fat::check(const char *fsPath) {
