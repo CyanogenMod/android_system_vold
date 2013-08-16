@@ -26,8 +26,7 @@
 #include <linux/netlink.h>
 
 #define LOG_TAG "Vold"
-
-#include <cutils/log.h>
+#include "log.h"
 
 #include "NetlinkManager.h"
 #include "NetlinkHandler.h"

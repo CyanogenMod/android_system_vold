@@ -26,7 +26,7 @@
 #include <fs_mgr.h>
 #include <pthread.h>
 #define LOG_TAG "fstrim"
-#include "cutils/log.h"
+#include "log.h"
 #include "hardware_legacy/power.h"
 
 /* These numbers must match what the MountService specified in

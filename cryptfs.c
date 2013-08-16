@@ -41,8 +41,8 @@
 #include <fs_mgr.h>
 #include "cryptfs.h"
 #define LOG_TAG "Cryptfs"
+#include "log.h"
 #include "cutils/android_reboot.h"
-#include "cutils/log.h"
 #include "cutils/properties.h"
 #include "hardware_legacy/power.h"
 #include "VolumeManager.h"
@@ -214,7 +214,7 @@ static int put_crypt_ftr_and_key(char *real_blk_name, struct crypt_mnt_ftr *cryp
   /* If the keys are kept on a raw block device, do not try to truncate it. */
   if (S_ISREG(statbuf.st_mode) && (key_loc[0] == '/')) {
     if (ftruncate(fd, 0x4000)) {
-      SLOGE("Cannot set footer file size\n", fname);
+      SLOGE("Cannot set footer file (%s) size\n", fname);
       goto errout;
     }
   }

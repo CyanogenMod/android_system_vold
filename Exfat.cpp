@@ -37,8 +37,7 @@
 #include "VoldUtil.h"
 
 #define LOG_TAG "Vold"
-
-#include <cutils/log.h>
+#include "log.h"
 #include <cutils/properties.h>
 
 #include "Exfat.h"

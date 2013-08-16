@@ -26,9 +26,8 @@
 #include <fs_mgr.h>
 
 #define LOG_TAG "Vold"
-
+#include "log.h"
 #include "cutils/klog.h"
-#include "cutils/log.h"
 #include "cutils/properties.h"
 
 #include "VolumeManager.h"
