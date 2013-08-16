@@ -28,7 +28,7 @@
 #include <signal.h>
 
 #define LOG_TAG "ProcessKiller"
-#include <cutils/log.h>
+#include "log.h"
 
 #include "Process.h"
 

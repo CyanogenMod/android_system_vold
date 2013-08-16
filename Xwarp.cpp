@@ -24,8 +24,7 @@
 #include <sys/stat.h>
 
 #define LOG_TAG "Vold"
-
-#include <cutils/log.h>
+#include "log.h"
 
 #include "Xwarp.h"
 const char *Xwarp::XWARP_BACKINGFILE = "/mnt/secure/asec/xwarp.img";
