@@ -46,6 +46,7 @@
 #include "cutils/properties.h"
 #include "hardware_legacy/power.h"
 #include "VolumeManager.h"
+#include "VoldUtil.h"
 
 #define DM_CRYPT_BUF_SIZE 4096
 #define DATA_MNT_POINT "/data"
@@ -214,7 +215,7 @@ static int put_crypt_ftr_and_key(char *real_blk_name, struct crypt_mnt_ftr *cryp
   /* If the keys are kept on a raw block device, do not try to truncate it. */
   if (S_ISREG(statbuf.st_mode) && (key_loc[0] == '/')) {
     if (ftruncate(fd, 0x4000)) {
-      SLOGE("Cannot set footer file size\n", fname);
+      SLOGE("Cannot set footer file (%s) size\n", fname);
       goto errout;
     }
   }
@@ -1063,11 +1064,11 @@ static int cryptfs_enable_wipe(char *crypto_blkdev, off64_t size, int type)
     int rc = -1;
 
     if (type == EXT4_FS) {
-        snprintf(cmdline, sizeof(cmdline), "/system/bin/make_ext4fs -a /data -l %lld %s",
+        snprintf(cmdline, sizeof(cmdline), HELPER_PATH "make_ext4fs -a /data -l %lld %s",
                  size * 512, crypto_blkdev);
         SLOGI("Making empty filesystem with command %s\n", cmdline);
     } else if (type== FAT_FS) {
-        snprintf(cmdline, sizeof(cmdline), "/system/bin/newfs_msdos -F 32 -O android -c 8 -s %lld %s",
+        snprintf(cmdline, sizeof(cmdline), HELPER_PATH "newfs_msdos -F 32 -O android -c 8 -s %lld %s",
                  size, crypto_blkdev);
         SLOGI("Making empty filesystem with command %s\n", cmdline);
     } else {

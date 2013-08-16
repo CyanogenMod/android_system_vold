@@ -19,7 +19,6 @@
 #include <string.h>
 
 #define LOG_TAG "Vold"
-
 #include <cutils/log.h>
 
 #include "ResponseCode.h"
