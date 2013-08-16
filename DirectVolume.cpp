@@ -22,7 +22,6 @@
 #include <linux/kdev_t.h>
 
 #define LOG_TAG "DirectVolume"
-
 #include <cutils/log.h>
 #include <sysutils/NetlinkEvent.h>
 

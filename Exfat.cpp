@@ -37,15 +37,14 @@
 #include "VoldUtil.h"
 
 #define LOG_TAG "Vold"
-
 #include <cutils/log.h>
 #include <cutils/properties.h>
 
 #include "Exfat.h"
 
-static char EXFAT_FSCK[] = "/system/bin/fsck.exfat";
-static char EXFAT_MKFS[] = "/system/bin/mkfs.exfat";
-static char EXFAT_MOUNT[] = "/system/bin/mount.exfat";
+static char EXFAT_FSCK[] = HELPER_PATH "fsck.exfat";
+static char EXFAT_MKFS[] = HELPER_PATH "mkfs.exfat";
+static char EXFAT_MOUNT[] = HELPER_PATH "mount.exfat";
 
 int Exfat::doMount(const char *fsPath, const char *mountPoint,
                  bool ro, bool remount, bool executable,
