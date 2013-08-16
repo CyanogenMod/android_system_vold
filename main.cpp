@@ -26,7 +26,6 @@
 #include <fs_mgr.h>
 
 #define LOG_TAG "Vold"
-
 #include "cutils/klog.h"
 #include "cutils/log.h"
 #include "cutils/properties.h"
@@ -43,7 +42,7 @@ static void coldboot(const char *path);
 #define FSTAB_PREFIX "/fstab."
 struct fstab *fstab;
 
-int main() {
+extern "C" int vold_main() {
 
     VolumeManager *vm;
     CommandListener *cl;
