@@ -276,7 +276,7 @@ static int put_crypt_ftr_and_key(struct crypt_mnt_ftr *crypt_ftr)
   /* If the keys are kept on a raw block device, do not try to truncate it. */
   if (S_ISREG(statbuf.st_mode)) {
     if (ftruncate(fd, 0x4000)) {
-      SLOGE("Cannot set footer file size\n", fname);
+      SLOGE("Cannot set footer file (%s) size\n", fname);
       goto errout;
     }
   }
@@ -1434,7 +1434,7 @@ static int cryptfs_enable_wipe(char *crypto_blkdev, off64_t size, int type)
     int rc = -1;
 
     if (type == EXT4_FS) {
-        args[0] = "/system/bin/make_ext4fs";
+        args[0] = HELPER_PATH "make_ext4fs";
         args[1] = "-a";
         args[2] = "/data";
         args[3] = "-l";
@@ -1445,7 +1445,7 @@ static int cryptfs_enable_wipe(char *crypto_blkdev, off64_t size, int type)
         SLOGI("Making empty filesystem with command %s %s %s %s %s %s\n",
               args[0], args[1], args[2], args[3], args[4], args[5]);
     } else if (type== FAT_FS) {
-        args[0] = "/system/bin/newfs_msdos";
+        args[0] = HELPER_PATH "newfs_msdos";
         args[1] = "-F";
         args[2] = "32";
         args[3] = "-O";

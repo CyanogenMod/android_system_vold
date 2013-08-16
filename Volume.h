@@ -17,6 +17,7 @@
 #ifndef _VOLUME_H
 #define _VOLUME_H
 
+#ifdef __cplusplus
 #include <utils/List.h>
 #include <fs_mgr.h>
 
@@ -29,6 +30,7 @@ private:
     int mFlags;
 
 public:
+#endif
     static const int State_Init       = -1;
     static const int State_NoMedia    = 0;
     static const int State_Idle       = 1;
@@ -49,6 +51,7 @@ public:
     static const char *LOOPDIR;
     static const char *FUSEDIR;
 
+#ifdef __cplusplus
 protected:
     char *mLabel;
     VolumeManager *mVm;
@@ -109,4 +112,10 @@ private:
 
 typedef android::List<Volume *> VolumeCollection;
 
+extern "C" {
+#endif
+    const char *stateToStr(int state);
+#ifdef __cplusplus
+};
+#endif
 #endif

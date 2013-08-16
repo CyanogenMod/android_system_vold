@@ -51,6 +51,7 @@
 #include "Exfat.h"
 #include "Process.h"
 #include "cryptfs.h"
+#include "VoldUtil.h"
 
 #ifndef FUSE_SDCARD_UID
 #define FUSE_SDCARD_UID 1023
@@ -63,7 +64,7 @@
 #define DO_STRINGIFY(str) #str
 #define STRINGIFY(str) DO_STRINGIFY(str)
 
-static char SDCARD_DAEMON_PATH[] = "/system/bin/sdcard";
+static char SDCARD_DAEMON_PATH[] = HELPER_PATH "sdcard";
 
 extern "C" void dos_partition_dec(void const *pp, struct dos_partition *d);
 extern "C" void dos_partition_enc(void *pp, struct dos_partition *d);
@@ -103,7 +104,7 @@ const char *Volume::LOOPDIR           = "/mnt/obb";
 const char *Volume::FUSEDIR           = "/mnt/fuse";
 
 
-static const char *stateToStr(int state) {
+extern "C" const char *stateToStr(int state) {
     if (state == Volume::State_Init)
         return "Initializing";
     else if (state == Volume::State_NoMedia)
@@ -402,14 +403,14 @@ int Volume::mountVol() {
 
        if (n != 1) {
            /* We only expect one device node returned when mounting encryptable volumes */
-           SLOGE("Too many device nodes returned when mounting %d\n", getMountpoint());
+           SLOGE("Too many device nodes returned when mounting %s\n", getMountpoint());
            return -1;
        }
 
        if (cryptfs_setup_volume(getLabel(), MAJOR(deviceNodes[0]), MINOR(deviceNodes[0]),
                                 new_sys_path, sizeof(new_sys_path),
                                 &new_major, &new_minor)) {
-           SLOGE("Cannot setup encryption mapping for %d\n", getMountpoint());
+           SLOGE("Cannot setup encryption mapping for %s\n", getMountpoint());
            return -1;
        }
        /* We now have the new sysfs path for the decrypted block device, and the
@@ -485,7 +486,7 @@ int Volume::mountVol() {
                     return -1;
                 }
 
-                if (Ext4::doMount(devicePath, "/mnt/secure/staging", false, false, false)) {
+                if (Ext4::doMount(devicePath, getMountpoint(), false, false, false)) {
                     SLOGE("%s failed to mount via EXT4 (%s)\n", devicePath, strerror(errno));
                     continue;
                 }
@@ -509,8 +510,8 @@ int Volume::mountVol() {
                     return -1;
                 }
 
-                if (Exfat::doMount(devicePath, "/mnt/secure/staging", false, false, false,
-                        AID_SYSTEM, gid, 0702)) {
+                if (Exfat::doMount(devicePath, getMountpoint(), false, false, false,
+                        AID_MEDIA_RW, AID_MEDIA_RW, 0007)) {
                     SLOGE("%s failed to mount via EXFAT (%s)\n", devicePath, strerror(errno));
                     continue;
                 }
@@ -563,13 +564,6 @@ int Volume::mountVol() {
                     SLOGE("Failed to create %s (%s)", fuseSrc, strerror(errno));
                     failed = true;
                 }
-            }
-
-            // Move subtree to fuse dir
-            if (!failed && doMoveMount("/mnt/secure/staging", fuseSrc, false)) {
-                SLOGE("Failed to move mount (%s)", strerror(errno));
-                umount("/mnt/secure/staging");
-                failed = true;
             }
 
             // Set owner and group on fuse dir

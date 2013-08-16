@@ -934,7 +934,7 @@ int VolumeManager::mountAsec(const char *id, const char *key, int ownerUid) {
 
     int written = snprintf(mountPoint, sizeof(mountPoint), "%s/%s", Volume::ASECDIR, id);
     if ((written < 0) || (size_t(written) >= sizeof(mountPoint))) {
-        SLOGE("ASEC mount failed: couldn't construct mountpoint", id);
+        SLOGE("ASEC mount failed: couldn't construct mountpoint %s", id);
         return -1;
     }
 
@@ -1081,7 +1081,7 @@ int VolumeManager::mountObb(const char *img, const char *key, int ownerGid) {
 
     int written = snprintf(mountPoint, sizeof(mountPoint), "%s/%s", Volume::LOOPDIR, idHash);
     if ((written < 0) || (size_t(written) >= sizeof(mountPoint))) {
-        SLOGE("OBB mount failed: couldn't construct mountpoint", img);
+        SLOGE("OBB mount failed: couldn't construct mountpoint %s", img);
         return -1;
     }
 

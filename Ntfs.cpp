@@ -42,9 +42,10 @@
 #include <cutils/properties.h>
 
 #include "Ntfs.h"
+#include "VoldUtil.h"
 
-static char NTFS_FIX_PATH[] = "/system/bin/ntfsfix";
-static char NTFS_MOUNT_PATH[] = "/system/bin/ntfs-3g";
+static char NTFS_FIX_PATH[] = HELPER_PATH "ntfsfix";
+static char NTFS_MOUNT_PATH[] = HELPER_PATH "ntfs-3g";
 
 int Ntfs::check(const char *fsPath) {
 

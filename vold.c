@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2012 The Android Open Source Project
+ * Copyright (C) 2013 The CyanogenMod Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,19 +14,8 @@
  * limitations under the License.
  */
 
-#ifndef _VOLDUTIL_H
-#define _VOLDUTIL_H
+#include "vold.h"
 
-#include <sys/cdefs.h>
-
-#ifndef HELPER_PATH
-#define HELPER_PATH "/system/bin/"
-#endif
-
-#define ARRAY_SIZE(a) (sizeof(a) / sizeof(*(a)))
-
-__BEGIN_DECLS
-  unsigned int get_blkdev_size(int fd);
-__END_DECLS
-
-#endif
+int main(int argc, char **argv) {
+    return vold_main();
+}
