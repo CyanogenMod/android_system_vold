@@ -34,8 +34,7 @@
 #include <linux/kdev_t.h>
 
 #define LOG_TAG "Vold"
-
-#include <cutils/log.h>
+#include "log.h"
 #include <cutils/properties.h>
 
 #include <logwrap/logwrap.h>

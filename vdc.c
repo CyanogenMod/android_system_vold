@@ -36,7 +36,13 @@ static void usage(char *progname);
 static int do_monitor(int sock, int stop_after_cmd);
 static int do_cmd(int sock, int argc, char **argv);
 
+#ifndef MINIVOLD
 int main(int argc, char **argv) {
+    vdc_main(argc, argv);
+}
+#endif
+
+int vdc_main(int argc, char **argv) {
     int sock;
 
     if (argc < 2)

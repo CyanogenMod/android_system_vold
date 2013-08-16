@@ -29,8 +29,7 @@
 #include <linux/kdev_t.h>
 
 #define LOG_TAG "Vold"
-
-#include <cutils/log.h>
+#include "log.h"
 
 #include <sysutils/SocketClient.h>
 
