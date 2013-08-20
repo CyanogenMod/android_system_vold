@@ -240,6 +240,8 @@ int Volume::createDeviceNode(const char *path, int major, int minor) {
 
 int Volume::formatVol(bool wipe) {
 
+    char* fstype = NULL;
+
     if (getState() == Volume::State_NoMedia) {
         errno = ENODEV;
         return -1;
@@ -291,7 +293,12 @@ int Volume::formatVol(bool wipe) {
         SLOGI("Formatting volume %s (%s)", getLabel(), devicePath);
     }
 
-    if (Fat::format(devicePath, 0, wipe)) {
+    fstype = getFsType((const char*)devicePath);
+    if (strcmp(fstype, "exfat") == 0) {
+        if (Exfat::format(devicePath)) {
+            SLOGE("Failed for format (%s) as exfat", strerror(errno));
+        }
+    } else if (Fat::format(devicePath, 0, wipe)) {
         SLOGE("Failed to format (%s)", strerror(errno));
         goto err;
     }
