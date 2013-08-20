@@ -21,6 +21,7 @@
  */
 
 #include <sys/types.h>
+#include <sys/wait.h>
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <unistd.h>
@@ -44,6 +45,7 @@
 #include "cutils/properties.h"
 #include "cutils/android_reboot.h"
 #include "hardware_legacy/power.h"
+#include <logwrap/logwrap.h>
 #include "VolumeManager.h"
 #include "VoldUtil.h"
 #include "crypto_scrypt.h"
@@ -244,7 +246,6 @@ static int put_crypt_ftr_and_key(struct crypt_mnt_ftr *crypt_ftr)
   off64_t starting_off;
   int rc = -1;
   char *fname = NULL;
-  char key_loc[PROPERTY_VALUE_MAX];
   struct stat statbuf;
 
   if (get_crypt_ftr_info(&fname, &starting_off)) {
@@ -255,8 +256,8 @@ static int put_crypt_ftr_and_key(struct crypt_mnt_ftr *crypt_ftr)
     SLOGE("Unexpected value for crypto key location\n");
     return -1;
   }
-  if ( (fd = open(fname, O_RDWR)) < 0) {
-    SLOGE("Cannot open footer file %s\n", fname);
+  if ( (fd = open(fname, O_RDWR | O_CREAT, 0600)) < 0) {
+    SLOGE("Cannot open footer file %s for put\n", fname);
     return -1;
   }
 
@@ -273,7 +274,7 @@ static int put_crypt_ftr_and_key(struct crypt_mnt_ftr *crypt_ftr)
 
   fstat(fd, &statbuf);
   /* If the keys are kept on a raw block device, do not try to truncate it. */
-  if (S_ISREG(statbuf.st_mode) && (key_loc[0] == '/')) {
+  if (S_ISREG(statbuf.st_mode)) {
     if (ftruncate(fd, 0x4000)) {
       SLOGE("Cannot set footer file size\n", fname);
       goto errout;
@@ -371,7 +372,6 @@ static int get_crypt_ftr_and_key(struct crypt_mnt_ftr *crypt_ftr)
   unsigned int nr_sec, cnt;
   off64_t starting_off;
   int rc = -1;
-  char key_loc[PROPERTY_VALUE_MAX];
   char *fname = NULL;
   struct stat statbuf;
 
@@ -384,7 +384,7 @@ static int get_crypt_ftr_and_key(struct crypt_mnt_ftr *crypt_ftr)
     return -1;
   }
   if ( (fd = open(fname, O_RDWR)) < 0) {
-    SLOGE("Cannot open footer file %s\n", fname);
+    SLOGE("Cannot open footer file %s for get\n", fname);
     return -1;
   }
 
@@ -1426,27 +1426,61 @@ static void cryptfs_init_crypt_mnt_ftr(struct crypt_mnt_ftr *ftr)
 
 static int cryptfs_enable_wipe(char *crypto_blkdev, off64_t size, int type)
 {
-    char cmdline[256];
+    const char *args[10];
+    char size_str[32]; /* Must be large enough to hold a %lld and null byte */
+    int num_args;
+    int status;
+    int tmp;
     int rc = -1;
 
     if (type == EXT4_FS) {
-        snprintf(cmdline, sizeof(cmdline), "/system/bin/make_ext4fs -a /data -l %lld %s",
-                 size * 512, crypto_blkdev);
-        SLOGI("Making empty filesystem with command %s\n", cmdline);
+        args[0] = "/system/bin/make_ext4fs";
+        args[1] = "-a";
+        args[2] = "/data";
+        args[3] = "-l";
+        snprintf(size_str, sizeof(size_str), "%lld", size * 512);
+        args[4] = size_str;
+        args[5] = crypto_blkdev;
+        num_args = 6;
+        SLOGI("Making empty filesystem with command %s %s %s %s %s %s\n",
+              args[0], args[1], args[2], args[3], args[4], args[5]);
     } else if (type== FAT_FS) {
-        snprintf(cmdline, sizeof(cmdline), "/system/bin/newfs_msdos -F 32 -O android -c 8 -s %lld %s",
-                 size, crypto_blkdev);
-        SLOGI("Making empty filesystem with command %s\n", cmdline);
+        args[0] = "/system/bin/newfs_msdos";
+        args[1] = "-F";
+        args[2] = "32";
+        args[3] = "-O";
+        args[4] = "android";
+        args[5] = "-c";
+        args[6] = "8";
+        args[7] = "-s";
+        snprintf(size_str, sizeof(size_str), "%lld", size);
+        args[8] = size_str;
+        args[9] = crypto_blkdev;
+        num_args = 10;
+        SLOGI("Making empty filesystem with command %s %s %s %s %s %s %s %s %s %s\n",
+              args[0], args[1], args[2], args[3], args[4], args[5],
+              args[6], args[7], args[8], args[9]);
     } else {
         SLOGE("cryptfs_enable_wipe(): unknown filesystem type %d\n", type);
         return -1;
     }
 
-    if (system(cmdline)) {
-      SLOGE("Error creating empty filesystem on %s\n", crypto_blkdev);
+    tmp = android_fork_execvp(num_args, (char **)args, &status, false, true);
+
+    if (tmp != 0) {
+      SLOGE("Error creating empty filesystem on %s due to logwrap error\n", crypto_blkdev);
     } else {
-      SLOGD("Successfully created empty filesystem on %s\n", crypto_blkdev);
-      rc = 0;
+        if (WIFEXITED(status)) {
+            if (WEXITSTATUS(status)) {
+                SLOGE("Error creating filesystem on %s, exit status %d ",
+                      crypto_blkdev, WEXITSTATUS(status));
+            } else {
+                SLOGD("Successfully created filesystem on %s\n", crypto_blkdev);
+                rc = 0;
+            }
+        } else {
+            SLOGE("Error creating filesystem on %s, did not exit normally\n", crypto_blkdev);
+       }
     }
 
     return rc;
