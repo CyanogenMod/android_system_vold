@@ -152,7 +152,7 @@ Volume::Volume(VolumeManager *vm, const char *label, const char *mount_point) {
         char *first, *second = NULL;
         const char *delim = ",";
 
-        property_get("ro.vold.switchablepair", switchable, "");
+        property_get("persist.sys.vold.switchablepair", switchable, "");
 
         if (!(first = strtok(switchable, delim))) {
             SLOGE("Mount switch requested, but no switchable mountpoints found");
