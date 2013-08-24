@@ -168,8 +168,8 @@ int CommandListener::VolumeCmd::runCommand(SocketClient *cli,
         }
         rc = vm->unmountVolume(argv[2], force, revert);
     } else if (!strcmp(argv[1], "format")) {
-        if (argc != 3) {
-            cli->sendMsg(ResponseCode::CommandSyntaxError, "Usage: volume format <path>", false);
+        if (argc < 3 || argc > 4) {
+            cli->sendMsg(ResponseCode::CommandSyntaxError, "Usage: volume format <path>, <fstype>", false);
             return 0;
         }
         rc = vm->formatVolume(argv[2]);

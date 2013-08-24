@@ -92,7 +92,7 @@ public:
     int shareVolume(const char *label, const char *method);
     int unshareVolume(const char *label, const char *method);
     int shareEnabled(const char *path, const char *method, bool *enabled);
-    int formatVolume(const char *label);
+    int formatVolume(const char *label, const char *fstype = NULL);
     void disableVolumeManager(void) { mVolManagerDisabled = 1; }
 
     /* ASEC */
