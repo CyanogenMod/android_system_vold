@@ -73,7 +73,7 @@ public:
 
     int mountVol();
     int unmountVol(bool force, bool revert);
-    int formatVol(bool wipe);
+    int formatVol(bool wipe, const char *fstype = NULL);
 
     const char* getLabel() { return mLabel; }
     const char* getUuid() { return mUuid; }
