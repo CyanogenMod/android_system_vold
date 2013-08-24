@@ -46,6 +46,7 @@
 
 static char NTFS_FIX_PATH[] = HELPER_PATH "ntfsfix";
 static char NTFS_MOUNT_PATH[] = HELPER_PATH "ntfs-3g";
+static char MKNTFS_PATH[] = HELPER_PATH "mkntfs";
 
 int Ntfs::check(const char *fsPath) {
 
@@ -160,3 +161,40 @@ int Ntfs::doMount(const char *fsPath, const char *mountPoint,
 
     return rc;
 }
+
+int Ntfs::format(const char *fsPath, bool wipe) {
+
+    int fd;
+    const char *args[4];
+    int rc = -1;
+    int status;
+
+    if (access(MKNTFS_PATH, X_OK)) {
+        SLOGE("Unable to format, mkntfs not found.");
+        return -1;
+    }
+
+    args[0] = MKNTFS_PATH;
+    if (wipe) {
+        args[1] = fsPath;
+        args[2] = NULL;
+    } else {
+        args[1] = "-f";
+        args[2] = fsPath;
+        args[3] = NULL;
+    }
+
+    rc = android_fork_execvp(ARRAY_SIZE(args), (char **)args, &status, false,
+            true);
+
+    if (rc == 0) {
+        SLOGI("Filesystem (NTFS) formatted OK");
+        return 0;
+    } else {
+        SLOGE("Format (NTFS) failed (unknown exit code %d)", rc);
+        errno = EIO;
+        return -1;
+    }
+    return 0;
+}
+
