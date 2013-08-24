@@ -46,6 +46,7 @@
 static char E2FSCK_PATH[] = "/system/bin/e2fsck";
 static char RESIZE2FS_PATH[] = "/system/bin/resize2fs";
 static char MKEXT4FS_PATH[] = "/system/bin/make_ext4fs";
+static char MKE2FS_PATH[] = "/system/bin/mke2fs";
 
 int Ext4::doMount(const char *fsPath, const char *mountPoint, bool ro, bool remount,
         bool executable, bool sdcard, const char *mountOpts) {
@@ -177,24 +178,32 @@ int Ext4::format(const char *fsPath, unsigned int numSectors, const char *mountp
     int rc;
     int status;
 
-    args[0] = MKEXT4FS_PATH;
-    args[1] = "-J";
-    args[2] = "-a";
-    args[3] = mountpoint;
-    if (numSectors) {
-        char tmp[32];
-        snprintf(tmp, sizeof(tmp), "%u", numSectors * 512);
-        const char *size = tmp;
-        args[4] = "-l";
-        args[5] = size;
-        args[6] = fsPath;
-        rc = android_fork_execvp(ARRAY_SIZE(args), (char **)args, &status, false, true);
-    } else {
+    if (mountpoint == NULL) {
+        args[0] = MKE2FS_PATH;
+        args[1] = "-j";
+        args[2] = "-T";
+        args[3] = "ext4";
         args[4] = fsPath;
         rc = android_fork_execvp(5, (char **)args, &status, false, true);
+    } else {
+        args[0] = MKEXT4FS_PATH;
+        args[1] = "-J";
+        args[2] = "-a";
+        args[3] = mountpoint;
+        if (numSectors) {
+            char tmp[32];
+            snprintf(tmp, sizeof(tmp), "%u", numSectors * 512);
+            const char *size = tmp;
+            args[4] = "-l";
+            args[5] = size;
+            args[6] = fsPath;
+            rc = android_fork_execvp(ARRAY_SIZE(args), (char **)args, &status, false, true);
+        } else {
+            args[4] = fsPath;
+            rc = android_fork_execvp(5, (char **)args, &status, false, true);
+        }
     }
-    rc = android_fork_execvp(ARRAY_SIZE(args), (char **)args, &status, false,
-            true);
+
     if (rc != 0) {
         SLOGE("Filesystem (ext4) format failed due to logwrap error");
         errno = EIO;
