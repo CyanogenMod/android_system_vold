@@ -72,7 +72,7 @@ public:
 
     int mountVol();
     int unmountVol(bool force, bool revert);
-    int formatVol();
+    int formatVol(const char *fstype = NULL);
 
     const char *getLabel() { return mLabel; }
     const char *getMountpoint() { return mMountpoint; }
