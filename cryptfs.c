@@ -1701,6 +1701,11 @@ int cryptfs_enable(char *howarg, char *passwd)
         }
     }
 
+    /* Unmount the /data/data partition bind-mounted on some devices. */
+    if (wait_and_unmount("/data/data")) {
+        goto error_shutting_down;
+    }
+
     /* Now unmount the /data partition. */
     if (wait_and_unmount(DATA_MNT_POINT)) {
         goto error_shutting_down;
