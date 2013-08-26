@@ -187,6 +187,7 @@ struct volume_info {
 #define VOL_ENCRYPTABLE    0x2
 #define VOL_PRIMARY        0x4
 #define VOL_PROVIDES_ASEC  0x8
+#define VOL_EXTERNAL_APPS  0x10
 
 #define DATA_MNT_POINT "/data"
 

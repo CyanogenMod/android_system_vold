@@ -325,9 +325,11 @@ void CommandListener::AsecCmd::listAsecsInDirectory(SocketClient *cli, const cha
         if (dent->d_name[0] == '.')
             continue;
 
-        if (dent->d_type != DT_UNKNOWN) {
-            if (dent->d_type != DT_REG)
-                continue;
+        // For whatever reason, the exFAT fuse driver reports DT_UNKNOWN for
+        // the .asec files, so we'll have to allow that to make external apps
+        // work properly.
+        if (dent->d_type != DT_REG && dent->d_type != DT_UNKNOWN) {
+            continue;
         } else {
             // d_type is not guaranteed to be populated (e.g. ExFAT)
             char path[MAXPATHLEN];

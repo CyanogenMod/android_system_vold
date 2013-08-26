@@ -83,6 +83,10 @@ ifneq ($(TARGET_USE_CUSTOM_LUN_FILE_PATH),)
 common_cflags += -DCUSTOM_LUN_FILE=\"$(TARGET_USE_CUSTOM_LUN_FILE_PATH)\"
 endif
 
+ifneq ($(TARGET_EXTERNAL_APPS),)
+common_cflags += -DEXTERNAL_APPS_DEVICE_LABEL=\"$(TARGET_EXTERNAL_APPS)\"
+endif
+
 include $(CLEAR_VARS)
 
 LOCAL_MODULE := libvold
