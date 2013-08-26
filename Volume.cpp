@@ -337,6 +337,11 @@ int Volume::formatVol(const char* fstype) {
         fstype2 = fstype;
     }
 
+    if (fstype == NULL) {
+        // There is no valid file system on the card
+        fstype2 = "vfat";
+    }
+
     if (mDebug) {
         SLOGI("Formatting volume %s (%s) as %s", getLabel(), devicePath, fstype2);
     }
