@@ -96,6 +96,12 @@ static char *saved_mount_point;
 static int  master_key_saved = 0;
 static struct crypt_persist_data *persist_data = NULL;
 
+#ifdef MINIVOLD
+inline int release_wake_lock(const char* id) { return 0; };
+inline int acquire_wake_lock(int lock, const char* id) { return 0; };
+#endif
+
+#ifndef MINIVOLD // no HALs in recovery...
 static int keymaster_init(keymaster_device_t **keymaster_dev)
 {
     int rc;
@@ -120,6 +126,7 @@ out:
     *keymaster_dev = NULL;
     return rc;
 }
+#endif
 
 /* Should we use keymaster? */
 static int keymaster_check_compatibility()
@@ -127,6 +134,9 @@ static int keymaster_check_compatibility()
     keymaster_device_t *keymaster_dev = 0;
     int rc = 0;
 
+#ifdef MINIVOLD
+    return -1;
+#endif
     if (keymaster_init(&keymaster_dev)) {
         SLOGE("Failed to init keymaster");
         rc = -1;
@@ -153,6 +163,9 @@ out:
 /* Create a new keymaster key and store it in this footer */
 static int keymaster_create_key(struct crypt_mnt_ftr *ftr)
 {
+#ifdef MINIVOLD // no HALs in recovery...
+    return -1;
+#else
     uint8_t* key = 0;
     keymaster_device_t *keymaster_dev = 0;
 
@@ -189,6 +202,7 @@ out:
     keymaster_close(keymaster_dev);
     free(key);
     return rc;
+#endif
 }
 
 /* This signs the given object using the keymaster key. */
@@ -198,6 +212,9 @@ static int keymaster_sign_object(struct crypt_mnt_ftr *ftr,
                                  unsigned char **signature,
                                  size_t *signature_size)
 {
+#ifdef MINIVOLD // no HALs in recovery...
+    return -1;
+#else
     int rc = 0;
     keymaster_device_t *keymaster_dev = 0;
     if (keymaster_init(&keymaster_dev)) {
@@ -275,6 +292,7 @@ static int keymaster_sign_object(struct crypt_mnt_ftr *ftr,
 
     keymaster_close(keymaster_dev);
     return rc;
+#endif
 }
 
 /* Store password when userdata is successfully decrypted and mounted.
