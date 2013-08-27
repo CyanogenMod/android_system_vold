@@ -446,12 +446,14 @@ int Volume::mountVol() {
 
         extractMetadata(devicePath);
 
+#ifndef MINIVOLD
         if (providesAsec && mountAsecExternal() != 0) {
             SLOGE("Failed to mount secure area (%s)", strerror(errno));
             umount(getMountpoint());
             setState(Volume::State_Idle);
             return -1;
         }
+#endif
 
         char service[64];
         snprintf(service, 64, "fuse_%s", getLabel());

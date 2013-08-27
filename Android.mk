@@ -31,27 +31,30 @@ common_c_includes := \
 	hardware/libhardware/include/hardware \
 	system/security/softkeymaster/include/keymaster
 
-common_shared_libraries := \
+common_libraries := \
 	libsysutils \
-	libstlport \
 	libbinder \
 	libcutils \
 	liblog \
 	libdiskconfig \
-	libhardware_legacy \
 	liblogwrap \
-	libext4_utils \
 	libf2fs_sparseblock \
-	libcrypto \
 	libselinux \
 	libutils \
+
+common_shared_libraries := \
+	$(common_libraries) \
+	libhardware_legacy \
+	libcrypto \
 	libhardware \
+	libstlport \
 	libsoftkeymaster
 
 common_static_libraries := \
 	libfs_mgr \
+	libext4_utils_static \
 	libscrypt_static \
-	libmincrypt \
+	libminshacrypt \
 	libbatteryservice
 
 include $(CLEAR_VARS)
@@ -106,4 +109,27 @@ LOCAL_CFLAGS :=
 
 LOCAL_SHARED_LIBRARIES := libcutils
 
+include $(BUILD_EXECUTABLE)
+
+include $(CLEAR_VARS)
+LOCAL_MODULE:= libminivold
+LOCAL_SRC_FILES := $(common_src_files)
+LOCAL_C_INCLUDES := $(common_c_includes) system/core/fs_mgr/include system/core/logwrapper/include
+LOCAL_CFLAGS := $(common_cflags) -DMINIVOLD -DHELPER_PATH=\"/sbin/\"
+LOCAL_MODULE_TAGS := optional
+include $(BUILD_STATIC_LIBRARY)
+
+include $(CLEAR_VARS)
+LOCAL_MODULE:= minivold
+LOCAL_SRC_FILES := main.cpp
+LOCAL_C_INCLUDES := $(common_c_includes)
+LOCAL_CFLAGS := $(common_cflags) -DMINIVOLD
+LOCAL_STATIC_LIBRARIES := libminivold
+LOCAL_STATIC_LIBRARIES += libc libstdc++ libstlport_static
+LOCAL_STATIC_LIBRARIES += $(common_static_libraries) $(common_libraries)
+LOCAL_STATIC_LIBRARIES += libcrypto_static libext2_uuid libvold
+LOCAL_FORCE_STATIC_EXECUTABLE := true
+LOCAL_MODULE_CLASS := RECOVERY_EXECUTABLES
+LOCAL_MODULE_PATH := $(TARGET_RECOVERY_ROOT_OUT)/sbin
+LOCAL_MODULE_TAGS := optional
 include $(BUILD_EXECUTABLE)
