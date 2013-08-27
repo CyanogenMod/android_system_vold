@@ -65,6 +65,9 @@ common_libraries := \
 
 common_static_libraries := \
 	libfs_mgr \
+	libext4_utils_static \
+	libscrypt_static \
+	libminshacrypt \
 	libpower
 
 include $(CLEAR_VARS)
@@ -109,7 +112,9 @@ LOCAL_CFLAGS := $(common_cflags) -DMINIVOLD
 LOCAL_STATIC_LIBRARIES := libminivold
 LOCAL_STATIC_LIBRARIES += libc libstdc++
 LOCAL_STATIC_LIBRARIES += $(common_libraries) $(common_static_libraries)
-LOCAL_STATIC_LIBRARIES += libcrypto_static libext2_uuid
+LOCAL_STATIC_LIBRARIES += libcrypto_static libext2_uuid libvold
 LOCAL_FORCE_STATIC_EXECUTABLE := true
-LOCAL_MODULE_TAGS := eng
+LOCAL_MODULE_CLASS := RECOVERY_EXECUTABLES
+LOCAL_MODULE_PATH := $(TARGET_RECOVERY_ROOT_OUT)/sbin
+LOCAL_MODULE_TAGS := optional
 include $(BUILD_EXECUTABLE)
