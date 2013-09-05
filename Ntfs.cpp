@@ -164,7 +164,7 @@ int Ntfs::doMount(const char *fsPath, const char *mountPoint,
 int Ntfs::format(const char *fsPath) {
 
     int fd;
-    const char *args[3];
+    const char *args[4];
     int rc = -1;
     int status;
 
@@ -174,8 +174,9 @@ int Ntfs::format(const char *fsPath) {
     }
 
     args[0] = MKNTFS_PATH;
-    args[1] = fsPath;
-    args[2] = NULL;
+    args[1] = "-f";
+    args[2] = fsPath;
+    args[3] = NULL;
 
     rc = android_fork_execvp(ARRAY_SIZE(args), (char **)args, &status, false,
             true);
