@@ -65,13 +65,6 @@ private:
         int runCommand(SocketClient *c, int argc, char ** argv);
     };
 
-    class XwarpCmd : public VoldCommand {
-    public:
-        XwarpCmd();
-        virtual ~XwarpCmd() {}
-        int runCommand(SocketClient *c, int argc, char ** argv);
-    };
-
     class CryptfsCmd : public VoldCommand {
     public:
         CryptfsCmd();

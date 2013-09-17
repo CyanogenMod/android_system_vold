@@ -14,7 +14,6 @@ common_src_files := \
 	Loop.cpp \
 	Devmapper.cpp \
 	ResponseCode.cpp \
-	Xwarp.cpp \
 	VoldUtil.c \
 	fstrim.c \
 	cryptfs.c
