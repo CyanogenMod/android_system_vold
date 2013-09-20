@@ -140,6 +140,15 @@ public:
     int getDirectVolumeList(struct volume_info *vol_list);
     int unmountAllAsecsInDir(const char *directory);
 
+    /*
+     * Ensure that all directories along given path exist, creating parent
+     * directories as needed.  Validates that given path is absolute and that
+     * it contains no relative "." or ".." paths or symlinks.  Last path segment
+     * is treated as filename and ignored, unless the path ends with "/".  Also
+     * ensures that path belongs to a volume managed by vold.
+     */
+    int mkdirs(char* path);
+
 private:
     VolumeManager();
     void readInitialState();

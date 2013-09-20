@@ -32,6 +32,7 @@
 
 #include <openssl/md5.h>
 
+#include <cutils/fs.h>
 #include <cutils/log.h>
 
 #include <sysutils/NetlinkEvent.h>
@@ -1577,6 +1578,26 @@ int VolumeManager::cleanupAsec(Volume *v, bool force) {
     }
 
     return rc;
-
 }
 
+int VolumeManager::mkdirs(char* path) {
+    // Require that path lives under a volume we manage
+    const char* emulated_source = getenv("EMULATED_STORAGE_SOURCE");
+    const char* root = NULL;
+    if (!strncmp(path, emulated_source, strlen(emulated_source))) {
+        root = emulated_source;
+    } else {
+        Volume* vol = getVolumeForFile(path);
+        if (vol) {
+            root = vol->getMountpoint();
+        }
+    }
+
+    if (!root) {
+        SLOGE("Failed to find volume for %s", path);
+        return -EINVAL;
+    }
+
+    /* fs_mkdirs() does symlink checking and relative path enforcement */
+    return fs_mkdirs(path, 0700);
+}

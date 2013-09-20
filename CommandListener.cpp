@@ -200,6 +200,12 @@ int CommandListener::VolumeCmd::runCommand(SocketClient *cli,
                     (enabled ? "Share enabled" : "Share disabled"), false);
         }
         return 0;
+    } else if (!strcmp(argv[1], "mkdirs")) {
+        if (argc != 3) {
+            cli->sendMsg(ResponseCode::CommandSyntaxError, "Usage: volume mkdirs <path>", false);
+            return 0;
+        }
+        rc = vm->mkdirs(argv[2]);
     } else {
         cli->sendMsg(ResponseCode::CommandSyntaxError, "Unknown volume cmd", false);
     }
