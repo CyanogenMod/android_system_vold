@@ -29,6 +29,9 @@ class DirectVolume : public Volume {
 public:
     static const int MAX_PARTITIONS = 32;
 protected:
+    const char* mMountpoint;
+    const char* mFuseMountpoint;
+
     PathCollection *mPaths;
     int            mDiskMajor;
     int            mDiskMinor;
@@ -42,10 +45,13 @@ protected:
     int            mFlags;
 
 public:
-    DirectVolume(VolumeManager *vm, const char *label, const char *mount_point, int partIdx);
+    DirectVolume(VolumeManager *vm, const fstab_rec* rec, int flags);
     virtual ~DirectVolume();
 
     int addPath(const char *path);
+
+    const char *getMountpoint() { return mMountpoint; }
+    const char *getFuseMountpoint() { return mFuseMountpoint; }
 
     int handleBlockEvent(NetlinkEvent *evt);
     dev_t getDiskDevice();
@@ -53,7 +59,6 @@ public:
     void handleVolumeShared();
     void handleVolumeUnshared();
     int getVolInfo(struct volume_info *v);
-    void setFlags(int flags);
 
 protected:
     int getDeviceNodes(dev_t *devs, int max);

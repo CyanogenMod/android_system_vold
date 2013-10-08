@@ -159,7 +159,7 @@ int VolumeManager::listVolumes(SocketClient *cli) {
     for (i = mVolumes->begin(); i != mVolumes->end(); ++i) {
         char *buffer;
         asprintf(&buffer, "%s %s %d",
-                 (*i)->getLabel(), (*i)->getMountpoint(),
+                 (*i)->getLabel(), (*i)->getFuseMountpoint(),
                  (*i)->getState());
         cli->sendMsg(ResponseCode::VolumeListResult, buffer, false);
         free(buffer);
@@ -1054,7 +1054,7 @@ Volume* VolumeManager::getVolumeForFile(const char *fileName) {
     VolumeCollection::iterator i;
 
     for (i = mVolumes->begin(); i != mVolumes->end(); ++i) {
-        const char* mountPoint = (*i)->getMountpoint();
+        const char* mountPoint = (*i)->getFuseMountpoint();
         if (!strncmp(fileName, mountPoint, strlen(mountPoint))) {
             return *i;
         }
@@ -1512,7 +1512,7 @@ Volume *VolumeManager::lookupVolume(const char *label) {
 
     for (i = mVolumes->begin(); i != mVolumes->end(); ++i) {
         if (label[0] == '/') {
-            if (!strcmp(label, (*i)->getMountpoint()))
+            if (!strcmp(label, (*i)->getFuseMountpoint()))
                 return (*i);
         } else {
             if (!strcmp(label, (*i)->getLabel()))
@@ -1570,7 +1570,7 @@ int VolumeManager::cleanupAsec(Volume *v, bool force) {
 
     for (AsecIdCollection::iterator it = toUnmount.begin(); it != toUnmount.end(); ++it) {
         ContainerData *cd = *it;
-        SLOGI("Unmounting ASEC %s (dependant on %s)", cd->id, v->getMountpoint());
+        SLOGI("Unmounting ASEC %s (dependant on %s)", cd->id, v->getFuseMountpoint());
         if (unmountObb(cd->id, force)) {
             SLOGE("Failed to unmount OBB %s (%s)", cd->id, strerror(errno));
             rc = -1;

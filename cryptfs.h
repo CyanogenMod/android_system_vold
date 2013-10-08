@@ -127,8 +127,10 @@ struct volume_info {
    char crypto_blkdev[256];
    char label[256];
 };
-#define VOL_NONREMOVABLE 0x1
-#define VOL_ENCRYPTABLE  0x2
+#define VOL_NONREMOVABLE   0x1
+#define VOL_ENCRYPTABLE    0x2
+#define VOL_PRIMARY        0x4
+#define VOL_PROVIDES_ASEC  0x8
 
 #ifdef __cplusplus
 extern "C" {
