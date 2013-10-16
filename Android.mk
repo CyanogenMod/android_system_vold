@@ -23,10 +23,13 @@ common_c_includes := \
 	$(KERNEL_HEADERS) \
 	system/extras/ext4_utils \
 	external/openssl/include \
+	external/stlport/stlport \
+	bionic \
 	external/scrypt/lib/crypto
 
 common_shared_libraries := \
 	libsysutils \
+	libstlport \
 	libcutils \
 	liblog \
 	libdiskconfig \
