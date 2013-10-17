@@ -1549,28 +1549,49 @@ bool VolumeManager::isMountpointMounted(const char *mp)
 }
 
 int VolumeManager::cleanupAsec(Volume *v, bool force) {
-    int rc = unmountAllAsecsInDir(Volume::SEC_ASECDIR_EXT);
+    int rc = 0;
 
-    AsecIdCollection toUnmount;
-    // Find the remaining OBB files that are on external storage.
+    char asecFileName[255];
+
+    AsecIdCollection removeAsec;
+    AsecIdCollection removeObb;
+
     for (AsecIdCollection::iterator it = mActiveContainers->begin(); it != mActiveContainers->end();
             ++it) {
         ContainerData* cd = *it;
 
         if (cd->type == ASEC) {
-            // nothing
+            if (findAsec(cd->id, asecFileName, sizeof(asecFileName))) {
+                SLOGE("Couldn't find ASEC %s; cleaning up", cd->id);
+                removeAsec.push_back(cd);
+            } else {
+                SLOGD("Found ASEC at path %s", asecFileName);
+                if (!strncmp(asecFileName, Volume::SEC_ASECDIR_EXT,
+                        strlen(Volume::SEC_ASECDIR_EXT))) {
+                    removeAsec.push_back(cd);
+                }
+            }
         } else if (cd->type == OBB) {
             if (v == getVolumeForFile(cd->id)) {
-                toUnmount.push_back(cd);
+                removeObb.push_back(cd);
             }
         } else {
             SLOGE("Unknown container type %d!", cd->type);
         }
     }
 
-    for (AsecIdCollection::iterator it = toUnmount.begin(); it != toUnmount.end(); ++it) {
+    for (AsecIdCollection::iterator it = removeAsec.begin(); it != removeAsec.end(); ++it) {
         ContainerData *cd = *it;
-        SLOGI("Unmounting ASEC %s (dependant on %s)", cd->id, v->getFuseMountpoint());
+        SLOGI("Unmounting ASEC %s (dependent on %s)", cd->id, v->getLabel());
+        if (unmountAsec(cd->id, force)) {
+            SLOGE("Failed to unmount ASEC %s (%s)", cd->id, strerror(errno));
+            rc = -1;
+        }
+    }
+
+    for (AsecIdCollection::iterator it = removeObb.begin(); it != removeObb.end(); ++it) {
+        ContainerData *cd = *it;
+        SLOGI("Unmounting OBB %s (dependent on %s)", cd->id, v->getLabel());
         if (unmountObb(cd->id, force)) {
             SLOGE("Failed to unmount OBB %s (%s)", cd->id, strerror(errno));
             rc = -1;
