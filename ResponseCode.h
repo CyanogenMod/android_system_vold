@@ -57,6 +57,8 @@ public:
     static const int VolumeMountFailedBlank         = 610;
     static const int VolumeMountFailedDamaged       = 611;
     static const int VolumeMountFailedNoMedia       = 612;
+    static const int VolumeUuidChange               = 613;
+    static const int VolumeUserLabelChange          = 614;
 
     static const int ShareAvailabilityChange        = 620;
 
