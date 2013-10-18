@@ -42,7 +42,6 @@ protected:
     int            mDiskNumParts;
     unsigned int   mPendingPartMap;
     int            mIsDecrypted;
-    int            mFlags;
 
 public:
     DirectVolume(VolumeManager *vm, const fstab_rec* rec, int flags);
@@ -65,7 +64,6 @@ protected:
     int updateDeviceInfo(char *new_path, int new_major, int new_minor);
     virtual void revertDeviceInfo(void);
     int isDecrypted() { return mIsDecrypted; }
-    int getFlags() { return mFlags; }
 
 private:
     void handleDiskAdded(const char *devpath, NetlinkEvent *evt);
