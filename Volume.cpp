@@ -72,6 +72,7 @@ const char *Volume::SEC_ASECDIR_EXT   = "/mnt/secure/asec";
  * Path to internal storage where *only* root can access ASEC image files
  */
 const char *Volume::SEC_ASECDIR_INT   = "/data/app-asec";
+
 /*
  * Path to where secure containers are mounted
  */
@@ -480,6 +481,7 @@ int Volume::mountAsecExternal() {
     }
 
     if (fs_prepare_dir(secure_path, 0770, AID_MEDIA_RW, AID_MEDIA_RW) != 0) {
+        SLOGW("fs_prepare_dir failed: %s", strerror(errno));
         return -1;
     }
 
@@ -662,7 +664,7 @@ int Volume::extractMetadata(const char* devicePath) {
     char line[1024];
     char value[128];
     if (fgets(line, sizeof(line), fp) != NULL) {
-        ALOGD("blkid reported: %s", line);
+        ALOGD("blkid identified as %s", line);
 
         char* start = strstr(line, "UUID=") + 5;
         if (sscanf(start, "\"%127[^\"]\"", value) == 1) {
@@ -678,6 +680,7 @@ int Volume::extractMetadata(const char* devicePath) {
             setUserLabel(NULL);
         }
     } else {
+        ALOGW("blkid failed to identify %s", devicePath);
         res = -1;
     }
 
