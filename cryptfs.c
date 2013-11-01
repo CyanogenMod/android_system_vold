@@ -51,7 +51,6 @@
 #include "crypto_scrypt.h"
 
 #define DM_CRYPT_BUF_SIZE 4096
-#define DATA_MNT_POINT "/data"
 
 #define HASH_COUNT 2000
 #define KEY_LEN_BYTES 16
@@ -1576,7 +1575,7 @@ static inline int should_encrypt(struct volume_info *volume)
             (VOL_ENCRYPTABLE | VOL_NONREMOVABLE);
 }
 
-int cryptfs_enable(char *howarg, char *passwd)
+int cryptfs_enable(char *howarg, char *passwd, int allow_reboot)
 {
     int how = 0;
     char crypto_blkdev[MAXPATHLEN], real_blkdev[MAXPATHLEN], sd_crypto_blkdev[MAXPATHLEN];
@@ -1597,7 +1596,7 @@ int cryptfs_enable(char *howarg, char *passwd)
     off64_t cur_encryption_done=0, tot_encryption_size=0;
 
     property_get("ro.crypto.state", encrypted_state, "");
-    if (strcmp(encrypted_state, "unencrypted")) {
+    if (!strcmp(encrypted_state, "encrypted")) {
         SLOGE("Device is already running encrypted, aborting");
         goto error_unencrypted;
     }
@@ -1703,7 +1702,11 @@ int cryptfs_enable(char *howarg, char *passwd)
 
     /* Now unmount the /data partition. */
     if (wait_and_unmount(DATA_MNT_POINT)) {
-        goto error_shutting_down;
+        if (allow_reboot) {
+            goto error_shutting_down;
+        } else {
+            goto error_unencrypted;
+        }
     }
 
     /* Do extra work for a better UX when doing the long inplace encryption */
@@ -1757,7 +1760,7 @@ int cryptfs_enable(char *howarg, char *passwd)
     /* Make an encrypted master key */
     if (create_encrypted_random_key(passwd, crypt_ftr.master_key, crypt_ftr.salt, &crypt_ftr)) {
         SLOGE("Cannot create encrypted master key\n");
-        goto error_unencrypted;
+        goto error_shutting_down;
     }
 
     /* Write the key to the end of the partition */
@@ -1829,7 +1832,7 @@ int cryptfs_enable(char *howarg, char *passwd)
     } else {
         /* Shouldn't happen */
         SLOGE("cryptfs_enable: internal error, unknown option\n");
-        goto error_unencrypted;
+        goto error_shutting_down;
     }
 
     /* Undo the dm-crypt mapping whether we succeed or not */

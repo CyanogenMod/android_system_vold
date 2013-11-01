@@ -132,6 +132,8 @@ struct volume_info {
 #define VOL_PRIMARY        0x4
 #define VOL_PROVIDES_ASEC  0x8
 
+#define DATA_MNT_POINT "/data"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -142,7 +144,7 @@ extern "C" {
   int cryptfs_check_passwd(char *pw);
   int cryptfs_verify_passwd(char *newpw);
   int cryptfs_restart(void);
-  int cryptfs_enable(char *flag, char *passwd);
+  int cryptfs_enable(char *flag, char *passwd, int allow_reboot);
   int cryptfs_changepw(char *newpw);
   int cryptfs_setup_volume(const char *label, int major, int minor,
                            char *crypto_dev_path, unsigned int max_pathlen,

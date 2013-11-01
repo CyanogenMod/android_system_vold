@@ -549,7 +549,12 @@ int CommandListener::CryptfsCmd::runCommand(SocketClient *cli,
             return 0;
         }
         dumpArgs(argc, argv, 3);
-        rc = cryptfs_enable(argv[2], argv[3]);
+        rc = cryptfs_enable(argv[2], argv[3], /*allow_reboot*/false);
+        if (rc) {
+            Process::killProcessesWithOpenFiles(DATA_MNT_POINT, 2);
+            rc = cryptfs_enable(argv[2], argv[3], true);
+        }
+
     } else if (!strcmp(argv[1], "changepw")) {
         if (argc != 3) {
             cli->sendMsg(ResponseCode::CommandSyntaxError, "Usage: cryptfs changepw <newpasswd>", false);
