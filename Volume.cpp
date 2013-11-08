@@ -20,6 +20,7 @@
 #include <errno.h>
 #include <fcntl.h>
 
+#include <sys/ioctl.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -27,6 +28,7 @@
 #include <sys/mount.h>
 #include <sys/param.h>
 
+#include <linux/msdos_fs.h>
 #include <linux/kdev_t.h>
 
 #include <cutils/properties.h>
@@ -453,6 +455,13 @@ int Volume::mountVol() {
                             AID_MEDIA_RW, AID_MEDIA_RW, 0007, true)) {
                     SLOGE("%s failed to mount via VFAT (%s)\n", devicePath, strerror(errno));
                     continue;
+                } else {
+                    // Store volume id to system prop so MediaProvider can read it later
+                    char volStr[33];
+                    snprintf(volStr, 33, "%d", getFatVolumeId(getMountpoint()));
+                    char volProp[PROPERTY_VALUE_MAX];
+                    snprintf(volProp, PROPERTY_VALUE_MAX, "sys.storage.volumeid-%s", getLabel());
+                    property_set(volProp, volStr);
                 }
 
             } else if (strcmp(fstype, "ext4") == 0) {
@@ -710,4 +719,16 @@ int Volume::initializeMbr(const char *deviceNode) {
     free(dinfo.part_lst);
 
     return rc;
+}
+
+int Volume::getFatVolumeId(const char* path) {
+    int result = -1;
+    int fd = open(path, O_RDONLY);
+
+    if (fd >= 0) {
+        result = ioctl(fd, VFAT_IOCTL_GET_VOLUME_ID);
+        close(fd);
+    }
+
+    return result;
 }

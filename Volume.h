@@ -111,6 +111,7 @@ private:
     int doUnmount(const char *path, bool force);
     int doFuseMount(const char *src, const char *dst);
     void protectFromAutorunStupidity();
+    int getFatVolumeId(const char *path);
 };
 
 typedef android::List<Volume *> VolumeCollection;
