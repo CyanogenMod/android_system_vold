@@ -12,14 +12,6 @@ ifeq ($(BOARD_VOLD_DISC_HAS_MULTIPLE_MAJORS), true)
 common_cflags += -DVOLD_DISC_HAS_MULTIPLE_MAJORS
 endif
 
-ifneq ($(TARGET_FUSE_SDCARD_UID),)
-common_cflags += -DFUSE_SDCARD_UID=$(TARGET_FUSE_SDCARD_UID)
-endif
-
-ifneq ($(TARGET_FUSE_SDCARD_GID),)
-common_cflags += -DFUSE_SDCARD_GID=$(TARGET_FUSE_SDCARD_GID)
-endif
-
 common_cflags += -Werror
 
 common_src_files := \
