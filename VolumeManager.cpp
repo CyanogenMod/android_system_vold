@@ -1599,7 +1599,7 @@ int VolumeManager::mkdirs(char* path) {
     // Require that path lives under a volume we manage
     const char* emulated_source = getenv("EMULATED_STORAGE_SOURCE");
     const char* root = NULL;
-    if (!strncmp(path, emulated_source, strlen(emulated_source))) {
+    if (emulated_source && !strncmp(path, emulated_source, strlen(emulated_source))) {
         root = emulated_source;
     } else {
         Volume* vol = getVolumeForFile(path);
