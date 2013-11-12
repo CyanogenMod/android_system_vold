@@ -492,7 +492,7 @@ int Volume::mountVol() {
                     return -1;
                 }
 
-                if (Ext4::doMount(devicePath, getMountpoint(), false, false, false)) {
+                if (Ext4::doMount(devicePath, getMountpoint(), false, false, false, true)) {
                     SLOGE("%s failed to mount via EXT4 (%s)\n", devicePath, strerror(errno));
                     continue;
                 }
