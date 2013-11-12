@@ -48,9 +48,10 @@ static char RESIZE2FS_PATH[] = "/system/bin/resize2fs";
 static char MKEXT4FS_PATH[] = "/system/bin/make_ext4fs";
 
 int Ext4::doMount(const char *fsPath, const char *mountPoint, bool ro, bool remount,
-        bool executable) {
+        bool executable, bool sdcard) {
     int rc;
     unsigned long flags;
+    const char *data = NULL;
 
     flags = MS_NOATIME | MS_NODEV | MS_NOSUID | MS_DIRSYNC;
 
@@ -58,12 +59,17 @@ int Ext4::doMount(const char *fsPath, const char *mountPoint, bool ro, bool remo
     flags |= (ro ? MS_RDONLY : 0);
     flags |= (remount ? MS_REMOUNT : 0);
 
-    rc = mount(fsPath, mountPoint, "ext4", flags, NULL);
+    if (sdcard) {
+        // Mount external volumes with forced context
+        data = "context=u:object_r:sdcard_external:s0";
+    }
+
+    rc = mount(fsPath, mountPoint, "ext4", flags, data);
 
     if (rc && errno == EROFS) {
         SLOGE("%s appears to be a read only filesystem - retrying mount RO", fsPath);
         flags |= MS_RDONLY;
-        rc = mount(fsPath, mountPoint, "ext4", flags, NULL);
+        rc = mount(fsPath, mountPoint, "ext4", flags, data);
     }
 
     return rc;
