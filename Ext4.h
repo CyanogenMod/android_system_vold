@@ -22,7 +22,7 @@
 class Ext4 {
 public:
     static int doMount(const char *fsPath, const char *mountPoint, bool ro, bool remount,
-            bool executable);
+            bool executable, bool sdcard);
     static int check(const char *fsPath);
     static int format(const char *fsPath, const char *mountpoint);
 };
