@@ -50,10 +50,16 @@ DirectVolume::DirectVolume(VolumeManager *vm, const fstab_rec* rec, int flags) :
 
     char mount[PATH_MAX];
 
+#ifdef MINIVOLD
+    // In recovery, directly mount to /storage/* since we have no fuse daemon
+    snprintf(mount, PATH_MAX, "%s/%s", Volume::FUSE_DIR, rec->label);
+    mMountpoint = mFuseMountpoint = strdup(mount);
+#else
     snprintf(mount, PATH_MAX, "%s/%s", Volume::MEDIA_DIR, rec->label);
     mMountpoint = strdup(mount);
     snprintf(mount, PATH_MAX, "%s/%s", Volume::FUSE_DIR, rec->label);
     mFuseMountpoint = strdup(mount);
+#endif
 
     setState(Volume::State_NoMedia);
 }
