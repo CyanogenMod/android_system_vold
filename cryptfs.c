@@ -350,6 +350,9 @@ static void upgrade_crypt_ftr(int fd, struct crypt_mnt_ftr *crypt_ftr, off64_t o
 
     if ((crypt_ftr->major_version == 1) && (crypt_ftr->minor_version)) {
         SLOGW("upgrading crypto footer to 1.2");
+        /* But keep the old kdf_type.
+         * It will get updated later to KDF_SCRYPT after the password has been verified.
+         */
         crypt_ftr->kdf_type = KDF_PBKDF2;
         get_device_scrypt_params(crypt_ftr);
         crypt_ftr->minor_version = 2;
@@ -921,7 +924,7 @@ static int encrypt_master_key(char *passwd, unsigned char *salt,
     }
 }
 
-static int decrypt_master_key(char *passwd, unsigned char *salt,
+static int decrypt_master_key_aux(char *passwd, unsigned char *salt,
                               unsigned char *encrypted_master_key,
                               unsigned char *decrypted_master_key,
                               kdf_func kdf, void *kdf_params)
@@ -965,7 +968,7 @@ static void get_kdf_func(struct crypt_mnt_ftr *ftr, kdf_func *kdf, void** kdf_pa
     }
 }
 
-static int decrypt_master_key_and_upgrade(char *passwd, unsigned char *decrypted_master_key,
+static int decrypt_master_key(char *passwd, unsigned char *decrypted_master_key,
         struct crypt_mnt_ftr *crypt_ftr)
 {
     kdf_func kdf;
@@ -973,21 +976,10 @@ static int decrypt_master_key_and_upgrade(char *passwd, unsigned char *decrypted
     int ret;
 
     get_kdf_func(crypt_ftr, &kdf, &kdf_params);
-    ret = decrypt_master_key(passwd, crypt_ftr->salt, crypt_ftr->master_key, decrypted_master_key, kdf,
+    ret = decrypt_master_key_aux(passwd, crypt_ftr->salt, crypt_ftr->master_key, decrypted_master_key, kdf,
             kdf_params);
     if (ret != 0) {
         SLOGW("failure decrypting master key");
-        return ret;
-    }
-
-    /*
-     * Upgrade if we're not using the latest KDF.
-     */
-    if (crypt_ftr->kdf_type != KDF_SCRYPT) {
-        crypt_ftr->kdf_type = KDF_SCRYPT;
-        encrypt_master_key(passwd, crypt_ftr->salt, decrypted_master_key, crypt_ftr->master_key,
-                crypt_ftr);
-        put_crypt_ftr_and_key(crypt_ftr);
     }
 
     return ret;
@@ -1229,7 +1221,10 @@ static int test_mount_encrypted_fs(char *passwd, char *mount_point, char *label)
   orig_failed_decrypt_count = crypt_ftr.failed_decrypt_count;
 
   if (! (crypt_ftr.flags & CRYPT_MNT_KEY_UNENCRYPTED) ) {
-    decrypt_master_key_and_upgrade(passwd, decrypted_master_key, &crypt_ftr);
+    if (decrypt_master_key(passwd, decrypted_master_key, &crypt_ftr)) {
+      SLOGE("Failed to decrypt master key\n");
+      return -1;
+    }
   }
 
   if (create_crypto_blk_dev(&crypt_ftr, decrypted_master_key,
@@ -1279,7 +1274,20 @@ static int test_mount_encrypted_fs(char *passwd, char *mount_point, char *label)
     memcpy(saved_master_key, decrypted_master_key, KEY_LEN_BYTES);
     saved_mount_point = strdup(mount_point);
     master_key_saved = 1;
+    SLOGD("%s(): Master key saved\n", __FUNCTION__);
     rc = 0;
+    /*
+     * Upgrade if we're not using the latest KDF.
+     */
+    if (crypt_ftr.kdf_type != KDF_SCRYPT) {
+        crypt_ftr.kdf_type = KDF_SCRYPT;
+        rc = encrypt_master_key(passwd, crypt_ftr.salt, saved_master_key, crypt_ftr.master_key,
+                &crypt_ftr);
+        if (!rc) {
+            rc = put_crypt_ftr_and_key(&crypt_ftr);
+        }
+        SLOGD("Key Derivation Function upgrade: rc=%d\n", rc);
+    }
   }
 
   return rc;
@@ -1382,7 +1390,7 @@ int cryptfs_verify_passwd(char *passwd)
         /* If the device has no password, then just say the password is valid */
         rc = 0;
     } else {
-        decrypt_master_key_and_upgrade(passwd, decrypted_master_key, &crypt_ftr);
+        decrypt_master_key(passwd, decrypted_master_key, &crypt_ftr);
         if (!memcmp(decrypted_master_key, saved_master_key, crypt_ftr.keysize)) {
             /* They match, the password is correct */
             rc = 0;
@@ -1780,7 +1788,7 @@ int cryptfs_enable(char *howarg, char *passwd, int allow_reboot)
         save_persistent_data();
     }
 
-    decrypt_master_key_and_upgrade(passwd, decrypted_master_key, &crypt_ftr);
+    decrypt_master_key(passwd, decrypted_master_key, &crypt_ftr);
     create_crypto_blk_dev(&crypt_ftr, decrypted_master_key, real_blkdev, crypto_blkdev,
                           "userdata");
 
