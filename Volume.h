@@ -58,6 +58,7 @@ protected:
     int mPartIdx;
     int mOrigPartIdx;
     bool mRetryMount;
+    int mLunNumber;
 
     /*
      * The major/minor tuple of the currently mounted filesystem.
@@ -77,6 +78,9 @@ public:
     const char* getUserLabel() { return mUserLabel; }
     int getState() { return mState; }
     int getFlags() { return mFlags; };
+
+    int getLunNumber() { return mLunNumber; }
+    void setLunNumber(int lunNumber) { mLunNumber = lunNumber; }
 
     /* Mountpoint of the raw volume */
     virtual const char *getMountpoint() = 0;
