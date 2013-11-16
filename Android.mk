@@ -12,6 +12,10 @@ ifeq ($(BOARD_VOLD_DISC_HAS_MULTIPLE_MAJORS), true)
 common_cflags += -DVOLD_DISC_HAS_MULTIPLE_MAJORS
 endif
 
+ifneq ($(TARGET_USE_CUSTOM_LUN_FILE_PATH),)
+common_cflags += -DCUSTOM_LUN_FILE=\"$(TARGET_USE_CUSTOM_LUN_FILE_PATH)\"
+endif
+
 common_cflags += -Werror
 
 common_src_files := \
