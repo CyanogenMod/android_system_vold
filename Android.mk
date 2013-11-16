@@ -69,6 +69,10 @@ common_static_libraries := \
 
 include $(CLEAR_VARS)
 
+ifneq ($(TARGET_USE_CUSTOM_LUN_FILE_PATH),)
+common_cflags += -DCUSTOM_LUN_FILE=\"$(TARGET_USE_CUSTOM_LUN_FILE_PATH)\"
+endif
+
 LOCAL_MODULE := libvold
 
 LOCAL_SRC_FILES := $(common_src_files)
