@@ -22,7 +22,7 @@
 #include "Volume.h"
 
 #ifndef VOLD_MAX_PARTITIONS
-#define VOLD_MAX_PARTITIONS 4
+#define VOLD_MAX_PARTITIONS 32
 #endif
 
 typedef android::List<char *> PathCollection;
