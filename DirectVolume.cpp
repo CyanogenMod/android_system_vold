@@ -42,6 +42,9 @@ DirectVolume::DirectVolume(VolumeManager *vm, const fstab_rec* rec, int flags) :
     mDiskMajor = -1;
     mDiskMinor = -1;
     mDiskNumParts = 0;
+    mIsDecrypted = 0;
+    mOrigDiskMajor = -1;
+    mOrigDiskMinor = -1;
 
     if (strcmp(rec->mount_point, "auto") != 0) {
         ALOGE("Vold managed volumes must have auto mount point; ignoring %s",
