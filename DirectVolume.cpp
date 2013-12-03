@@ -45,6 +45,9 @@ DirectVolume::DirectVolume(VolumeManager *vm, const char *label,
     mDiskMajor = -1;
     mDiskMinor = -1;
     mDiskNumParts = 0;
+    mIsDecrypted = 0;
+    mOrigDiskMajor = -1;
+    mOrigDiskMinor = -1;
 
     setState(Volume::State_NoMedia);
 }
