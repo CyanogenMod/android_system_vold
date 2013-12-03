@@ -26,8 +26,10 @@
 #include <sys/mman.h>
 #include <sys/mount.h>
 #include <sys/param.h>
+#include <sys/ioctl.h>
 
 #include <linux/kdev_t.h>
+#include <linux/msdos_fs.h>
 
 #include <cutils/properties.h>
 
@@ -121,6 +123,7 @@ Volume::Volume(VolumeManager *vm, const fstab_rec* rec, int flags) {
     mPartIdx = rec->partnum;
     mRetryMount = false;
     mLunNumber = -1;
+    mFilesystemId = -1;
 }
 
 Volume::~Volume() {
@@ -142,6 +145,23 @@ void Volume::protectFromAutorunStupidity() {
         Process::killProcessesWithOpenFiles(filename, 2);
         if (unlink(filename)) {
             SLOGE("Failed to remove %s (%s)", filename, strerror(errno));
+        }
+    }
+}
+
+void Volume::getFilesystemId(const char *fstype) {
+    if (!strcmp(fstype, "vfat")) {
+        int fd = open(getMountpoint(), O_RDONLY);
+        if (fd >= 0) {
+            mFilesystemId = ioctl(fd, VFAT_IOCTL_GET_VOLUME_ID);
+            close(fd);
+        }
+    }
+    else {
+        char *uuid = blkid_get_tag_value(NULL, "UUID", getMountpoint());
+        if (uuid) {
+            mFilesystemId = (int)strtol(uuid, NULL, 16);
+            free(uuid);
         }
     }
 }
@@ -200,12 +220,12 @@ void Volume::setState(int state) {
 
     mState = state;
 
-    SLOGD("Volume %s state changing %d (%s) -> %d (%s)", mLabel,
-         oldState, stateToStr(oldState), mState, stateToStr(mState));
+    SLOGD("Volume %s state changing %d (%s) -> %d (%s) %d", mLabel,
+         oldState, stateToStr(oldState), mState, stateToStr(mState), mFilesystemId);
     snprintf(msg, sizeof(msg),
-             "Volume %s %s state changed from %d (%s) to %d (%s)", getLabel(),
+             "Volume %s %s state changed from %d (%s) to %d (%s) %d", getLabel(),
              getFuseMountpoint(), oldState, stateToStr(oldState), mState,
-             stateToStr(mState));
+             stateToStr(mState), mFilesystemId);
 
     mVm->getBroadcaster()->sendBroadcast(ResponseCode::VolumeStateChange,
                                          msg, false);
@@ -234,8 +254,14 @@ int Volume::formatVol(bool wipe) {
         return -1;
     }
 
-    if (isMountpointMounted(getMountpoint())) {
+    char devicePath[255];
+    if (isMountpointMounted(getMountpoint(), devicePath)) {
         SLOGW("Volume is idle but appears to be mounted - fixing");
+        char *fstype = getFsType(devicePath);
+        if (fstype) {
+            getFilesystemId(fstype);
+            free(fstype);
+        }
         setState(Volume::State_Mounted);
         // mCurrentlyMountedKdev = XXX
         errno = EBUSY;
@@ -243,7 +269,6 @@ int Volume::formatVol(bool wipe) {
     }
 
     bool formatEntireDevice = (mPartIdx == -1);
-    char devicePath[255];
     dev_t diskNode = getDiskDevice();
     dev_t partNode = MKDEV(MAJOR(diskNode), (formatEntireDevice ? 1 : mPartIdx));
 
@@ -294,7 +319,7 @@ err:
     return ret;
 }
 
-bool Volume::isMountpointMounted(const char *path) {
+bool Volume::isMountpointMounted(const char *path, char *devicePath) {
     char device[256];
     char mount_path[256];
     char rest[256];
@@ -311,6 +336,9 @@ bool Volume::isMountpointMounted(const char *path) {
         sscanf(line, "%255s %255s %255s\n", device, mount_path, rest);
         if (!strcmp(mount_path, path)) {
             fclose(fp);
+            if (devicePath) {
+                strcpy(devicePath, device);
+            }
             return true;
         }
 
@@ -358,8 +386,14 @@ int Volume::mountVol() {
         return -1;
     }
 
-    if (isMountpointMounted(getMountpoint())) {
+    char devicePath[255];
+    if (isMountpointMounted(getMountpoint(), devicePath)) {
         SLOGW("Volume is idle but appears to be mounted - fixing");
+        char *fstype = getFsType(devicePath);
+        if (fstype) {
+            getFilesystemId(fstype);
+            free(fstype);
+        }
         setState(Volume::State_Mounted);
         // mCurrentlyMountedKdev = XXX
         return 0;
@@ -503,6 +537,8 @@ int Volume::mountVol() {
                 free(fstype);
                 return -1;
             }
+
+            getFilesystemId(fstype);
 
             free(fstype);
 
@@ -653,6 +689,7 @@ int Volume::unmountVol(bool force, bool revert) {
         SLOGI("Encrypted volume %s reverted successfully", getMountpoint());
     }
 
+    mFilesystemId = -1;
     setState(Volume::State_Idle);
     mCurrentlyMountedKdev = -1;
     return 0;
@@ -668,6 +705,7 @@ out_mounted:
     return -1;
 
 out_nomedia:
+    mFilesystemId = -1;
     setState(Volume::State_NoMedia);
     return -1;
 }

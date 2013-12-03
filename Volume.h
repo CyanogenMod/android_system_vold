@@ -59,6 +59,7 @@ protected:
     int mOrigPartIdx;
     bool mRetryMount;
     int mLunNumber;
+    int mFilesystemId;
 
     /*
      * The major/minor tuple of the currently mounted filesystem.
@@ -106,11 +107,12 @@ protected:
 
 private:
     int initializeMbr(const char *deviceNode);
-    bool isMountpointMounted(const char *path);
+    bool isMountpointMounted(const char *path, char *device);
     int mountAsecExternal();
     int doUnmount(const char *path, bool force);
     int doFuseMount(const char *src, const char *dst);
     void protectFromAutorunStupidity();
+    void getFilesystemId(const char *fstype);
 };
 
 typedef android::List<Volume *> VolumeCollection;
