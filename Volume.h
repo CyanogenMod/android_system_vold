@@ -59,6 +59,7 @@ protected:
     int mOrigPartIdx;
     bool mRetryMount;
     int mLunNumber;
+    int mVolumeId;
 
     /*
      * The major/minor tuple of the currently mounted filesystem.
@@ -111,6 +112,7 @@ private:
     int doUnmount(const char *path, bool force);
     int doFuseMount(const char *src, const char *dst);
     void protectFromAutorunStupidity();
+    void getFatVolumeId();
 };
 
 typedef android::List<Volume *> VolumeCollection;

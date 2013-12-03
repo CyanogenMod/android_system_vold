@@ -26,8 +26,10 @@
 #include <sys/mman.h>
 #include <sys/mount.h>
 #include <sys/param.h>
+#include <sys/ioctl.h>
 
 #include <linux/kdev_t.h>
+#include <linux/msdos_fs.h>
 
 #include <cutils/properties.h>
 
@@ -121,6 +123,7 @@ Volume::Volume(VolumeManager *vm, const fstab_rec* rec, int flags) {
     mPartIdx = rec->partnum;
     mRetryMount = false;
     mLunNumber = -1;
+    mVolumeId = -1;
 }
 
 Volume::~Volume() {
@@ -143,6 +146,14 @@ void Volume::protectFromAutorunStupidity() {
         if (unlink(filename)) {
             SLOGE("Failed to remove %s (%s)", filename, strerror(errno));
         }
+    }
+}
+
+void Volume::getFatVolumeId(void) {
+    int fd = open(getMountpoint(), O_RDONLY);
+    if (fd >= 0) {
+        mVolumeId = ioctl(fd, VFAT_IOCTL_GET_VOLUME_ID);
+        close(fd);
     }
 }
 
@@ -200,12 +211,12 @@ void Volume::setState(int state) {
 
     mState = state;
 
-    SLOGD("Volume %s state changing %d (%s) -> %d (%s)", mLabel,
-         oldState, stateToStr(oldState), mState, stateToStr(mState));
+    SLOGD("Volume %s state changing %d (%s) -> %d (%s) %d", mLabel,
+         oldState, stateToStr(oldState), mState, stateToStr(mState), mVolumeId);
     snprintf(msg, sizeof(msg),
-             "Volume %s %s state changed from %d (%s) to %d (%s)", getLabel(),
+             "Volume %s %s state changed from %d (%s) to %d (%s) %d", getLabel(),
              getFuseMountpoint(), oldState, stateToStr(oldState), mState,
-             stateToStr(mState));
+             stateToStr(mState), mVolumeId);
 
     mVm->getBroadcaster()->sendBroadcast(ResponseCode::VolumeStateChange,
                                          msg, false);
@@ -454,6 +465,7 @@ int Volume::mountVol() {
                     SLOGE("%s failed to mount via VFAT (%s)\n", devicePath, strerror(errno));
                     continue;
                 }
+                getFatVolumeId();
 
             } else if (strcmp(fstype, "ext4") == 0) {
 
