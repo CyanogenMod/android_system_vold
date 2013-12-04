@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 
+#include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -39,6 +40,8 @@
 #include <sysutils/NetlinkEvent.h>
 
 #include <private/android_filesystem_config.h>
+
+#include <blkid/blkid.h>
 
 #include "VolumeManager.h"
 #include "DirectVolume.h"
@@ -185,6 +188,60 @@ int VolumeManager::formatVolume(const char *label, bool wipe) {
     }
 
     return v->formatVol(wipe);
+}
+
+// Note that we're not looking it up during mount and caching
+// it since we won't have the uuid if vold crashes and recovery
+// is done by setting the status to mounted.
+char *VolumeManager::getVolumeUuid(const char *label) {
+    Volume *v = lookupVolume(label);
+
+    if (!v) {
+        errno = ENOENT;
+        return NULL;
+    }
+
+    if (v->getState() == Volume::State_NoMedia) {
+        errno = ENODEV;
+        return NULL;
+    }
+
+    // We shouldn't return UUID for unmounted volume, even though we
+    // can actually access it if the media is present.
+    if (v->getState() != Volume::State_Mounted) {
+        errno = EBUSY;
+        return NULL;
+    }
+
+    char nodepath[256];
+    if (getDeviceForMountpoint(v->getMountpoint(), nodepath) < 0) {
+        errno = ENODEV;
+        return NULL;
+    }
+
+    char *uuid = blkid_get_tag_value(NULL, "UUID", nodepath);
+
+    int len;
+    if (uuid && (len = strlen(uuid)) > 0) {
+        // Strip dashes and convert to lower in-place
+        char *pCur = uuid;
+        int i = 0;
+        while (*pCur != '\0' && i < len) {
+            if (*pCur != '-') {
+                uuid[i++] = tolower(*pCur);
+            }
+            pCur++;
+        }
+        uuid[i] = '\0';
+
+        return uuid; // Caller's job to free
+    } else {
+        SLOGE("Couldn't get UUID for %s\n", nodepath);
+        if (uuid) {
+            free(uuid);
+        }
+        return NULL;
+    }
 }
 
 int VolumeManager::getObbMountPath(const char *sourceFile, char *mountPath, int mountPathLen) {
@@ -1590,6 +1647,30 @@ bool VolumeManager::isMountpointMounted(const char *mp)
 
     fclose(fp);
     return false;
+}
+
+int VolumeManager::getDeviceForMountpoint(const char *mp, char *device) {
+    char mount_path[256];
+    char rest[256];
+    FILE *fp;
+    char line[1024];
+
+    if (!(fp = fopen("/proc/mounts", "r"))) {
+        SLOGE("Error opening /proc/mounts (%s)", strerror(errno));
+        return -1;
+    }
+
+    while(fgets(line, sizeof(line), fp)) {
+        line[strlen(line)-1] = '\0';
+        sscanf(line, "%255s %255s %255s\n", device, mount_path, rest);
+        if (!strcmp(mount_path, mp)) {
+            fclose(fp);
+            return strlen(device);
+        }
+    }
+
+    fclose(fp);
+    return -1;
 }
 
 int VolumeManager::cleanupAsec(Volume *v, bool force) {

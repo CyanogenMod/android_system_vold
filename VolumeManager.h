@@ -84,6 +84,7 @@ public:
     int unshareVolume(const char *label, const char *method);
     int shareEnabled(const char *path, const char *method, bool *enabled);
     int formatVolume(const char *label, bool wipe);
+    char *getVolumeUuid(const char *label);
     void disableVolumeManager(void) { mVolManagerDisabled = 1; }
 
     /* ASEC */
@@ -153,6 +154,7 @@ private:
     VolumeManager();
     void readInitialState();
     bool isMountpointMounted(const char *mp);
+    int getDeviceForMountpoint(const char *mp, char *devicePath);
     bool isAsecInDirectory(const char *dir, const char *asec) const;
     int openLun(int number);
 };
