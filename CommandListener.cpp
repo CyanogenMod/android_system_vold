@@ -214,6 +214,20 @@ int CommandListener::VolumeCmd::runCommand(SocketClient *cli,
             return 0;
         }
         rc = vm->mkdirs(argv[2]);
+    } else if (!strcmp(argv[1], "uuid")) {
+        if (argc != 3) {
+            cli->sendMsg(ResponseCode::CommandSyntaxError, "Usage: volume uuid <path>", false);
+            return 0;
+        }
+
+        char *uuid = vm->getVolumeUuid(argv[2]);
+        if (uuid) {
+            cli->sendMsg(ResponseCode::VolumeUuidResult, uuid, false);
+            free(uuid);
+        } else {
+            cli->sendMsg(ResponseCode::OperationFailed, "Failed to determine volume UUID", true);
+        }
+        return 0;
     } else {
         cli->sendMsg(ResponseCode::CommandSyntaxError, "Unknown volume cmd", false);
     }

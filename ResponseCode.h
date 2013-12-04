@@ -36,6 +36,7 @@ public:
     static const int AsecPathResult           = 211;
     static const int ShareEnabledResult       = 212;
     static const int XwarpStatusResult        = 213;
+    static const int VolumeUuidResult         = 214;
 
     // 400 series - The command was accepted but the requested action
     // did not take place.
