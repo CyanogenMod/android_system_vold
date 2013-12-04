@@ -84,6 +84,7 @@ public:
     int unshareVolume(const char *label, const char *method);
     int shareEnabled(const char *path, const char *method, bool *enabled);
     int formatVolume(const char *label, bool wipe);
+    char *getVolumeUuid(const char *label);
     void disableVolumeManager(void) { mVolManagerDisabled = 1; }
 
     /* ASEC */

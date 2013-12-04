@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 
+#include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -39,6 +40,8 @@
 #include <sysutils/NetlinkEvent.h>
 
 #include <private/android_filesystem_config.h>
+
+#include <blkid/blkid.h>
 
 #include "VolumeManager.h"
 #include "DirectVolume.h"
@@ -185,6 +188,72 @@ int VolumeManager::formatVolume(const char *label, bool wipe) {
     }
 
     return v->formatVol(wipe);
+}
+
+static int getNodepath(Volume *v, char *nodepath, size_t nodepathSize) {
+    dev_t d = v->getShareDevice();
+    if ((MAJOR(d) == 0) && (MINOR(d) == 0)) {
+        // This volume does not support raw disk access
+        errno = EINVAL;
+        return -1;
+    }
+
+#ifdef VOLD_EMMC_SHARES_DEV_MAJOR
+    // If emmc and sdcard share dev major number, vold may pick
+    // incorrectly based on partition nodes alone. Use device nodes instead.
+    v->getDeviceNodes((dev_t *) &d, 1);
+    if ((MAJOR(d) == 0) && (MINOR(d) == 0)) {
+        // This volume does not support raw disk access
+        errno = EINVAL;
+        return -1;
+    }
+#endif
+
+    int written = snprintf(nodepath,
+             nodepathSize, "/dev/block/vold/%d:%d",
+             MAJOR(d), MINOR(d));
+
+    if ((written < 0) || (size_t(written) >= nodepathSize)) {
+        SLOGE("getNodepath failed: couldn't construct nodepath");
+        return -1;
+    }
+
+    return written;
+}
+
+char *VolumeManager::getVolumeUuid(const char *label) {
+    Volume *v = lookupVolume(label);
+
+    if (!v) {
+        errno = ENOENT;
+        return NULL;
+    }
+
+    char nodepath[255];
+    if (getNodepath(v, nodepath, sizeof(nodepath)) < 0) {
+        return NULL;
+    }
+
+    char *uuid = blkid_get_tag_value(NULL, "UUID", nodepath);
+    int len;
+
+    if (uuid && (len = strlen(uuid)) > 0) {
+        // Strip dashes and convert to lower in-place
+        char *pCur = uuid;
+        int i = 0;
+        while (*pCur != '\0' && i < len) {
+            if (*pCur != '-') {
+                uuid[i++] = tolower(*pCur);
+            }
+            pCur++;
+        }
+        uuid[i] = '\0';
+
+        return uuid; // Caller's job to free
+    } else {
+        SLOGE("Couldn't get UUID for %s\n", nodepath);
+        return NULL;
+    }
 }
 
 int VolumeManager::getObbMountPath(const char *sourceFile, char *mountPath, int mountPathLen) {
@@ -1317,32 +1386,9 @@ int VolumeManager::shareVolume(const char *label, const char *method) {
         return -1;
     }
 
-    dev_t d = v->getShareDevice();
-    if ((MAJOR(d) == 0) && (MINOR(d) == 0)) {
-        // This volume does not support raw disk access
-        errno = EINVAL;
-        return -1;
-    }
-
-#ifdef VOLD_EMMC_SHARES_DEV_MAJOR
-    // If emmc and sdcard share dev major number, vold may pick
-    // incorrectly based on partition nodes alone. Use device nodes instead.
-    v->getDeviceNodes((dev_t *) &d, 1);
-    if ((MAJOR(d) == 0) && (MINOR(d) == 0)) {
-        // This volume does not support raw disk access
-        errno = EINVAL;
-        return -1;
-    }
-#endif
-
     int fd;
     char nodepath[255];
-    int written = snprintf(nodepath,
-             sizeof(nodepath), "/dev/block/vold/%d:%d",
-             MAJOR(d), MINOR(d));
-
-    if ((written < 0) || (size_t(written) >= sizeof(nodepath))) {
-        SLOGE("shareVolume failed: couldn't construct nodepath");
+    if (getNodepath(v, nodepath, sizeof(nodepath)) < 0) {
         return -1;
     }
 
