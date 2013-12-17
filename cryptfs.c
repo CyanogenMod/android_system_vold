@@ -1125,6 +1125,17 @@ int cryptfs_restart(void)
     }
 
     if (! (rc = wait_and_unmount(DATA_MNT_POINT)) ) {
+        /* If ro.crypto.readonly is set to 1, mount the decrypted
+         * filesystem readonly.  This is used when /data is mounted by
+         * recovery mode.
+         */
+        char ro_prop[PROPERTY_VALUE_MAX];
+        property_get("ro.crypto.readonly", ro_prop, "");
+        if (strlen(ro_prop) > 0 && atoi(ro_prop)) {
+            struct fstab_rec* rec = fs_mgr_get_entry_for_mount_point(fstab, DATA_MNT_POINT);
+            rec->flags |= MS_RDONLY;
+        }
+        
         /* If that succeeded, then mount the decrypted filesystem */
         fs_mgr_do_mount(fstab, DATA_MNT_POINT, crypto_blkdev, 0);
 
