@@ -51,17 +51,41 @@ DirectVolume::DirectVolume(VolumeManager *vm, const fstab_rec* rec, int flags) :
               rec->mount_point);
     }
 
-    char mount[PATH_MAX];
+    char mount_media[PATH_MAX];
+    char mount_fuse[PATH_MAX];
+    char switchable[PROPERTY_VALUE_MAX];
 
 #ifdef MINIVOLD
     // In recovery, directly mount to /storage/* since we have no fuse daemon
-    snprintf(mount, PATH_MAX, "%s/%s", Volume::FUSE_DIR, rec->label);
-    mMountpoint = mFuseMountpoint = strdup(mount);
+    snprintf(mount_fuse, PATH_MAX, "%s/%s", Volume::FUSE_DIR, rec->label);
+    mMountpoint = mFuseMountpoint = strdup(mount_fuse);
 #else
-    snprintf(mount, PATH_MAX, "%s/%s", Volume::MEDIA_DIR, rec->label);
-    mMountpoint = strdup(mount);
-    snprintf(mount, PATH_MAX, "%s/%s", Volume::FUSE_DIR, rec->label);
-    mFuseMountpoint = strdup(mount);
+    snprintf(mount_media, PATH_MAX, "%s/%s", Volume::MEDIA_DIR, rec->label);
+    snprintf(mount_fuse, PATH_MAX, "%s/%s", Volume::FUSE_DIR, rec->label);
+
+    property_get("persist.sys.vold.switchexternal", switchable, "0");
+    if (!strcmp(switchable,"1")) {
+        char *first, *second = NULL;
+        const char *delim = ",";
+
+        property_get("persist.sys.vold.switchablepair", switchable, "");
+        if (!(first = strtok(switchable, delim))) {
+            SLOGE("Mount switch requested, but no switchable mountpoints found");
+        } else if (!(second = strtok(NULL, delim))) {
+            SLOGE("Mount switch requested, but bad switchable mountpoints found");
+        } else {
+            if (!strcmp(rec->label,first)) {
+                snprintf(mount_media, PATH_MAX, "%s/%s", Volume::MEDIA_DIR, second);
+                snprintf(mount_fuse, PATH_MAX, "%s/%s", Volume::FUSE_DIR, second);
+            } else if (!strcmp(rec->label,second)) {
+                snprintf(mount_media, PATH_MAX, "%s/%s", Volume::MEDIA_DIR, first);
+                snprintf(mount_fuse, PATH_MAX, "%s/%s", Volume::FUSE_DIR, first);
+            }
+        }
+    }
+
+    mMountpoint = strdup(mount_media);
+    mFuseMountpoint = strdup(mount_fuse);
 #endif
 
     setState(Volume::State_NoMedia);
