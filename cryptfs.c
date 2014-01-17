@@ -239,7 +239,7 @@ static int get_crypt_ftr_info(char **metadata_fname, off64_t *off)
 static int put_crypt_ftr_and_key(struct crypt_mnt_ftr *crypt_ftr)
 {
   int fd;
-  unsigned int nr_sec, cnt;
+  unsigned int cnt;
   /* starting_off is set to the SEEK_SET offset
    * where the crypto structure starts
    */
@@ -372,7 +372,7 @@ static void upgrade_crypt_ftr(int fd, struct crypt_mnt_ftr *crypt_ftr, off64_t o
 static int get_crypt_ftr_and_key(struct crypt_mnt_ftr *crypt_ftr)
 {
   int fd;
-  unsigned int nr_sec, cnt;
+  unsigned int cnt;
   off64_t starting_off;
   int rc = -1;
   char *fname = NULL;
@@ -564,7 +564,6 @@ static int save_persistent_data(void)
     char *fname;
     off64_t write_offset;
     off64_t erase_offset;
-    int found = 0;
     int fd;
     int ret;
 
@@ -736,7 +735,6 @@ static int get_dm_crypt_version(int fd, const char *name,  int *version)
     char buffer[DM_CRYPT_BUF_SIZE];
     struct dm_ioctl *io;
     struct dm_target_versions *v;
-    int i;
 
     io = (struct dm_ioctl *) buffer;
 
@@ -768,13 +766,9 @@ static int create_crypto_blk_dev(struct crypt_mnt_ftr *crypt_ftr, unsigned char 
                                     char *real_blk_name, char *crypto_blk_name, const char *name)
 {
   char buffer[DM_CRYPT_BUF_SIZE];
-  char master_key_ascii[129]; /* Large enough to hold 512 bit key and null */
-  char *crypt_params;
   struct dm_ioctl *io;
-  struct dm_target_spec *tgt;
   unsigned int minor;
   int fd;
-  int i;
   int retval = -1;
   int version[3];
   char *extra_params;
@@ -990,8 +984,6 @@ static int create_encrypted_random_key(char *passwd, unsigned char *master_key, 
         struct crypt_mnt_ftr *crypt_ftr) {
     int fd;
     unsigned char key_buf[KEY_LEN_BYTES];
-    EVP_CIPHER_CTX e_ctx;
-    int encrypted_len, final_len;
 
     /* Get some random bits for a key */
     fd = open("/dev/urandom", O_RDONLY);
@@ -1068,13 +1060,8 @@ static int prep_data_fs(void)
 
 int cryptfs_restart(void)
 {
-    char fs_type[32];
-    char real_blkdev[MAXPATHLEN];
     char crypto_blkdev[MAXPATHLEN];
-    char fs_options[256];
-    unsigned long mnt_flags;
-    struct stat statbuf;
-    int rc = -1, i;
+    int rc = -1;
     static int restart_successful = 0;
 
     /* Validate that it's OK to call this routine */
@@ -1202,8 +1189,6 @@ static int test_mount_encrypted_fs(char *passwd, char *mount_point, char *label)
   unsigned int orig_failed_decrypt_count;
   char encrypted_state[PROPERTY_VALUE_MAX];
   int rc;
-  kdf_func kdf;
-  void *kdf_params;
 
   property_get("ro.crypto.state", encrypted_state, "");
   if ( master_key_saved || strcmp(encrypted_state, "encrypted") ) {
@@ -1587,19 +1572,17 @@ static inline int should_encrypt(struct volume_info *volume)
 int cryptfs_enable(char *howarg, char *passwd)
 {
     int how = 0;
-    char crypto_blkdev[MAXPATHLEN], real_blkdev[MAXPATHLEN], sd_crypto_blkdev[MAXPATHLEN];
+    char crypto_blkdev[MAXPATHLEN], real_blkdev[MAXPATHLEN];
     unsigned long nr_sec;
     unsigned char decrypted_master_key[KEY_LEN_BYTES];
     int rc=-1, fd, i, ret;
-    struct crypt_mnt_ftr crypt_ftr, sd_crypt_ftr;;
+    struct crypt_mnt_ftr crypt_ftr;
     struct crypt_persist_data *pdata;
-    char tmpfs_options[PROPERTY_VALUE_MAX];
     char encrypted_state[PROPERTY_VALUE_MAX];
     char lockid[32] = { 0 };
     char key_loc[PROPERTY_VALUE_MAX];
     char fuse_sdcard[PROPERTY_VALUE_MAX];
     char *sd_mnt_point;
-    char sd_blk_dev[256] = { 0 };
     int num_vols;
     struct volume_info *vol_list = 0;
     off64_t cur_encryption_done=0, tot_encryption_size=0;
@@ -1924,7 +1907,6 @@ error_shutting_down:
 int cryptfs_changepw(char *newpw)
 {
     struct crypt_mnt_ftr crypt_ftr;
-    unsigned char decrypted_master_key[KEY_LEN_BYTES];
 
     /* This is only allowed after we've successfully decrypted the master key */
     if (! master_key_saved) {
@@ -2017,7 +1999,6 @@ static int persist_set_key(char *fieldname, char *value, int encrypted)
 int cryptfs_getfield(char *fieldname, char *value, int len)
 {
     char temp_value[PROPERTY_VALUE_MAX];
-    char real_blkdev[MAXPATHLEN];
     /* 0 is success, 1 is not encrypted,
      * -1 is value not set, -2 is any other error
      */
@@ -2047,9 +2028,6 @@ out:
 /* Set the value of the specified field. */
 int cryptfs_setfield(char *fieldname, char *value)
 {
-    struct crypt_persist_data stored_pdata;
-    struct crypt_persist_data *pdata_p;
-    struct crypt_mnt_ftr crypt_ftr;
     char encrypted_state[PROPERTY_VALUE_MAX];
     /* 0 is success, -1 is an error */
     int rc = -1;

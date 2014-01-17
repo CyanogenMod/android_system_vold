@@ -134,7 +134,9 @@ int VolumeManager::addVolume(Volume *v) {
 }
 
 void VolumeManager::handleBlockEvent(NetlinkEvent *evt) {
+#ifdef NETLINK_DEBUG
     const char *devpath = evt->findParam("DEVPATH");
+#endif
 
     /* Lookup a volume to handle this device */
     VolumeCollection::iterator it;
@@ -888,8 +890,6 @@ bool VolumeManager::isAsecInDirectory(const char *dir, const char *asecName) con
 
 int VolumeManager::findAsec(const char *id, char *asecPath, size_t asecPathLen,
         const char **directory) const {
-    int dirfd, fd;
-    const int idLen = strlen(id);
     char *asecName;
 
     if (asprintf(&asecName, "%s.asec", id) < 0) {
@@ -968,7 +968,6 @@ int VolumeManager::mountAsec(const char *id, const char *key, int ownerUid) {
 
     char dmDevice[255];
     bool cleanupDm = false;
-    int fd;
     unsigned int nr_sec = 0;
     struct asec_superblock sb;
 

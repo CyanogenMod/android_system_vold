@@ -90,7 +90,6 @@ int Exfat::doMount(const char *fsPath, const char *mountPoint,
 
 int Exfat::check(const char *fsPath) {
 
-    bool rw = true;
     int rc = -1;
     int status;
 
@@ -137,7 +136,6 @@ int Exfat::check(const char *fsPath) {
 
 int Exfat::format(const char *fsPath) {
 
-    int fd;
     const char *args[3];
     int rc = -1;
     int status;

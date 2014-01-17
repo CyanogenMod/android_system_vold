@@ -75,7 +75,6 @@ int Ext4::doMount(const char *fsPath, const char *mountPoint, bool ro, bool remo
 }
 
 int Ext4::check(const char *fsPath) {
-    bool rw = true;
     if (access(E2FSCK_PATH, X_OK)) {
         SLOGW("Skipping fs checks.\n");
         return 0;
@@ -122,7 +121,6 @@ int Ext4::check(const char *fsPath) {
 }
 
 int Ext4::format(const char *fsPath, const char *mountpoint) {
-    int fd;
     const char *args[5];
     int rc;
     int status;

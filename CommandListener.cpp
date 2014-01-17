@@ -225,7 +225,6 @@ int CommandListener::VolumeCmd::runCommand(SocketClient *cli,
     if (!rc) {
         cli->sendMsg(ResponseCode::CommandOkay, "volume operation succeeded", false);
     } else {
-        int erno = errno;
         rc = ResponseCode::convertFromErrno();
         cli->sendMsg(rc, "volume operation failed", true);
     }
