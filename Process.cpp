@@ -187,7 +187,6 @@ void Process::killProcessesWithOpenFiles(const char *path, int action) {
     }
 
     while ((de = readdir(dir))) {
-        int killed = 0;
         int pid = getPid(de->d_name);
         char name[PATH_MAX];
 

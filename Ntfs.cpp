@@ -164,7 +164,6 @@ int Ntfs::doMount(const char *fsPath, const char *mountPoint,
 
 int Ntfs::format(const char *fsPath, bool wipe) {
 
-    int fd;
     const char *args[4];
     int rc = -1;
     int status;
