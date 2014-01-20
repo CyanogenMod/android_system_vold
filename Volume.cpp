@@ -219,7 +219,7 @@ void Volume::setState(int state) {
     int oldState = mState;
 
     if (oldState == state) {
-        SLOGW("Duplicate state (%d)\n", state);
+        SLOGW("Volume %s: Duplicate state (%d)\n", mLabel, state);
         return;
     }
 
