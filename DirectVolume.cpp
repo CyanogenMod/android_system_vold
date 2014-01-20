@@ -217,13 +217,13 @@ void DirectVolume::handlePartitionAdded(const char *devpath, NetlinkEvent *evt) 
     }
 
     if (major != mDiskMajor) {
-        SLOGE("Partition '%s' has a different major than its disk!", devpath);
 #ifdef VOLD_DISC_HAS_MULTIPLE_MAJORS
         ValuePair vp;
         vp.major = major;
         vp.part_num = part_num;
         badPartitions.push_back(vp);
 #else
+        SLOGE("Partition '%s' has a different major than its disk!", devpath);
         return;
 #endif
     }
