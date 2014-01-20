@@ -191,7 +191,9 @@ void DirectVolume::handleDiskAdded(const char *devpath, NetlinkEvent *evt) {
 #ifdef PARTITION_DEBUG
         SLOGD("Dv::diskIns - No partitions - good to go son!");
 #endif
-        setState(Volume::State_Idle);
+        // Do not leave idle state if already in (avoids warnings)
+        if (getState() != Volume::State_Idle)
+            setState(Volume::State_Idle);
     } else {
 #ifdef PARTITION_DEBUG
         SLOGD("Dv::diskIns - waiting for %d partitions (mask 0x%x)",
@@ -228,13 +230,16 @@ void DirectVolume::handlePartitionAdded(const char *devpath, NetlinkEvent *evt) 
     }
 
     if (major != mDiskMajor) {
-        SLOGE("Partition '%s' has a different major than its disk!", devpath);
 #ifdef VOLD_DISC_HAS_MULTIPLE_MAJORS
         ValuePair vp;
         vp.major = major;
         vp.part_num = part_num;
         badPartitions.push_back(vp);
-#else
+        // Errors with internal volume are expected, so do not show them
+        if(strcmp(getLabel(), VOLD_INTERNAL_VOLUME))
+#endif
+        SLOGE("Partition '%s' of '%s' has a different major than its disk!", devpath, getLabel());
+#ifndef VOLD_DISC_HAS_MULTIPLE_MAJORS
         return;
 #endif
     }
