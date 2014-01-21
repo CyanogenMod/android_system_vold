@@ -51,6 +51,8 @@
 #include "crypto_scrypt.h"
 #include "ext4_utils.h"
 
+#define UNUSED __attribute__((unused))
+
 #define DM_CRYPT_BUF_SIZE 4096
 
 #define HASH_COUNT 2000
@@ -868,7 +870,7 @@ errout:
 
 }
 
-static void pbkdf2(char *passwd, unsigned char *salt, unsigned char *ikey, void *params) {
+static void pbkdf2(char *passwd, unsigned char *salt, unsigned char *ikey, void *params UNUSED) {
     /* Turn the password into a key and IV that can decrypt the master key */
     PKCS5_PBKDF2_HMAC_SHA1(passwd, strlen(passwd), salt, SALT_LEN,
                            HASH_COUNT, KEY_LEN_BYTES+IV_LEN_BYTES, ikey);
@@ -1161,7 +1163,7 @@ int cryptfs_restart(void)
     return rc;
 }
 
-static int do_crypto_complete(char *mount_point)
+static int do_crypto_complete(char *mount_point UNUSED)
 {
   struct crypt_mnt_ftr crypt_ftr;
   char encrypted_state[PROPERTY_VALUE_MAX];

@@ -227,7 +227,7 @@ int Loop::destroyByDevice(const char *loopDevice) {
     return 0;
 }
 
-int Loop::destroyByFile(const char *loopFile) {
+int Loop::destroyByFile(const char * /*loopFile*/) {
     errno = ENOSYS;
     return -1;
 }
