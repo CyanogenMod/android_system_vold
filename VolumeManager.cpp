@@ -1293,7 +1293,7 @@ int VolumeManager::shareVolume(const char *label, const char *method) {
     char nodepath[255];
     int written = snprintf(nodepath,
              sizeof(nodepath), "/dev/block/vold/%d:%d",
-             MAJOR(d), MINOR(d));
+             major(d), minor(d));
 
     if ((written < 0) || (size_t(written) >= sizeof(nodepath))) {
         SLOGE("shareVolume failed: couldn't construct nodepath");
@@ -1415,7 +1415,7 @@ int VolumeManager::getDirectVolumeList(struct volume_info *vol_list) {
         if ((d=(*i)->getShareDevice()) != (dev_t)0) {
             (*i)->getVolInfo(&vol_list[n]);
             snprintf(vol_list[n].blk_dev, sizeof(vol_list[n].blk_dev),
-                     "/dev/block/vold/%d:%d",MAJOR(d), MINOR(d));
+                     "/dev/block/vold/%d:%d", major(d), minor(d));
             n++;
         }
     }
