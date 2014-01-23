@@ -20,7 +20,6 @@ common_src_files := \
 	cryptfs.c
 
 common_c_includes := \
-	$(KERNEL_HEADERS) \
 	system/extras/ext4_utils \
 	external/openssl/include \
 	external/stlport/stlport \
@@ -83,7 +82,7 @@ LOCAL_SRC_FILES:= vdc.c
 
 LOCAL_MODULE:= vdc
 
-LOCAL_C_INCLUDES := $(KERNEL_HEADERS)
+LOCAL_C_INCLUDES :=
 
 LOCAL_CFLAGS := 
 
