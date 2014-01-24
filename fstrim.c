@@ -116,7 +116,7 @@ static void *do_fstrim_filesystems(void *ignored)
     /* Release the wakelock that let us work */
     release_wake_lock(FSTRIM_WAKELOCK);
 
-    return (void *)ret;
+    return (void *)(uintptr_t)ret;
 }
 
 int fstrim_filesystems(void)
