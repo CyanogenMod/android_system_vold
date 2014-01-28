@@ -204,6 +204,12 @@ int VolumeManager::getObbMountPath(const char *sourceFile, char *mountPath, int 
 int VolumeManager::getAsecMountPath(const char *id, char *buffer, int maxlen) {
     char asecFileName[255];
 
+    if (!isLegalAsecId(id)) {
+        SLOGE("getAsecMountPath: Invalid asec id \"%s\"", id);
+        errno = EINVAL;
+        return -1;
+    }
+
     if (findAsec(id, asecFileName, sizeof(asecFileName))) {
         SLOGE("Couldn't find ASEC %s", id);
         return -1;
@@ -221,6 +227,12 @@ int VolumeManager::getAsecMountPath(const char *id, char *buffer, int maxlen) {
 
 int VolumeManager::getAsecFilesystemPath(const char *id, char *buffer, int maxlen) {
     char asecFileName[255];
+
+    if (!isLegalAsecId(id)) {
+        SLOGE("getAsecFilesystemPath: Invalid asec id \"%s\"", id);
+        errno = EINVAL;
+        return -1;
+    }
 
     if (findAsec(id, asecFileName, sizeof(asecFileName))) {
         SLOGE("Couldn't find ASEC %s", id);
@@ -241,6 +253,12 @@ int VolumeManager::createAsec(const char *id, unsigned int numSectors, const cha
         const char *key, const int ownerUid, bool isExternal) {
     struct asec_superblock sb;
     memset(&sb, 0, sizeof(sb));
+
+    if (!isLegalAsecId(id)) {
+        SLOGE("createAsec: Invalid asec id \"%s\"", id);
+        errno = EINVAL;
+        return -1;
+    }
 
     const bool wantFilesystem = strcmp(fstype, "none");
     bool usingExt4 = false;
@@ -451,6 +469,12 @@ int VolumeManager::finalizeAsec(const char *id) {
     char loopDevice[255];
     char mountPoint[255];
 
+    if (!isLegalAsecId(id)) {
+        SLOGE("finalizeAsec: Invalid asec id \"%s\"", id);
+        errno = EINVAL;
+        return -1;
+    }
+
     if (findAsec(id, asecFileName, sizeof(asecFileName))) {
         SLOGE("Couldn't find ASEC %s", id);
         return -1;
@@ -501,6 +525,12 @@ int VolumeManager::fixupAsecPermissions(const char *id, gid_t gid, const char* f
 
     if (gid < AID_APP) {
         SLOGE("Group ID is not in application range");
+        return -1;
+    }
+
+    if (!isLegalAsecId(id)) {
+        SLOGE("fixupAsecPermissions: Invalid asec id \"%s\"", id);
+        errno = EINVAL;
         return -1;
     }
 
@@ -613,6 +643,18 @@ int VolumeManager::renameAsec(const char *id1, const char *id2) {
 
     const char *dir;
 
+    if (!isLegalAsecId(id1)) {
+        SLOGE("renameAsec: Invalid asec id1 \"%s\"", id1);
+        errno = EINVAL;
+        return -1;
+    }
+
+    if (!isLegalAsecId(id2)) {
+        SLOGE("renameAsec: Invalid asec id2 \"%s\"", id2);
+        errno = EINVAL;
+        return -1;
+    }
+
     if (findAsec(id1, asecFilename1, sizeof(asecFilename1), &dir)) {
         SLOGE("Couldn't find ASEC %s", id1);
         return -1;
@@ -658,6 +700,12 @@ out_err:
 int VolumeManager::unmountAsec(const char *id, bool force) {
     char asecFileName[255];
     char mountPoint[255];
+
+    if (!isLegalAsecId(id)) {
+        SLOGE("unmountAsec: Invalid asec id \"%s\"", id);
+        errno = EINVAL;
+        return -1;
+    }
 
     if (findAsec(id, asecFileName, sizeof(asecFileName))) {
         SLOGE("Couldn't find ASEC %s", id);
@@ -775,6 +823,12 @@ int VolumeManager::destroyAsec(const char *id, bool force) {
     char asecFileName[255];
     char mountPoint[255];
 
+    if (!isLegalAsecId(id)) {
+        SLOGE("destroyAsec: Invalid asec id \"%s\"", id);
+        errno = EINVAL;
+        return -1;
+    }
+
     if (findAsec(id, asecFileName, sizeof(asecFileName))) {
         SLOGE("Couldn't find ASEC %s", id);
         return -1;
@@ -803,6 +857,38 @@ int VolumeManager::destroyAsec(const char *id, bool force) {
     return 0;
 }
 
+/*
+ * Legal ASEC ids consist of alphanumeric characters, '-',
+ * '_', or '.'. ".." is not allowed. The first or last character
+ * of the ASEC id cannot be '.' (dot).
+ */
+bool VolumeManager::isLegalAsecId(const char *id) const {
+    size_t i;
+    size_t len = strlen(id);
+
+    if (len == 0) {
+        return false;
+    }
+    if ((id[0] == '.') || (id[len - 1] == '.')) {
+        return false;
+    }
+
+    for (i = 0; i < len; i++) {
+        if (id[i] == '.') {
+            // i=0 is guaranteed never to have a dot. See above.
+            if (id[i-1] == '.') return false;
+            continue;
+        }
+        if (id[i] == '_' || id[i] == '-') continue;
+        if (id[i] >= 'a' && id[i] <= 'z') continue;
+        if (id[i] >= 'A' && id[i] <= 'Z') continue;
+        if (id[i] >= '0' && id[i] <= '9') continue;
+        return false;
+    }
+
+    return true;
+}
+
 bool VolumeManager::isAsecInDirectory(const char *dir, const char *asecName) const {
     int dirfd = open(dir, O_DIRECTORY);
     if (dirfd < 0) {
@@ -826,6 +912,12 @@ int VolumeManager::findAsec(const char *id, char *asecPath, size_t asecPathLen,
     int dirfd, fd;
     const int idLen = strlen(id);
     char *asecName;
+
+    if (!isLegalAsecId(id)) {
+        SLOGE("findAsec: Invalid asec id \"%s\"", id);
+        errno = EINVAL;
+        return -1;
+    }
 
     if (asprintf(&asecName, "%s.asec", id) < 0) {
         SLOGE("Couldn't allocate string to write ASEC name");
@@ -861,6 +953,12 @@ int VolumeManager::findAsec(const char *id, char *asecPath, size_t asecPathLen,
 int VolumeManager::mountAsec(const char *id, const char *key, int ownerUid) {
     char asecFileName[255];
     char mountPoint[255];
+
+    if (!isLegalAsecId(id)) {
+        SLOGE("mountAsec: Invalid asec id \"%s\"", id);
+        errno = EINVAL;
+        return -1;
+    }
 
     if (findAsec(id, asecFileName, sizeof(asecFileName))) {
         SLOGE("Couldn't find ASEC %s", id);
