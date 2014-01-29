@@ -38,20 +38,36 @@ static int do_cmd(int sock, int argc, char **argv);
 
 int main(int argc, char **argv) {
     int sock;
+    int wait_for_socket;
 
     if (argc < 2)
         usage(argv[0]);
 
-    if ((sock = socket_local_client("vold",
-                                     ANDROID_SOCKET_NAMESPACE_RESERVED,
-                                     SOCK_STREAM)) < 0) {
-        fprintf(stderr, "Error connecting (%s)\n", strerror(errno));
-        exit(4);
+    wait_for_socket = strcmp(argv[1], "--wait") == 0;
+    if(wait_for_socket) {
+        argv++;
+        argc--;
     }
 
-    if (!strcmp(argv[1], "monitor"))
+    if(argc < 2)
+        exit(5);
+
+    while ((sock = socket_local_client("vold",
+                                 ANDROID_SOCKET_NAMESPACE_RESERVED,
+                                 SOCK_STREAM)) < 0) {
+        if(!wait_for_socket) {
+            fprintf(stderr, "Error connecting (%s)\n", strerror(errno));
+            exit(4);
+        } else {
+          sleep(1);
+        }
+    }
+
+    if (!strcmp(argv[1], "monitor")) {
         exit(do_monitor(sock, 0));
-    exit(do_cmd(sock, argc, argv));
+    } else {
+        exit(do_cmd(sock, argc, argv));
+    }
 }
 
 static int do_cmd(int sock, int argc, char **argv) {
@@ -118,7 +134,7 @@ static int do_monitor(int sock, int stop_after_cmd) {
                     return ECONNRESET;
                 return errno;
             }
-            
+
             int offset = 0;
             int i = 0;
 
@@ -146,7 +162,7 @@ static int do_monitor(int sock, int stop_after_cmd) {
 }
 
 static void usage(char *progname) {
-    fprintf(stderr, "Usage: %s <monitor>|<cmd> [arg1] [arg2...]\n", progname);
-    exit(1);
-}
+    fprintf(stderr,
+            "Usage: %s [--wait] <monitor>|<cmd> [arg1] [arg2...]\n", progname);
+ }
 
