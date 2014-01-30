@@ -49,6 +49,7 @@
 #include "VolumeManager.h"
 #include "VoldUtil.h"
 #include "crypto_scrypt.h"
+#include "ext4_utils.h"
 
 #define DM_CRYPT_BUF_SIZE 4096
 
@@ -1506,8 +1507,205 @@ static int cryptfs_enable_wipe(char *crypto_blkdev, off64_t size, int type)
 
 #define CRYPT_INPLACE_BUFSIZE 4096
 #define CRYPT_SECTORS_PER_BUFSIZE (CRYPT_INPLACE_BUFSIZE / 512)
-static int cryptfs_enable_inplace(char *crypto_blkdev, char *real_blkdev, off64_t size,
-                                  off64_t *size_already_done, off64_t tot_size)
+
+/* aligned 32K writes tends to make flash happy.
+ * SD card association recommends it.
+ */
+#define BLOCKS_AT_A_TIME 8
+
+struct encryptGroupsData
+{
+    int realfd;
+    int cryptofd;
+    off64_t numblocks;
+    off64_t one_pct, cur_pct, new_pct;
+    off64_t blocks_already_done, tot_numblocks;
+    char* real_blkdev, * crypto_blkdev;
+    int count;
+    off64_t offset;
+    char* buffer;
+};
+
+static void update_progress(struct encryptGroupsData* data)
+{
+    data->blocks_already_done++;
+    data->new_pct = data->blocks_already_done / data->one_pct;
+    if (data->new_pct > data->cur_pct) {
+        char buf[8];
+        data->cur_pct = data->new_pct;
+        snprintf(buf, sizeof(buf), "%lld", data->cur_pct);
+        property_set("vold.encrypt_progress", buf);
+    }
+}
+
+static int flush_outstanding_data(struct encryptGroupsData* data)
+{
+    if (data->count == 0) {
+        return 0;
+    }
+
+    SLOGV("Copying %d blocks at offset %llx", data->count, data->offset);
+
+    if (pread64(data->realfd, data->buffer,
+                info.block_size * data->count, data->offset)
+        <= 0) {
+        SLOGE("Error reading real_blkdev %s for inplace encrypt",
+              data->real_blkdev);
+        return -1;
+    }
+
+    if (pwrite64(data->cryptofd, data->buffer,
+                 info.block_size * data->count, data->offset)
+        <= 0) {
+        SLOGE("Error writing crypto_blkdev %s for inplace encrypt",
+              data->crypto_blkdev);
+        return -1;
+    }
+
+    data->count = 0;
+    return 0;
+}
+
+static int encrypt_groups(struct encryptGroupsData* data)
+{
+    unsigned int i;
+    u8 *block_bitmap = 0;
+    unsigned int block;
+    off64_t ret;
+    int rc = -1;
+
+    data->buffer = malloc(info.block_size * BLOCKS_AT_A_TIME);
+    if (!data->buffer) {
+        SLOGE("Failed to allocate crypto buffer");
+        goto errout;
+    }
+
+    block_bitmap = malloc(info.block_size);
+    if (!block_bitmap) {
+        SLOGE("failed to allocate block bitmap");
+        goto errout;
+    }
+
+    for (i = 0; i < aux_info.groups; ++i) {
+        SLOGI("Encrypting group %d", i);
+
+        u32 first_block = aux_info.first_data_block + i * info.blocks_per_group;
+        u32 block_count = min(info.blocks_per_group,
+                             aux_info.len_blocks - first_block);
+
+        off64_t offset = (u64)info.block_size
+                         * aux_info.bg_desc[i].bg_block_bitmap;
+
+        ret = pread64(data->realfd, block_bitmap, info.block_size, offset);
+        if (ret != (int)info.block_size) {
+            SLOGE("failed to read all of block group bitmap %d", i);
+            goto errout;
+        }
+
+        offset = (u64)info.block_size * first_block;
+
+        data->count = 0;
+
+        for (block = 0; block < block_count; block++) {
+            update_progress(data);
+            if (bitmap_get_bit(block_bitmap, block)) {
+                if (data->count == 0) {
+                    data->offset = offset;
+                }
+                data->count++;
+            } else {
+                if (flush_outstanding_data(data)) {
+                    goto errout;
+                }
+            }
+
+            offset += info.block_size;
+
+            /* Write data if we are aligned or buffer size reached */
+            if (offset % (info.block_size * BLOCKS_AT_A_TIME) == 0
+                || data->count == BLOCKS_AT_A_TIME) {
+                if (flush_outstanding_data(data)) {
+                    goto errout;
+                }
+            }
+        }
+        if (flush_outstanding_data(data)) {
+            goto errout;
+        }
+    }
+
+    rc = 0;
+
+errout:
+    free(data->buffer);
+    free(block_bitmap);
+    return rc;
+}
+
+static int cryptfs_enable_inplace_ext4(char *crypto_blkdev,
+                                       char *real_blkdev,
+                                       off64_t size,
+                                       off64_t *size_already_done,
+                                       off64_t tot_size)
+{
+    int i;
+    struct encryptGroupsData data;
+    int rc = -1;
+
+    memset(&data, 0, sizeof(data));
+    data.real_blkdev = real_blkdev;
+    data.crypto_blkdev = crypto_blkdev;
+
+    if ( (data.realfd = open(real_blkdev, O_RDWR)) < 0) {
+        SLOGE("Error opening real_blkdev %s for inplace encrypt\n",
+              real_blkdev);
+        goto errout;
+    }
+
+    if ( (data.cryptofd = open(crypto_blkdev, O_WRONLY)) < 0) {
+        SLOGE("Error opening crypto_blkdev %s for inplace encrypt\n",
+              crypto_blkdev);
+        goto errout;
+    }
+
+    if (setjmp(setjmp_env)) {
+        SLOGE("Reading extent caused an exception");
+        goto errout;
+    }
+
+    if (read_ext(data.realfd, 0) != 0) {
+        SLOGE("Failed to read extent");
+        goto errout;
+    }
+
+    data.numblocks = size / CRYPT_SECTORS_PER_BUFSIZE;
+    data.tot_numblocks = tot_size / CRYPT_SECTORS_PER_BUFSIZE;
+    data.blocks_already_done = *size_already_done / CRYPT_SECTORS_PER_BUFSIZE;
+
+    SLOGI("Encrypting filesystem in place...");
+
+    data.one_pct = data.tot_numblocks / 100;
+    data.cur_pct = 0;
+
+    rc = encrypt_groups(&data);
+    if (rc) {
+        SLOGE("Error encrypting groups");
+        goto errout;
+    }
+
+    *size_already_done += size;
+    rc = 0;
+
+errout:
+    close(data.realfd);
+    close(data.cryptofd);
+
+    return rc;
+}
+
+static int cryptfs_enable_inplace_full(char *crypto_blkdev, char *real_blkdev,
+                                       off64_t size, off64_t *size_already_done,
+                                       off64_t tot_size)
 {
     int realfd, cryptofd;
     char *buf[CRYPT_INPLACE_BUFSIZE];
@@ -1583,6 +1781,19 @@ errout:
     return rc;
 }
 
+static int cryptfs_enable_inplace(char *crypto_blkdev, char *real_blkdev,
+                                  off64_t size, off64_t *size_already_done,
+                                  off64_t tot_size)
+{
+    if (cryptfs_enable_inplace_ext4(crypto_blkdev, real_blkdev,
+                                    size, size_already_done, tot_size) == 0) {
+        return 0;
+    }
+
+    return cryptfs_enable_inplace_full(crypto_blkdev, real_blkdev,
+                                       size, size_already_done, tot_size);
+}
+
 #define CRYPTO_ENABLE_WIPE 1
 #define CRYPTO_ENABLE_INPLACE 2
 
@@ -1590,7 +1801,7 @@ errout:
 
 static inline int should_encrypt(struct volume_info *volume)
 {
-    return (volume->flags & (VOL_ENCRYPTABLE | VOL_NONREMOVABLE)) == 
+    return (volume->flags & (VOL_ENCRYPTABLE | VOL_NONREMOVABLE)) ==
             (VOL_ENCRYPTABLE | VOL_NONREMOVABLE);
 }
 
