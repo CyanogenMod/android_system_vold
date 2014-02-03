@@ -148,14 +148,16 @@ struct volume_info {
 extern "C" {
 #endif
 
-  typedef int (*kdf_func)(char *passwd, unsigned char *salt, unsigned char *ikey, void *params);
+  typedef int (*kdf_func)(const char *passwd, unsigned char *salt,
+                          unsigned char *ikey, void *params);
 
   int cryptfs_crypto_complete(void);
   int cryptfs_check_passwd(char *pw);
   int cryptfs_verify_passwd(char *newpw);
   int cryptfs_restart(void);
   int cryptfs_enable(char *flag, char *passwd, int allow_reboot);
-  int cryptfs_changepw(int type, char *newpw);
+  int cryptfs_changepw(int type, const char *newpw);
+  int cryptfs_enable_default(char *flag, int allow_reboot);
   int cryptfs_setup_volume(const char *label, int major, int minor,
                            char *crypto_dev_path, unsigned int max_pathlen,
                            int *new_major, int *new_minor);

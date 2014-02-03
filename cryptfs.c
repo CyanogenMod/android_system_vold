@@ -925,7 +925,7 @@ errout:
 
 }
 
-static int pbkdf2(char *passwd, unsigned char *salt,
+static int pbkdf2(const char *passwd, unsigned char *salt,
                   unsigned char *ikey, void *params UNUSED)
 {
     /* Turn the password into a key and IV that can decrypt the master key */
@@ -939,7 +939,7 @@ static int pbkdf2(char *passwd, unsigned char *salt,
     return 0;
 }
 
-static int scrypt(char *passwd, unsigned char *salt,
+static int scrypt(const char *passwd, unsigned char *salt,
                   unsigned char *ikey, void *params)
 {
     struct crypt_mnt_ftr *ftr = (struct crypt_mnt_ftr *) params;
@@ -959,7 +959,7 @@ static int scrypt(char *passwd, unsigned char *salt,
     return 0;
 }
 
-static int encrypt_master_key(char *passwd, unsigned char *salt,
+static int encrypt_master_key(const char *passwd, unsigned char *salt,
                               unsigned char *decrypted_master_key,
                               unsigned char *encrypted_master_key,
                               struct crypt_mnt_ftr *crypt_ftr)
@@ -1903,7 +1903,8 @@ static inline int should_encrypt(struct volume_info *volume)
             (VOL_ENCRYPTABLE | VOL_NONREMOVABLE);
 }
 
-int cryptfs_enable(char *howarg, char *passwd, int allow_reboot)
+int cryptfs_enable_internal(char *howarg, int crypt_type, char *passwd,
+                            int allow_reboot)
 {
     int how = 0;
     char crypto_blkdev[MAXPATHLEN], real_blkdev[MAXPATHLEN], sd_crypto_blkdev[MAXPATHLEN];
@@ -2083,11 +2084,7 @@ int cryptfs_enable(char *howarg, char *passwd, int allow_reboot)
         crypt_ftr.fs_size = nr_sec;
     }
     crypt_ftr.flags |= CRYPT_ENCRYPTION_IN_PROGRESS;
-
-    /** @TODO If we keep this route, must pass in crypt_type.
-     * If all devices are encrypted by default, we don't need that change.
-     */
-    crypt_ftr.crypt_type = CRYPT_TYPE_PASSWORD;
+    crypt_ftr.crypt_type = crypt_type;
     strcpy((char *)crypt_ftr.crypto_type_name, "aes-cbc-essiv:sha256");
 
     /* Make an encrypted master key */
@@ -2244,7 +2241,22 @@ error_shutting_down:
     return -1;
 }
 
-int cryptfs_changepw(int crypt_type, char *newpw)
+int cryptfs_enable(char *howarg, char *passwd, int allow_reboot)
+{
+    /** @todo If we keep this route (user selected encryption)
+     *  need to take a type in and pass it to here.
+     */
+    return cryptfs_enable_internal(howarg, CRYPT_TYPE_PASSWORD,
+                                   passwd, allow_reboot);
+}
+
+int cryptfs_enable_default(char *howarg, int allow_reboot)
+{
+    return cryptfs_enable_internal(howarg, CRYPT_TYPE_DEFAULT,
+                          DEFAULT_PASSWORD, allow_reboot);
+}
+
+int cryptfs_changepw(int crypt_type, const char *newpw)
 {
     struct crypt_mnt_ftr crypt_ftr;
     unsigned char decrypted_master_key[KEY_LEN_BYTES];

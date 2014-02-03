@@ -546,21 +546,32 @@ int CommandListener::CryptfsCmd::runCommand(SocketClient *cli,
         dumpArgs(argc, argv, -1);
         rc = cryptfs_crypto_complete();
     } else if (!strcmp(argv[1], "enablecrypto")) {
-        if ( (argc != 4) || (strcmp(argv[2], "wipe") && strcmp(argv[2], "inplace")) ) {
-            cli->sendMsg(ResponseCode::CommandSyntaxError, "Usage: cryptfs enablecrypto <wipe|inplace> <passwd>", false);
+        if ( (argc != 4 && argc != 3)
+             || (strcmp(argv[2], "wipe") && strcmp(argv[2], "inplace")) ) {
+            cli->sendMsg(ResponseCode::CommandSyntaxError,
+                         "Usage: cryptfs enablecrypto <wipe|inplace> [passwd]",
+                         false);
             return 0;
         }
         dumpArgs(argc, argv, 3);
-        rc = cryptfs_enable(argv[2], argv[3], /*allow_reboot*/false);
-        if (rc) {
-            Process::killProcessesWithOpenFiles(DATA_MNT_POINT, 2);
-            rc = cryptfs_enable(argv[2], argv[3], true);
-        }
 
+        int tries;
+        for (tries = 0; tries < 2; ++tries) {
+            if(argc == 3)
+                rc = cryptfs_enable_default(argv[2], /*allow_reboot*/false);
+            else
+                rc = cryptfs_enable(argv[2], argv[3], /*allow_reboot*/false);
+
+            if (rc == 0) {
+                break;
+            } else if (tries == 0) {
+                Process::killProcessesWithOpenFiles(DATA_MNT_POINT, 2);
+            }
+        }
     } else if (!strcmp(argv[1], "changepw")) {
         const char* syntax = "Usage: cryptfs changepw "
                              "default|password|pin|pattern [newpasswd]";
-        char* password;
+        const char* password;
         if (argc == 3) {
             password = "";
         } else if (argc == 4) {
