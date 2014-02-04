@@ -36,6 +36,8 @@
 #include <cutils/log.h>
 #include <cutils/properties.h>
 
+#include <selinux/android.h>
+
 #include <sysutils/NetlinkEvent.h>
 
 #include <private/android_filesystem_config.h>
@@ -619,6 +621,12 @@ int VolumeManager::fixupAsecPermissions(const char *id, gid_t gid, const char* f
             } else if (ftsent->fts_info & FTS_F) {
                 result |= fchmod(fd, privateFile ? 0640 : 0644);
             }
+
+            if (selinux_android_restorecon(ftsent->fts_path) < 0) {
+                SLOGE("restorecon failed for %s: %s\n", ftsent->fts_path, strerror(errno));
+                result |= -1;
+            }
+
             close(fd);
         }
         fts_close(fts);
