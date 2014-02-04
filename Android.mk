@@ -35,7 +35,8 @@ common_shared_libraries := \
 	libhardware_legacy \
 	liblogwrap \
 	libext4_utils \
-	libcrypto
+	libcrypto \
+	libselinux
 
 common_static_libraries := \
 	libfs_mgr \
