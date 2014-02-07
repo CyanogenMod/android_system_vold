@@ -646,6 +646,10 @@ int CommandListener::CryptfsCmd::runCommand(SocketClient *cli,
             cli->sendMsg(ResponseCode::OpFailedStorageNotFound, "Error", false);
             return 0;
         }
+    } else if (!strcmp(argv[1], "justdecrypted")) {
+        SLOGD("cryptfs justdecrypted");
+        dumpArgs(argc, argv, -1);
+        rc = cryptfs_just_decrypted();
     } else {
         dumpArgs(argc, argv, -1);
         cli->sendMsg(ResponseCode::CommandSyntaxError, "Unknown cryptfs cmd", false);

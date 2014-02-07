@@ -79,6 +79,12 @@ static char *saved_mount_point;
 static int  master_key_saved = 0;
 static struct crypt_persist_data *persist_data = NULL;
 
+/* Set when userdata is successfully decrypted and mounted.
+ * Reset whenever read (via cryptfs_just_decrypted)
+ * (Read by keyguard to avoid a double prompt.)
+ */
+static int just_decrypted = 0;
+
 extern struct fstab *fstab;
 
 static void cryptfs_reboot(int recovery)
@@ -1464,6 +1470,11 @@ int cryptfs_check_passwd(char *passwd)
 
     rc = test_mount_encrypted_fs(&crypt_ftr, passwd,
                                  DATA_MNT_POINT, "userdata");
+
+    if (rc == 0 && crypt_ftr.crypt_type != CRYPT_TYPE_DEFAULT) {
+        just_decrypted = 1;
+    }
+
     return rc;
 }
 
@@ -2480,4 +2491,11 @@ int cryptfs_get_password_type(void)
     }
 
     return crypt_ftr.crypt_type;
+}
+
+int cryptfs_just_decrypted(void)
+{
+    int rc = just_decrypted;
+    just_decrypted = 0;
+    return rc;
 }

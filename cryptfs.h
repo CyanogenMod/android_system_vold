@@ -166,6 +166,7 @@ extern "C" {
   int cryptfs_setfield(char *fieldname, char *value);
   int cryptfs_mount_default_encrypted(void);
   int cryptfs_get_password_type(void);
+  int cryptfs_just_decrypted(void);
 #ifdef __cplusplus
 }
 #endif
