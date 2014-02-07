@@ -91,7 +91,7 @@ char *VolumeManager::asecHash(const char *id, char *buffer, size_t len) {
         errno = ESPIPE;
         return NULL;
     } else if (len < MD5_ASCII_LENGTH_PLUS_NULL) {
-        SLOGE("Target hash buffer size < %d bytes (%d)",
+        SLOGE("Target hash buffer size < %d bytes (%zu)",
                 MD5_ASCII_LENGTH_PLUS_NULL, len);
         errno = ESPIPE;
         return NULL;
@@ -930,7 +930,7 @@ int VolumeManager::mountAsec(const char *id, const char *key, int ownerUid) {
 
     int written = snprintf(mountPoint, sizeof(mountPoint), "%s/%s", Volume::ASECDIR, id);
     if ((written < 0) || (size_t(written) >= sizeof(mountPoint))) {
-        SLOGE("ASEC mount failed: couldn't construct mountpoint", id);
+        SLOGE("ASEC mount failed for %s: couldn't construct mountpoint", id);
         return -1;
     }
 
@@ -1077,7 +1077,7 @@ int VolumeManager::mountObb(const char *img, const char *key, int ownerGid) {
 
     int written = snprintf(mountPoint, sizeof(mountPoint), "%s/%s", Volume::LOOPDIR, idHash);
     if ((written < 0) || (size_t(written) >= sizeof(mountPoint))) {
-        SLOGE("OBB mount failed: couldn't construct mountpoint", img);
+        SLOGE("OBB mount failed for %s: couldn't construct mountpoint", img);
         return -1;
     }
 

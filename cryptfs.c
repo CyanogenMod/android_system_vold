@@ -276,7 +276,7 @@ static int put_crypt_ftr_and_key(struct crypt_mnt_ftr *crypt_ftr)
   /* If the keys are kept on a raw block device, do not try to truncate it. */
   if (S_ISREG(statbuf.st_mode)) {
     if (ftruncate(fd, 0x4000)) {
-      SLOGE("Cannot set footer file size\n", fname);
+      SLOGE("Cannot set footer file size\n");
       goto errout;
     }
   }
