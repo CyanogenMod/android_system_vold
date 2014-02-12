@@ -37,6 +37,8 @@
 
 #define FSTRIM_WAKELOCK "dofstrim"
 
+#define UNUSED __attribute__((unused))
+
 static unsigned long long get_boot_time_ms(void)
 {
     struct timespec t;
@@ -50,7 +52,7 @@ static unsigned long long get_boot_time_ms(void)
     return time_ms;
 }
 
-static void *do_fstrim_filesystems(void *ignored)
+static void *do_fstrim_filesystems(void *ignored UNUSED)
 {
     int i;
     int fd;

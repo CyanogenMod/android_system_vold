@@ -56,8 +56,7 @@
 #define KDF_PBKDF2 1
 #define KDF_SCRYPT 2
 
-#define __le32 unsigned int
-#define __le16 unsigned short int
+/* __le32 and __le16 defined in system/extras/ext4_utils/ext4_utils.h */
 #define __le8  unsigned char
 
 struct crypt_mnt_ftr {
