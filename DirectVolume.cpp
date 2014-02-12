@@ -151,7 +151,8 @@ int DirectVolume::handleBlockEvent(NetlinkEvent *evt) {
     return -1;
 }
 
-void DirectVolume::handleDiskAdded(const char *devpath, NetlinkEvent *evt) {
+void DirectVolume::handleDiskAdded(const char * /*devpath*/,
+                                   NetlinkEvent *evt) {
     mDiskMajor = atoi(evt->findParam("MAJOR"));
     mDiskMinor = atoi(evt->findParam("MINOR"));
 
@@ -240,7 +241,8 @@ void DirectVolume::handlePartitionAdded(const char *devpath, NetlinkEvent *evt) 
     }
 }
 
-void DirectVolume::handleDiskChanged(const char *devpath, NetlinkEvent *evt) {
+void DirectVolume::handleDiskChanged(const char * /*devpath*/,
+                                     NetlinkEvent *evt) {
     int major = atoi(evt->findParam("MAJOR"));
     int minor = atoi(evt->findParam("MINOR"));
 
@@ -273,13 +275,15 @@ void DirectVolume::handleDiskChanged(const char *devpath, NetlinkEvent *evt) {
     }
 }
 
-void DirectVolume::handlePartitionChanged(const char *devpath, NetlinkEvent *evt) {
+void DirectVolume::handlePartitionChanged(const char * /*devpath*/,
+                                          NetlinkEvent *evt) {
     int major = atoi(evt->findParam("MAJOR"));
     int minor = atoi(evt->findParam("MINOR"));
     SLOGD("Volume %s %s partition %d:%d changed\n", getLabel(), getMountpoint(), major, minor);
 }
 
-void DirectVolume::handleDiskRemoved(const char *devpath, NetlinkEvent *evt) {
+void DirectVolume::handleDiskRemoved(const char * /*devpath*/,
+                                     NetlinkEvent *evt) {
     int major = atoi(evt->findParam("MAJOR"));
     int minor = atoi(evt->findParam("MINOR"));
     char msg[255];
@@ -297,7 +301,8 @@ void DirectVolume::handleDiskRemoved(const char *devpath, NetlinkEvent *evt) {
     setState(Volume::State_NoMedia);
 }
 
-void DirectVolume::handlePartitionRemoved(const char *devpath, NetlinkEvent *evt) {
+void DirectVolume::handlePartitionRemoved(const char * /*devpath*/,
+                                          NetlinkEvent *evt) {
     int major = atoi(evt->findParam("MAJOR"));
     int minor = atoi(evt->findParam("MINOR"));
     char msg[255];
