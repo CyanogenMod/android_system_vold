@@ -622,7 +622,7 @@ int VolumeManager::fixupAsecPermissions(const char *id, gid_t gid, const char* f
                 result |= fchmod(fd, privateFile ? 0640 : 0644);
             }
 
-            if (selinux_android_restorecon(ftsent->fts_path) < 0) {
+            if (selinux_android_restorecon(ftsent->fts_path, 0) < 0) {
                 SLOGE("restorecon failed for %s: %s\n", ftsent->fts_path, strerror(errno));
                 result |= -1;
             }
