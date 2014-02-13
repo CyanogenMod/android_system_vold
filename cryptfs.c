@@ -53,6 +53,8 @@
 
 #define UNUSED __attribute__((unused))
 
+#define UNUSED __attribute__((unused))
+
 #define DM_CRYPT_BUF_SIZE 4096
 
 #define HASH_COUNT 2000
