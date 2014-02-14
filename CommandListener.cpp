@@ -558,12 +558,32 @@ int CommandListener::CryptfsCmd::runCommand(SocketClient *cli,
         }
 
     } else if (!strcmp(argv[1], "changepw")) {
-        if (argc != 3) {
-            cli->sendMsg(ResponseCode::CommandSyntaxError, "Usage: cryptfs changepw <newpasswd>", false);
+        const char* syntax = "Usage: cryptfs changepw "
+                             "default|password|pin|pattern [newpasswd]";
+        char* password;
+        if (argc == 3) {
+            password = "";
+        } else if (argc == 4) {
+            password = argv[3];
+        } else {
+            cli->sendMsg(ResponseCode::CommandSyntaxError, syntax, false);
             return 0;
-        } 
-        SLOGD("cryptfs changepw {}");
-        rc = cryptfs_changepw(argv[2]);
+        }
+        int type = 0;
+        if (!strcmp(argv[2], "default")) {
+            type = CRYPT_TYPE_DEFAULT;
+        } else if (!strcmp(argv[2], "password")) {
+            type = CRYPT_TYPE_PASSWORD;
+        } else if (!strcmp(argv[2], "pin")) {
+            type = CRYPT_TYPE_PIN;
+        } else if (!strcmp(argv[2], "pattern")) {
+            type = CRYPT_TYPE_PATTERN;
+        } else {
+            cli->sendMsg(ResponseCode::CommandSyntaxError, syntax, false);
+            return 0;
+        }
+        SLOGD("cryptfs changepw %s {}", argv[2]);
+        rc = cryptfs_changepw(type, password);
     } else if (!strcmp(argv[1], "verifypw")) {
         if (argc != 3) {
             cli->sendMsg(ResponseCode::CommandSyntaxError, "Usage: cryptfs verifypw <passwd>", false);
@@ -590,9 +610,35 @@ int CommandListener::CryptfsCmd::runCommand(SocketClient *cli,
         }
         dumpArgs(argc, argv, -1);
         rc = cryptfs_setfield(argv[2], argv[3]);
+    } else if (!strcmp(argv[1], "mountdefaultencrypted")) {
+        SLOGD("cryptfs mountdefaultencrypted");
+        dumpArgs(argc, argv, -1);
+        rc = cryptfs_mount_default_encrypted();
+    } else if (!strcmp(argv[1], "getpwtype")) {
+        SLOGD("cryptfs getpwtype");
+        dumpArgs(argc, argv, -1);
+        switch(cryptfs_get_password_type()) {
+        case CRYPT_TYPE_PASSWORD:
+            cli->sendMsg(ResponseCode::PasswordTypeResult, "password", false);
+            return 0;
+        case CRYPT_TYPE_PATTERN:
+            cli->sendMsg(ResponseCode::PasswordTypeResult, "pattern", false);
+            return 0;
+        case CRYPT_TYPE_PIN:
+            cli->sendMsg(ResponseCode::PasswordTypeResult, "pin", false);
+            return 0;
+        case CRYPT_TYPE_DEFAULT:
+            cli->sendMsg(ResponseCode::PasswordTypeResult, "default", false);
+            return 0;
+        default:
+          /** @TODO better error and make sure handled by callers */
+            cli->sendMsg(ResponseCode::OpFailedStorageNotFound, "Error", false);
+            return 0;
+        }
     } else {
         dumpArgs(argc, argv, -1);
         cli->sendMsg(ResponseCode::CommandSyntaxError, "Unknown cryptfs cmd", false);
+        return 0;
     }
 
     // Always report that the command succeeded and return the error code.
