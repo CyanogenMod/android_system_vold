@@ -14,6 +14,7 @@ common_src_files := \
 	Loop.cpp \
 	Devmapper.cpp \
 	ResponseCode.cpp \
+	CheckBattery.cpp \
 	VoldUtil.c \
 	fstrim.c \
 	cryptfs.c
@@ -23,11 +24,13 @@ common_c_includes := \
 	external/openssl/include \
 	external/stlport/stlport \
 	bionic \
-	external/scrypt/lib/crypto
+	external/scrypt/lib/crypto \
+	frameworks/native/include
 
 common_shared_libraries := \
 	libsysutils \
 	libstlport \
+	libbinder \
 	libcutils \
 	liblog \
 	libdiskconfig \
@@ -35,12 +38,14 @@ common_shared_libraries := \
 	liblogwrap \
 	libext4_utils \
 	libcrypto \
-	libselinux
+	libselinux \
+	libutils
 
 common_static_libraries := \
 	libfs_mgr \
 	libscrypt_static \
-	libmincrypt
+	libmincrypt \
+	libbatteryservice
 
 include $(CLEAR_VARS)
 

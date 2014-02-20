@@ -27,6 +27,7 @@
  */
 
 #include <cutils/properties.h>
+#include <openssl/sha.h>
 
 /* The current cryptfs version */
 #define CURRENT_MAJOR_VERSION 1
@@ -80,10 +81,10 @@ struct crypt_mnt_ftr {
                          * CRYPT_TYPE_XXX value */
   __le64 fs_size;	/* Size of the encrypted fs, in 512 byte sectors */
   __le32 failed_decrypt_count; /* count of # of failed attempts to decrypt and
-			          mount, set to 0 on successful mount */
+                                  mount, set to 0 on successful mount */
   unsigned char crypto_type_name[MAX_CRYPTO_TYPE_NAME_LEN]; /* The type of encryption
-							       needed to decrypt this
-							       partition, null terminated */
+                                                               needed to decrypt this
+                                                               partition, null terminated */
   __le32 spare2;        /* ignored */
   unsigned char master_key[MAX_KEY_LEN]; /* The encrypted key for decrypting the filesystem */
   unsigned char salt[SALT_LEN];   /* The salt used for this encryption */
@@ -100,6 +101,12 @@ struct crypt_mnt_ftr {
   __le8  N_factor; /* (1 << N) */
   __le8  r_factor; /* (1 << r) */
   __le8  p_factor; /* (1 << p) */
+  __le64 encrypted_upto; /* If we are in state CRYPT_ENCRYPTION_IN_PROGRESS and
+                            we have to stop (e.g. power low) this is the last
+                            encrypted 512 byte sector.*/
+  __le8  hash_first_block[SHA256_DIGEST_LENGTH]; /* When CRYPT_ENCRYPTION_IN_PROGRESS
+                                                    set, hash of first block, used
+                                                    to validate before continuing*/
 };
 
 /* Persistant data that should be available before decryption.

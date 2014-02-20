@@ -35,7 +35,6 @@
 #include <string.h>
 #include <sys/mount.h>
 #include <openssl/evp.h>
-#include <openssl/sha.h>
 #include <errno.h>
 #include <ext4.h>
 #include <linux/kdev_t.h>
@@ -51,6 +50,7 @@
 #include "VoldUtil.h"
 #include "crypto_scrypt.h"
 #include "ext4_utils.h"
+#include "CheckBattery.h"
 
 #define UNUSED __attribute__((unused))
 
@@ -87,13 +87,23 @@ static int just_decrypted = 0;
 
 extern struct fstab *fstab;
 
-static void cryptfs_reboot(int recovery)
+enum RebootType {reboot, recovery, shutdown};
+static void cryptfs_reboot(enum RebootType rt)
 {
-    if (recovery) {
-        property_set(ANDROID_RB_PROPERTY, "reboot,recovery");
-    } else {
-        property_set(ANDROID_RB_PROPERTY, "reboot");
+  switch(rt) {
+      case reboot:
+          property_set(ANDROID_RB_PROPERTY, "reboot");
+          break;
+
+      case recovery:
+          property_set(ANDROID_RB_PROPERTY, "reboot,recovery");
+          break;
+
+      case shutdown:
+          property_set(ANDROID_RB_PROPERTY, "shutdown");
+          break;
     }
+
     sleep(20);
 
     /* Shouldn't get here, reboot should happen before sleep times out */
@@ -1615,7 +1625,8 @@ static int cryptfs_enable_wipe(char *crypto_blkdev, off64_t size, int type)
 }
 
 #define CRYPT_INPLACE_BUFSIZE 4096
-#define CRYPT_SECTORS_PER_BUFSIZE (CRYPT_INPLACE_BUFSIZE / 512)
+#define CRYPT_SECTORS_PER_BUFSIZE (CRYPT_INPLACE_BUFSIZE / CRYPT_SECTOR_SIZE)
+#define CRYPT_SECTOR_SIZE 512
 
 /* aligned 32K writes tends to make flash happy.
  * SD card association recommends it.
@@ -1633,6 +1644,8 @@ struct encryptGroupsData
     int count;
     off64_t offset;
     char* buffer;
+    off64_t last_written_sector;
+    int completed;
 };
 
 static void update_progress(struct encryptGroupsData* data)
@@ -1669,9 +1682,14 @@ static int flush_outstanding_data(struct encryptGroupsData* data)
         SLOGE("Error writing crypto_blkdev %s for inplace encrypt",
               data->crypto_blkdev);
         return -1;
+    } else {
+        SLOGI("Encrypted %d blocks at sector %lld",
+              data->count, data->offset / info.block_size * CRYPT_SECTOR_SIZE);
     }
 
     data->count = 0;
+    data->last_written_sector = (data->offset + data->count)
+                                / info.block_size * CRYPT_SECTOR_SIZE - 1;
     return 0;
 }
 
@@ -1737,12 +1755,20 @@ static int encrypt_groups(struct encryptGroupsData* data)
                     goto errout;
                 }
             }
+
+            if (!is_battery_ok()) {
+                SLOGE("Stopping encryption due to low battery");
+                rc = 0;
+                goto errout;
+            }
+
         }
         if (flush_outstanding_data(data)) {
             goto errout;
         }
     }
 
+    data->completed = 1;
     rc = 0;
 
 errout:
@@ -1755,11 +1781,17 @@ static int cryptfs_enable_inplace_ext4(char *crypto_blkdev,
                                        char *real_blkdev,
                                        off64_t size,
                                        off64_t *size_already_done,
-                                       off64_t tot_size)
+                                       off64_t tot_size,
+                                       off64_t previously_encrypted_upto)
 {
     int i;
     struct encryptGroupsData data;
     int rc = -1;
+
+    if (previously_encrypted_upto > *size_already_done) {
+        SLOGD("Not fast encrypting since resuming part way through");
+        return -1;
+    }
 
     memset(&data, 0, sizeof(data));
     data.real_blkdev = real_blkdev;
@@ -1802,7 +1834,7 @@ static int cryptfs_enable_inplace_ext4(char *crypto_blkdev,
         goto errout;
     }
 
-    *size_already_done += size;
+    *size_already_done += data.completed ? size : data.last_written_sector;
     rc = 0;
 
 errout:
@@ -1814,7 +1846,8 @@ errout:
 
 static int cryptfs_enable_inplace_full(char *crypto_blkdev, char *real_blkdev,
                                        off64_t size, off64_t *size_already_done,
-                                       off64_t tot_size)
+                                       off64_t tot_size,
+                                       off64_t previously_encrypted_upto)
 {
     int realfd, cryptofd;
     char *buf[CRYPT_INPLACE_BUFSIZE];
@@ -1846,10 +1879,37 @@ static int cryptfs_enable_inplace_full(char *crypto_blkdev, char *real_blkdev,
 
     SLOGE("Encrypting filesystem in place...");
 
+    i = previously_encrypted_upto + 1 - *size_already_done;
+
+    if (lseek64(realfd, i * CRYPT_SECTOR_SIZE, SEEK_SET) < 0) {
+        SLOGE("Cannot seek to previously encrypted point on %s", real_blkdev);
+        goto errout;
+    }
+
+    if (lseek64(cryptofd, i * CRYPT_SECTOR_SIZE, SEEK_SET) < 0) {
+        SLOGE("Cannot seek to previously encrypted point on %s", crypto_blkdev);
+        goto errout;
+    }
+
+    for (;i < size && i % CRYPT_SECTORS_PER_BUFSIZE != 0; ++i) {
+        if (unix_read(realfd, buf, CRYPT_SECTOR_SIZE) <= 0) {
+            SLOGE("Error reading initial sectors from real_blkdev %s for "
+                  "inplace encrypt\n", crypto_blkdev);
+            goto errout;
+        }
+        if (unix_write(cryptofd, buf, CRYPT_SECTOR_SIZE) <= 0) {
+            SLOGE("Error writing initial sectors to crypto_blkdev %s for "
+                  "inplace encrypt\n", crypto_blkdev);
+            goto errout;
+        } else {
+            SLOGI("Encrypted 1 block at %lld", i);
+        }
+    }
+
     one_pct = tot_numblocks / 100;
     cur_pct = 0;
     /* process the majority of the filesystem in blocks */
-    for (i=0; i<numblocks; i++) {
+    for (i/=CRYPT_SECTORS_PER_BUFSIZE; i<numblocks; i++) {
         new_pct = (i + blocks_already_done) / one_pct;
         if (new_pct > cur_pct) {
             char buf[8];
@@ -1859,24 +1919,37 @@ static int cryptfs_enable_inplace_full(char *crypto_blkdev, char *real_blkdev,
             property_set("vold.encrypt_progress", buf);
         }
         if (unix_read(realfd, buf, CRYPT_INPLACE_BUFSIZE) <= 0) {
-            SLOGE("Error reading real_blkdev %s for inplace encrypt\n", crypto_blkdev);
+            SLOGE("Error reading real_blkdev %s for inplace encrypt", crypto_blkdev);
             goto errout;
         }
         if (unix_write(cryptofd, buf, CRYPT_INPLACE_BUFSIZE) <= 0) {
-            SLOGE("Error writing crypto_blkdev %s for inplace encrypt\n", crypto_blkdev);
+            SLOGE("Error writing crypto_blkdev %s for inplace encrypt", crypto_blkdev);
+            goto errout;
+        } else {
+            SLOGD("Encrypted %d block at %lld",
+                  CRYPT_SECTORS_PER_BUFSIZE,
+                  i * CRYPT_SECTORS_PER_BUFSIZE);
+        }
+
+       if (!is_battery_ok()) {
+            SLOGE("Stopping encryption due to low battery");
+            *size_already_done += (i + 1) * CRYPT_SECTORS_PER_BUFSIZE - 1;
+            rc = 0;
             goto errout;
         }
     }
 
     /* Do any remaining sectors */
     for (i=0; i<remainder; i++) {
-        if (unix_read(realfd, buf, 512) <= 0) {
-            SLOGE("Error reading rival sectors from real_blkdev %s for inplace encrypt\n", crypto_blkdev);
+        if (unix_read(realfd, buf, CRYPT_SECTOR_SIZE) <= 0) {
+            SLOGE("Error reading final sectors from real_blkdev %s for inplace encrypt", crypto_blkdev);
             goto errout;
         }
-        if (unix_write(cryptofd, buf, 512) <= 0) {
-            SLOGE("Error writing final sectors to crypto_blkdev %s for inplace encrypt\n", crypto_blkdev);
+        if (unix_write(cryptofd, buf, CRYPT_SECTOR_SIZE) <= 0) {
+            SLOGE("Error writing final sectors to crypto_blkdev %s for inplace encrypt", crypto_blkdev);
             goto errout;
+        } else {
+            SLOGI("Encrypted 1 block at next location");
         }
     }
 
@@ -1892,15 +1965,27 @@ errout:
 
 static int cryptfs_enable_inplace(char *crypto_blkdev, char *real_blkdev,
                                   off64_t size, off64_t *size_already_done,
-                                  off64_t tot_size)
+                                  off64_t tot_size,
+                                  off64_t previously_encrypted_upto)
 {
+    if (previously_encrypted_upto) {
+        SLOGD("Continuing encryption from %lld", previously_encrypted_upto);
+    }
+
+    if (*size_already_done + size < previously_encrypted_upto) {
+        *size_already_done += size;
+        return 0;
+    }
+
     if (cryptfs_enable_inplace_ext4(crypto_blkdev, real_blkdev,
-                                    size, size_already_done, tot_size) == 0) {
+                                    size, size_already_done,
+                                    tot_size, previously_encrypted_upto) == 0) {
         return 0;
     }
 
     return cryptfs_enable_inplace_full(crypto_blkdev, real_blkdev,
-                                       size, size_already_done, tot_size);
+                                       size, size_already_done, tot_size,
+                                       previously_encrypted_upto);
 }
 
 #define CRYPTO_ENABLE_WIPE 1
@@ -1914,34 +1999,91 @@ static inline int should_encrypt(struct volume_info *volume)
             (VOL_ENCRYPTABLE | VOL_NONREMOVABLE);
 }
 
+static int cryptfs_SHA256_fileblock(const char* filename, __le8* buf)
+{
+    int fd = open(filename, O_RDONLY);
+    if (fd == -1) {
+        SLOGE("Error opening file %s", filename);
+        return -1;
+    }
+
+    char block[CRYPT_INPLACE_BUFSIZE];
+    memset(block, 0, sizeof(block));
+    if (unix_read(fd, block, sizeof(block)) < 0) {
+        SLOGE("Error reading file %s", filename);
+        close(fd);
+        return -1;
+    }
+
+    close(fd);
+
+    SHA256_CTX c;
+    SHA256_Init(&c);
+    SHA256_Update(&c, block, sizeof(block));
+    SHA256_Final(buf, &c);
+
+    return 0;
+}
+
+static int cryptfs_enable_all_volumes(struct crypt_mnt_ftr *crypt_ftr, int how,
+                                      char *crypto_blkdev, char *real_blkdev,
+                                      int previously_encrypted_upto)
+{
+    off64_t cur_encryption_done=0, tot_encryption_size=0;
+    int i, rc = -1;
+
+    if (!is_battery_ok()) {
+        SLOGE("Stopping encryption due to low battery");
+        return 0;
+    }
+
+    /* The size of the userdata partition, and add in the vold volumes below */
+    tot_encryption_size = crypt_ftr->fs_size;
+
+    if (how == CRYPTO_ENABLE_WIPE) {
+        rc = cryptfs_enable_wipe(crypto_blkdev, crypt_ftr->fs_size, EXT4_FS);
+    } else if (how == CRYPTO_ENABLE_INPLACE) {
+        rc = cryptfs_enable_inplace(crypto_blkdev, real_blkdev,
+                                    crypt_ftr->fs_size, &cur_encryption_done,
+                                    tot_encryption_size,
+                                    previously_encrypted_upto);
+
+        if (!rc && cur_encryption_done != (off64_t)crypt_ftr->fs_size) {
+            crypt_ftr->encrypted_upto = cur_encryption_done;
+        }
+
+        if (!rc && !crypt_ftr->encrypted_upto) {
+            /* The inplace routine never actually sets the progress to 100% due
+             * to the round down nature of integer division, so set it here */
+            property_set("vold.encrypt_progress", "100");
+        }
+    } else {
+        /* Shouldn't happen */
+        SLOGE("cryptfs_enable: internal error, unknown option\n");
+        rc = -1;
+    }
+
+    return rc;
+}
+
 int cryptfs_enable_internal(char *howarg, int crypt_type, char *passwd,
                             int allow_reboot)
 {
     int how = 0;
-    char crypto_blkdev[MAXPATHLEN], real_blkdev[MAXPATHLEN], sd_crypto_blkdev[MAXPATHLEN];
+    char crypto_blkdev[MAXPATHLEN], real_blkdev[MAXPATHLEN];
     unsigned long nr_sec;
     unsigned char decrypted_master_key[KEY_LEN_BYTES];
     int rc=-1, fd, i, ret;
-    struct crypt_mnt_ftr crypt_ftr, sd_crypt_ftr;;
+    struct crypt_mnt_ftr crypt_ftr;
     struct crypt_persist_data *pdata;
-    char tmpfs_options[PROPERTY_VALUE_MAX];
     char encrypted_state[PROPERTY_VALUE_MAX];
     char lockid[32] = { 0 };
     char key_loc[PROPERTY_VALUE_MAX];
     char fuse_sdcard[PROPERTY_VALUE_MAX];
     char *sd_mnt_point;
-    char sd_blk_dev[256] = { 0 };
     int num_vols;
     struct volume_info *vol_list = 0;
-    off64_t cur_encryption_done=0, tot_encryption_size=0;
-
-    property_get("ro.crypto.state", encrypted_state, "");
-    if (!strcmp(encrypted_state, "encrypted")) {
-        SLOGE("Device is already running encrypted, aborting");
-        goto error_unencrypted;
-    }
-
-    fs_mgr_get_crypt_info(fstab, key_loc, 0, sizeof(key_loc));
+    off64_t previously_encrypted_upto = 0;
 
     if (!strcmp(howarg, "wipe")) {
       how = CRYPTO_ENABLE_WIPE;
@@ -1952,6 +2094,22 @@ int cryptfs_enable_internal(char *howarg, int crypt_type, char *passwd,
       goto error_unencrypted;
     }
 
+    /* See if an encryption was underway and interrupted */
+    if (how == CRYPTO_ENABLE_INPLACE
+          && get_crypt_ftr_and_key(&crypt_ftr) == 0
+          && (crypt_ftr.flags & CRYPT_ENCRYPTION_IN_PROGRESS)) {
+        previously_encrypted_upto = crypt_ftr.encrypted_upto;
+        crypt_ftr.encrypted_upto = 0;
+    }
+
+    property_get("ro.crypto.state", encrypted_state, "");
+    if (!strcmp(encrypted_state, "encrypted") && !previously_encrypted_upto) {
+        SLOGE("Device is already running encrypted, aborting");
+        goto error_unencrypted;
+    }
+
+    // TODO refactor fs_mgr_get_crypt_info to get both in one call
+    fs_mgr_get_crypt_info(fstab, key_loc, 0, sizeof(key_loc));
     fs_mgr_get_crypt_info(fstab, 0, real_blkdev, sizeof(real_blkdev));
 
     /* Get the size of the real block device */
@@ -1967,7 +2125,7 @@ int cryptfs_enable_internal(char *howarg, int crypt_type, char *passwd,
         unsigned int fs_size_sec, max_fs_size_sec;
 
         fs_size_sec = get_fs_size(real_blkdev);
-        max_fs_size_sec = nr_sec - (CRYPT_FOOTER_OFFSET / 512);
+        max_fs_size_sec = nr_sec - (CRYPT_FOOTER_OFFSET / CRYPT_SECTOR_SIZE);
 
         if (fs_size_sec > max_fs_size_sec) {
             SLOGE("Orig filesystem overlaps crypto footer region.  Cannot encrypt in place.");
@@ -1991,26 +2149,19 @@ int cryptfs_enable_internal(char *howarg, int crypt_type, char *passwd,
         sd_mnt_point = "/mnt/sdcard";
     }
 
+    /* TODO
+     * Currently do not have test devices with multiple encryptable volumes.
+     * When we acquire some, re-add support.
+     */
     num_vols=vold_getNumDirectVolumes();
     vol_list = malloc(sizeof(struct volume_info) * num_vols);
     vold_getDirectVolumeList(vol_list);
 
     for (i=0; i<num_vols; i++) {
         if (should_encrypt(&vol_list[i])) {
-            fd = open(vol_list[i].blk_dev, O_RDONLY);
-            if ( (vol_list[i].size = get_blkdev_size(fd)) == 0) {
-                SLOGE("Cannot get size of block device %s\n", vol_list[i].blk_dev);
-                goto error_unencrypted;
-            }
-            close(fd);
-
-            ret=vold_disableVol(vol_list[i].label);
-            if ((ret < 0) && (ret != UNMOUNT_NOT_MOUNTED_ERR)) {
-                /* -2 is returned when the device exists but is not currently mounted.
-                 * ignore the error and continue. */
-                SLOGE("Failed to unmount volume %s\n", vol_list[i].label);
-                goto error_unencrypted;
-            }
+            SLOGE("Cannot encrypt if there are multiple encryptable volumes"
+                  "%s\n", vol_list[i].label);
+            goto error_unencrypted;
         }
     }
 
@@ -2087,102 +2238,78 @@ int cryptfs_enable_internal(char *howarg, int crypt_type, char *passwd,
 
     /* Start the actual work of making an encrypted filesystem */
     /* Initialize a crypt_mnt_ftr for the partition */
-    cryptfs_init_crypt_mnt_ftr(&crypt_ftr);
+    if (previously_encrypted_upto == 0) {
+        cryptfs_init_crypt_mnt_ftr(&crypt_ftr);
 
-    if (!strcmp(key_loc, KEY_IN_FOOTER)) {
-        crypt_ftr.fs_size = nr_sec - (CRYPT_FOOTER_OFFSET / 512);
-    } else {
-        crypt_ftr.fs_size = nr_sec;
-    }
-    crypt_ftr.flags |= CRYPT_ENCRYPTION_IN_PROGRESS;
-    crypt_ftr.crypt_type = crypt_type;
-    strcpy((char *)crypt_ftr.crypto_type_name, "aes-cbc-essiv:sha256");
+        if (!strcmp(key_loc, KEY_IN_FOOTER)) {
+            crypt_ftr.fs_size = nr_sec
+              - (CRYPT_FOOTER_OFFSET / CRYPT_SECTOR_SIZE);
+        } else {
+            crypt_ftr.fs_size = nr_sec;
+        }
+        crypt_ftr.flags |= CRYPT_ENCRYPTION_IN_PROGRESS;
+        crypt_ftr.crypt_type = crypt_type;
+        strcpy((char *)crypt_ftr.crypto_type_name, "aes-cbc-essiv:sha256");
 
-    /* Make an encrypted master key */
-    if (create_encrypted_random_key(passwd, crypt_ftr.master_key, crypt_ftr.salt, &crypt_ftr)) {
-        SLOGE("Cannot create encrypted master key\n");
-        goto error_shutting_down;
-    }
+        /* Make an encrypted master key */
+        if (create_encrypted_random_key(passwd, crypt_ftr.master_key, crypt_ftr.salt, &crypt_ftr)) {
+            SLOGE("Cannot create encrypted master key\n");
+            goto error_shutting_down;
+        }
 
-    /* Write the key to the end of the partition */
-    put_crypt_ftr_and_key(&crypt_ftr);
+        /* Write the key to the end of the partition */
+        put_crypt_ftr_and_key(&crypt_ftr);
 
-    /* If any persistent data has been remembered, save it.
-     * If none, create a valid empty table and save that.
-     */
-    if (!persist_data) {
-       pdata = malloc(CRYPT_PERSIST_DATA_SIZE);
-       if (pdata) {
-           init_empty_persist_data(pdata, CRYPT_PERSIST_DATA_SIZE);
-           persist_data = pdata;
-       }
-    }
-    if (persist_data) {
-        save_persistent_data();
+        /* If any persistent data has been remembered, save it.
+         * If none, create a valid empty table and save that.
+         */
+        if (!persist_data) {
+           pdata = malloc(CRYPT_PERSIST_DATA_SIZE);
+           if (pdata) {
+               init_empty_persist_data(pdata, CRYPT_PERSIST_DATA_SIZE);
+               persist_data = pdata;
+           }
+        }
+        if (persist_data) {
+            save_persistent_data();
+        }
     }
 
     decrypt_master_key(passwd, decrypted_master_key, &crypt_ftr);
     create_crypto_blk_dev(&crypt_ftr, decrypted_master_key, real_blkdev, crypto_blkdev,
                           "userdata");
 
-    /* The size of the userdata partition, and add in the vold volumes below */
-    tot_encryption_size = crypt_ftr.fs_size;
+    /* If we are continuing, check checksums match */
+    rc = 0;
+    if (previously_encrypted_upto) {
+        __le8 hash_first_block[SHA256_DIGEST_LENGTH];
+        rc = cryptfs_SHA256_fileblock(crypto_blkdev, hash_first_block);
 
-    /* setup crypto mapping for all encryptable volumes handled by vold */
-    for (i=0; i<num_vols; i++) {
-        if (should_encrypt(&vol_list[i])) {
-            vol_list[i].crypt_ftr = crypt_ftr; /* gotta love struct assign */
-            vol_list[i].crypt_ftr.fs_size = vol_list[i].size;
-            create_crypto_blk_dev(&vol_list[i].crypt_ftr, decrypted_master_key,
-                                  vol_list[i].blk_dev, vol_list[i].crypto_blkdev,
-                                  vol_list[i].label);
-            tot_encryption_size += vol_list[i].size;
+        if (!rc && memcmp(hash_first_block, crypt_ftr.hash_first_block,
+                          sizeof(hash_first_block)) != 0) {
+            SLOGE("Checksums do not match - trigger wipe");
+            rc = -1;
         }
     }
 
-    if (how == CRYPTO_ENABLE_WIPE) {
-        rc = cryptfs_enable_wipe(crypto_blkdev, crypt_ftr.fs_size, EXT4_FS);
-        /* Encrypt all encryptable volumes handled by vold */
+    if (!rc) {
+        rc = cryptfs_enable_all_volumes(&crypt_ftr, how,
+                                        crypto_blkdev, real_blkdev,
+                                        previously_encrypted_upto);
+    }
+
+    /* Calculate checksum if we are not finished */
+    if (!rc && crypt_ftr.encrypted_upto) {
+        rc = cryptfs_SHA256_fileblock(crypto_blkdev,
+                                      crypt_ftr.hash_first_block);
         if (!rc) {
-            for (i=0; i<num_vols; i++) {
-                if (should_encrypt(&vol_list[i])) {
-                    rc = cryptfs_enable_wipe(vol_list[i].crypto_blkdev,
-                                             vol_list[i].crypt_ftr.fs_size, FAT_FS);
-                }
-            }
+            SLOGE("Error calculating checksum for continuing encryption");
+            rc = -1;
         }
-    } else if (how == CRYPTO_ENABLE_INPLACE) {
-        rc = cryptfs_enable_inplace(crypto_blkdev, real_blkdev, crypt_ftr.fs_size,
-                                    &cur_encryption_done, tot_encryption_size);
-        /* Encrypt all encryptable volumes handled by vold */
-        if (!rc) {
-            for (i=0; i<num_vols; i++) {
-                if (should_encrypt(&vol_list[i])) {
-                    rc = cryptfs_enable_inplace(vol_list[i].crypto_blkdev,
-                                                vol_list[i].blk_dev,
-                                                vol_list[i].crypt_ftr.fs_size,
-                                                &cur_encryption_done, tot_encryption_size);
-                }
-            }
-        }
-        if (!rc) {
-            /* The inplace routine never actually sets the progress to 100%
-             * due to the round down nature of integer division, so set it here */
-            property_set("vold.encrypt_progress", "100");
-        }
-    } else {
-        /* Shouldn't happen */
-        SLOGE("cryptfs_enable: internal error, unknown option\n");
-        goto error_shutting_down;
     }
 
     /* Undo the dm-crypt mapping whether we succeed or not */
     delete_crypto_blk_dev("userdata");
-    for (i=0; i<num_vols; i++) {
-        if (should_encrypt(&vol_list[i])) {
-            delete_crypto_blk_dev(vol_list[i].label);
-        }
-    }
 
     free(vol_list);
 
@@ -2190,11 +2317,22 @@ int cryptfs_enable_internal(char *howarg, int crypt_type, char *passwd,
         /* Success */
 
         /* Clear the encryption in progres flag in the footer */
-        crypt_ftr.flags &= ~CRYPT_ENCRYPTION_IN_PROGRESS;
+        if (!crypt_ftr.encrypted_upto) {
+            crypt_ftr.flags &= ~CRYPT_ENCRYPTION_IN_PROGRESS;
+        } else {
+            SLOGD("Encrypted up to sector %lld - will continue after reboot",
+                  crypt_ftr.encrypted_upto);
+        }
         put_crypt_ftr_and_key(&crypt_ftr);
 
         sleep(2); /* Give the UI a chance to show 100% progress */
-        cryptfs_reboot(0);
+                  /* Partially encrypted - ensure writes are flushed to ssd */
+
+        if (!crypt_ftr.encrypted_upto) {
+            cryptfs_reboot(reboot);
+        } else {
+            cryptfs_reboot(shutdown);
+        }
     } else {
         char value[PROPERTY_VALUE_MAX];
 
@@ -2210,7 +2348,7 @@ int cryptfs_enable_internal(char *howarg, int crypt_type, char *passwd,
             } else {
                 SLOGE("could not open /cache/recovery/command\n");
             }
-            cryptfs_reboot(1);
+            cryptfs_reboot(recovery);
         } else {
             /* set property to trigger dialog */
             property_set("vold.encrypt_progress", "error_partially_encrypted");
@@ -2241,7 +2379,7 @@ error_shutting_down:
      * vold to restart the system.
      */
     SLOGE("Error enabling encryption after framework is shutdown, no data changed, restarting system");
-    cryptfs_reboot(0);
+    cryptfs_reboot(reboot);
 
     /* shouldn't get here */
     property_set("vold.encrypt_progress", "error_shutting_down");
