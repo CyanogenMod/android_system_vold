@@ -45,6 +45,9 @@
 static char EXFAT_FSCK[] = HELPER_PATH "fsck.exfat";
 static char EXFAT_MKFS[] = HELPER_PATH "mkfs.exfat";
 static char EXFAT_MOUNT[] = HELPER_PATH "mount.exfat";
+#ifdef EXFAT_MODULE_NAME
+extern "C" int mount(const char *, const char *, const char *, unsigned long, const void *);
+#endif
 
 int Exfat::doMount(const char *fsPath, const char *mountPoint,
                  bool ro, bool remount, bool executable,
@@ -60,6 +63,7 @@ int Exfat::doMount(const char *fsPath, const char *mountPoint,
         return rc;
     }
 
+#ifndef EXFAT_MODULE_NAME
     sprintf(mountData,
             "noatime,nodev,nosuid,dirsync,uid=%d,gid=%d,fmask=%o,dmask=%o,%s,%s",
             ownerUid, ownerGid, permMask, permMask,
@@ -77,12 +81,30 @@ int Exfat::doMount(const char *fsPath, const char *mountPoint,
 
     rc = android_fork_execvp(ARRAY_SIZE(args), (char **)args, &status, false,
             true);
+#else
+    unsigned long flags;
 
+    flags = MS_NOATIME | MS_NODEV | MS_NOSUID | MS_DIRSYNC;
+
+    flags |= (executable ? 0 : MS_NOEXEC);
+    flags |= (ro ? MS_RDONLY : 0);
+    flags |= (remount ? MS_REMOUNT : 0);
+
+    sprintf(mountData,
+            "uid=%d,gid=%d,fmask=%o,dmask=%o",
+            ownerUid, ownerGid, permMask, permMask);
+    rc = mount(fsPath, mountPoint, EXFAT_MODULE_NAME, flags, mountData);
+#endif
     if (rc && errno == EROFS) {
         SLOGE("%s appears to be a read only filesystem - retrying mount RO", fsPath);
+#ifndef EXFAT_MODULE_NAME
         strcat(mountData, ",ro");
         rc = android_fork_execvp(ARRAY_SIZE(args), (char **)args, &status, false,
             true);
+#else
+        flags |= MS_RDONLY;
+        rc = mount(fsPath, mountPoint, EXFAT_MODULE_NAME, flags, mountData);
+#endif
     }
 
     return rc;
