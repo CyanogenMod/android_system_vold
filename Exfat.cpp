@@ -91,7 +91,7 @@ int Exfat::doMount(const char *fsPath, const char *mountPoint,
     flags |= (remount ? MS_REMOUNT : 0);
 
     sprintf(mountData,
-            "uid=%d,gid=%d,fmask=%o,dmask=%o",
+            "context=u:object_r:sdcard_external:s0,uid=%d,gid=%d,fmask=%o,dmask=%o",
             ownerUid, ownerGid, permMask, permMask);
     rc = mount(fsPath, mountPoint, EXFAT_MODULE_NAME, flags, mountData);
 #endif
