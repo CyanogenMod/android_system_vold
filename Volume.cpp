@@ -298,6 +298,13 @@ int Volume::formatVol(bool wipe) {
 
     fstype = getFsType((const char*)devicePath);
 
+    /* If the device has no filesystem, let's default to vfat.
+     * A NULL fstype will cause a MAPERR in the format
+     * switch below */
+    if (fstype == NULL) {
+        fstype = strdup("vfat");
+    }
+
     if (mDebug) {
         SLOGI("Formatting volume %s (%s) as %s", getLabel(), devicePath, fstype);
     }
