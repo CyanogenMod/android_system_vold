@@ -253,7 +253,7 @@ int Volume::createDeviceNode(const char *path, int major, int minor) {
 
 int Volume::formatVol(bool wipe, const char* fstype) {
 
-    const char* fstype2 = NULL;
+    char* fstype2 = NULL;
 
     if (getState() == Volume::State_NoMedia) {
         errno = ENODEV;
@@ -307,11 +307,18 @@ int Volume::formatVol(bool wipe, const char* fstype) {
     if (fstype == NULL) {
         fstype2 = getFsType((const char*)devicePath);
     } else {
-        fstype2 = fstype;
+        fstype2 = strdup(fstype);
     }
 
     if (mDebug) {
         SLOGI("Formatting volume %s (%s) as %s", getLabel(), devicePath, fstype2);
+    }
+
+    /* If the device has no filesystem, let's default to vfat.
+     * A NULL fstype2 will cause a MAPERR in the format
+     * switch below */
+    if (fstype2 == NULL) {
+        fstype2 = strdup("vfat");
     }
 
     if (strcmp(fstype2, "exfat") == 0) {
@@ -327,6 +334,8 @@ int Volume::formatVol(bool wipe, const char* fstype) {
     if (ret < 0) {
         SLOGE("Failed to format (%s)", strerror(errno));
     }
+
+    free(fstype2);
 
 err:
     setState(Volume::State_Idle);
