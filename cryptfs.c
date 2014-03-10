@@ -79,11 +79,23 @@ static char *saved_mount_point;
 static int  master_key_saved = 0;
 static struct crypt_persist_data *persist_data = NULL;
 
-/* Set when userdata is successfully decrypted and mounted.
- * Reset whenever read (via cryptfs_just_decrypted)
- * (Read by keyguard to avoid a double prompt.)
+/* Store password when userdata is successfully decrypted and mounted.
+ * Cleared by cryptfs_clear_password
+ *
+ * To avoid a double prompt at boot, we need to store the CryptKeeper
+ * password and pass it to KeyGuard, which uses it to unlock KeyStore.
+ * Since the entire framework is torn down and rebuilt after encryption,
+ * we have to use a daemon or similar to store the password. Since vold
+ * is secured against IPC except from system processes, it seems a reasonable
+ * place to store this.
+ *
+ * password should be cleared once it has been used.
+ *
+ * password is aged out after password_max_age_seconds seconds.
  */
-static int just_decrypted = 0;
+static char* password = 0;
+static int password_expiry_time = 0;
+static const int password_max_age_seconds = 60;
 
 extern struct fstab *fstab;
 
@@ -1472,7 +1484,11 @@ int cryptfs_check_passwd(char *passwd)
                                  DATA_MNT_POINT, "userdata");
 
     if (rc == 0 && crypt_ftr.crypt_type != CRYPT_TYPE_DEFAULT) {
-        just_decrypted = 1;
+        cryptfs_clear_password();
+        password = strdup(passwd);
+        struct timespec now;
+        clock_gettime(CLOCK_BOOTTIME, &now);
+        password_expiry_time = now.tv_sec + password_max_age_seconds;
     }
 
     return rc;
@@ -2493,9 +2509,25 @@ int cryptfs_get_password_type(void)
     return crypt_ftr.crypt_type;
 }
 
-int cryptfs_just_decrypted(void)
+char* cryptfs_get_password()
 {
-    int rc = just_decrypted;
-    just_decrypted = 0;
-    return rc;
+    struct timespec now;
+    clock_gettime(CLOCK_MONOTONIC, &now);
+    if (now.tv_sec < password_expiry_time) {
+        return password;
+    } else {
+        cryptfs_clear_password();
+        return 0;
+    }
+}
+
+void cryptfs_clear_password()
+{
+    if (password) {
+        size_t len = strlen(password);
+        memset(password, 0, len);
+        free(password);
+        password = 0;
+        password_expiry_time = 0;
+    }
 }

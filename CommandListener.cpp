@@ -662,10 +662,20 @@ int CommandListener::CryptfsCmd::runCommand(SocketClient *cli,
             cli->sendMsg(ResponseCode::OpFailedStorageNotFound, "Error", false);
             return 0;
         }
-    } else if (!strcmp(argv[1], "justdecrypted")) {
-        SLOGD("cryptfs justdecrypted");
+    } else if (!strcmp(argv[1], "getpw")) {
+        SLOGD("cryptfs getpw");
         dumpArgs(argc, argv, -1);
-        rc = cryptfs_just_decrypted();
+        char* password = cryptfs_get_password();
+        if (password) {
+            cli->sendMsg(ResponseCode::CommandOkay, password, false);
+            return 0;
+        }
+        rc = -1;
+    } else if (!strcmp(argv[1], "clearpw")) {
+        SLOGD("cryptfs clearpw");
+        dumpArgs(argc, argv, -1);
+        cryptfs_clear_password();
+        rc = 0;
     } else {
         dumpArgs(argc, argv, -1);
         cli->sendMsg(ResponseCode::CommandSyntaxError, "Unknown cryptfs cmd", false);
