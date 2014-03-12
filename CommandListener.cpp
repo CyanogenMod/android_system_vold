@@ -249,6 +249,10 @@ int CommandListener::StorageCmd::runCommand(SocketClient *cli,
         DIR *dir;
         struct dirent *de;
 
+        if (argc < 3) {
+            cli->sendMsg(ResponseCode::CommandSyntaxError, "Missing Argument: user <mountpoint>", false);
+            return 0;
+        }
         if (!(dir = opendir("/proc"))) {
             cli->sendMsg(ResponseCode::OperationFailed, "Failed to open /proc", true);
             return 0;
