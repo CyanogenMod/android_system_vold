@@ -22,6 +22,7 @@
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <fs_mgr.h>
 #include <string.h>
 
 #define LOG_TAG "VoldCmdListener"
@@ -113,13 +114,12 @@ int CommandListener::DumpCmd::runCommand(SocketClient *cli,
     return 0;
 }
 
-
 CommandListener::VolumeCmd::VolumeCmd() :
                  VoldCommand("volume") {
 }
 
 int CommandListener::VolumeCmd::runCommand(SocketClient *cli,
-                                                      int argc, char **argv) {
+                                           int argc, char **argv) {
     dumpArgs(argc, argv, -1);
 
     if (argc < 2) {
@@ -229,6 +229,9 @@ CommandListener::StorageCmd::StorageCmd() :
 
 int CommandListener::StorageCmd::runCommand(SocketClient *cli,
                                                       int argc, char **argv) {
+    /* Guarantied to be initialized by vold's main() before the CommandListener is active */
+    extern struct fstab *fstab;
+
     dumpArgs(argc, argv, -1);
 
     if (argc < 2) {
@@ -236,6 +239,15 @@ int CommandListener::StorageCmd::runCommand(SocketClient *cli,
         return 0;
     }
 
+    if (!strcmp(argv[1], "mountall")) {
+        if (argc != 2) {
+            cli->sendMsg(ResponseCode::CommandSyntaxError, "Usage: mountall", false);
+            return 0;
+        }
+        fs_mgr_mount_all(fstab);
+        cli->sendMsg(ResponseCode::CommandOkay, "Mountall ran successfully", false);
+        return 0;
+    }
     if (!strcmp(argv[1], "users")) {
         DIR *dir;
         struct dirent *de;
