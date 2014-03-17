@@ -51,6 +51,7 @@
 #include "Fat.h"
 #include "Ntfs.h"
 #include "Exfat.h"
+#include "F2FS.h"
 #include "Process.h"
 #include "cryptfs.h"
 
@@ -309,7 +310,9 @@ int Volume::formatVol(bool wipe) {
         SLOGI("Formatting volume %s (%s) as %s", getLabel(), devicePath, fstype);
     }
 
-    if (strcmp(fstype, "exfat") == 0) {
+    if (strcmp(fstype, "f2fs") == 0) {
+        ret = F2FS::format(devicePath);
+    } else if (strcmp(fstype, "exfat") == 0) {
         ret = Exfat::format(devicePath);
     } else if (strcmp(fstype, "ext4") == 0) {
         ret = Ext4::format(devicePath, 0, NULL);
@@ -511,6 +514,21 @@ int Volume::mountVol() {
                 if (Ntfs::doMount(devicePath, getMountpoint(), false, false, false,
                             AID_MEDIA_RW, AID_MEDIA_RW, 0007, true)) {
                     SLOGE("%s failed to mount via NTFS (%s)\n", devicePath, strerror(errno));
+                    continue;
+                }
+
+            } else if (strcmp(fstype, "f2fs") == 0) {
+                if (F2FS::check(devicePath)) {
+                    errno = EIO;
+                    /* Badness - abort the mount */
+                    SLOGE("%s failed FS checks (%s)", devicePath, strerror(errno));
+                    setState(Volume::State_Idle);
+                    free(fstype);
+                    return -1;
+                }
+
+                if (F2FS::doMount(devicePath, getMountpoint(), false, false, false, true)) {
+                    SLOGE("%s failed to mount via F2FS (%s)\n", devicePath, strerror(errno));
                     continue;
                 }
 
