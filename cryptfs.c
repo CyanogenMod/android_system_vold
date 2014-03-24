@@ -538,7 +538,8 @@ static int load_persistent_data(void)
         return -1;
     }
 
-    if ((crypt_ftr.major_version != 1) || (crypt_ftr.minor_version != 1)) {
+    if ((crypt_ftr.major_version < 1)
+        || (crypt_ftr.major_version == 1 && crypt_ftr.minor_version < 1)) {
         SLOGE("Crypt_ftr version doesn't support persistent data");
         return -1;
     }
@@ -619,7 +620,8 @@ static int save_persistent_data(void)
         return -1;
     }
 
-    if ((crypt_ftr.major_version != 1) || (crypt_ftr.minor_version != 1)) {
+    if ((crypt_ftr.major_version < 1)
+        || (crypt_ftr.major_version == 1 && crypt_ftr.minor_version < 1)) {
         SLOGE("Crypt_ftr version doesn't support persistent data");
         return -1;
     }
