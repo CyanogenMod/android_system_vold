@@ -2408,13 +2408,9 @@ error_shutting_down:
     return -1;
 }
 
-int cryptfs_enable(char *howarg, char *passwd, int allow_reboot)
+int cryptfs_enable(char *howarg, int type, char *passwd, int allow_reboot)
 {
-    /** @todo If we keep this route (user selected encryption)
-     *  need to take a type in and pass it to here.
-     */
-    return cryptfs_enable_internal(howarg, CRYPT_TYPE_PASSWORD,
-                                   passwd, allow_reboot);
+    return cryptfs_enable_internal(howarg, type, passwd, allow_reboot);
 }
 
 int cryptfs_enable_default(char *howarg, int allow_reboot)
