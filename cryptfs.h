@@ -162,7 +162,7 @@ extern "C" {
   int cryptfs_check_passwd(char *pw);
   int cryptfs_verify_passwd(char *newpw);
   int cryptfs_restart(void);
-  int cryptfs_enable(char *flag, int type, char *passwd, int allow_reboot);
+  int cryptfs_enable(char *flag, char *passwd, int allow_reboot);
   int cryptfs_changepw(int type, const char *newpw);
   int cryptfs_enable_default(char *flag, int allow_reboot);
   int cryptfs_setup_volume(const char *label, int major, int minor,
