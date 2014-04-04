@@ -526,6 +526,21 @@ CommandListener::CryptfsCmd::CryptfsCmd() :
                  VoldCommand("cryptfs") {
 }
 
+static int getType(const char* type)
+{
+    if (!strcmp(type, "default")) {
+        return CRYPT_TYPE_DEFAULT;
+    } else if (!strcmp(type, "password")) {
+        return CRYPT_TYPE_PASSWORD;
+    } else if (!strcmp(type, "pin")) {
+        return CRYPT_TYPE_PIN;
+    } else if (!strcmp(type, "pattern")) {
+        return CRYPT_TYPE_PATTERN;
+    } else {
+        return -1;
+    }
+}
+
 int CommandListener::CryptfsCmd::runCommand(SocketClient *cli,
                                                       int argc, char **argv) {
     if ((cli->getUid() != 0) && (cli->getUid() != AID_SYSTEM)) {
@@ -562,21 +577,28 @@ int CommandListener::CryptfsCmd::runCommand(SocketClient *cli,
         dumpArgs(argc, argv, -1);
         rc = cryptfs_crypto_complete();
     } else if (!strcmp(argv[1], "enablecrypto")) {
-        if ( (argc != 4 && argc != 3)
+        const char* syntax = "Usage: cryptfs enablecrypto <wipe|inplace> "
+                             "default|password|pin|pattern [passwd]";
+        if ( (argc != 4 && argc != 5)
              || (strcmp(argv[2], "wipe") && strcmp(argv[2], "inplace")) ) {
-            cli->sendMsg(ResponseCode::CommandSyntaxError,
-                         "Usage: cryptfs enablecrypto <wipe|inplace> [passwd]",
-                         false);
+            cli->sendMsg(ResponseCode::CommandSyntaxError, syntax, false);
             return 0;
         }
-        dumpArgs(argc, argv, 3);
+        dumpArgs(argc, argv, 4);
 
         int tries;
         for (tries = 0; tries < 2; ++tries) {
-            if(argc == 3)
-                rc = cryptfs_enable_default(argv[2], /*allow_reboot*/false);
-            else
-                rc = cryptfs_enable(argv[2], argv[3], /*allow_reboot*/false);
+            int type = getType(argv[3]);
+            if (type == -1) {
+                cli->sendMsg(ResponseCode::CommandSyntaxError, syntax,
+                             false);
+                return 0;
+            } else if (type == CRYPT_TYPE_DEFAULT) {
+              rc = cryptfs_enable_default(argv[2], /*allow_reboot*/false);
+            } else {
+                rc = cryptfs_enable(argv[2], type, argv[4],
+                                    /*allow_reboot*/false);
+            }
 
             if (rc == 0) {
                 break;
@@ -596,16 +618,8 @@ int CommandListener::CryptfsCmd::runCommand(SocketClient *cli,
             cli->sendMsg(ResponseCode::CommandSyntaxError, syntax, false);
             return 0;
         }
-        int type = 0;
-        if (!strcmp(argv[2], "default")) {
-            type = CRYPT_TYPE_DEFAULT;
-        } else if (!strcmp(argv[2], "password")) {
-            type = CRYPT_TYPE_PASSWORD;
-        } else if (!strcmp(argv[2], "pin")) {
-            type = CRYPT_TYPE_PIN;
-        } else if (!strcmp(argv[2], "pattern")) {
-            type = CRYPT_TYPE_PATTERN;
-        } else {
+        int type = getType(argv[2]);
+        if (type == -1) {
             cli->sendMsg(ResponseCode::CommandSyntaxError, syntax, false);
             return 0;
         }
