@@ -48,10 +48,10 @@ static char EXFAT_MOUNT[] = HELPER_PATH "mount.exfat";
 
 int Exfat::doMount(const char *fsPath, const char *mountPoint,
                  bool ro, bool remount, bool executable,
-                 int ownerUid, int ownerGid, int permMask) {
+                 int ownerUid, int ownerGid, int permMask, const char *mountOpts) {
 
     int rc = -1;
-    char mountData[255];
+    char mountData[1024];
     const char *args[6];
     int status;
 
@@ -60,11 +60,17 @@ int Exfat::doMount(const char *fsPath, const char *mountPoint,
         return rc;
     }
 
+#ifndef EXFAT_MODULE_NAME
     sprintf(mountData,
             "noatime,nodev,nosuid,dirsync,uid=%d,gid=%d,fmask=%o,dmask=%o,%s,%s",
             ownerUid, ownerGid, permMask, permMask,
             (executable ? "exec" : "noexec"),
             (ro ? "ro" : "rw"));
+
+    if (mountOpts) {
+        strlcat(mountData, ",", sizeof(mountData));
+        strlcat(mountData, mountOpts, sizeof(mountData));
+    }
 
     args[0] = EXFAT_MOUNT;
     args[1] = "-o";
@@ -77,12 +83,36 @@ int Exfat::doMount(const char *fsPath, const char *mountPoint,
 
     rc = android_fork_execvp(ARRAY_SIZE(args), (char **)args, &status, false,
             true);
+#else
+    unsigned long flags;
 
+    flags = MS_NOATIME | MS_NODEV | MS_NOSUID | MS_DIRSYNC;
+
+    flags |= (executable ? 0 : MS_NOEXEC);
+    flags |= (ro ? MS_RDONLY : 0);
+    flags |= (remount ? MS_REMOUNT : 0);
+
+    sprintf(mountData,
+            "uid=%d,gid=%d,fmask=%o,dmask=%o",
+            ownerUid, ownerGid, permMask, permMask);
+
+    if (mountOpts) {
+        strlcat(mountData, ",", sizeof(mountData));
+        strlcat(mountData, mountOpts, sizeof(mountData));
+    }
+
+    rc = mount(fsPath, mountPoint, EXFAT_MODULE_NAME, flags, mountData);
+#endif
     if (rc && errno == EROFS) {
         SLOGE("%s appears to be a read only filesystem - retrying mount RO", fsPath);
-        strcat(mountData, ",ro");
+#ifndef EXFAT_MODULE_NAME
+        strlcat(mountData, ",ro", sizeof(mountData));
         rc = android_fork_execvp(ARRAY_SIZE(args), (char **)args, &status, false,
             true);
+#else
+        flags |= MS_RDONLY;
+        rc = mount(fsPath, mountPoint, EXFAT_MODULE_NAME, flags, mountData);
+#endif
     }
 
     return rc;

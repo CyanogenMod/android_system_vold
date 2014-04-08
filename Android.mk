@@ -16,6 +16,14 @@ ifneq ($(TARGET_USE_CUSTOM_LUN_FILE_PATH),)
 common_cflags += -DCUSTOM_LUN_FILE=\"$(TARGET_USE_CUSTOM_LUN_FILE_PATH)\"
 endif
 
+ifneq ($(KERNEL_EXFAT_MODULE_NAME),)
+  common_cflags += -DEXFAT_MODULE_NAME=\"$(KERNEL_EXFAT_MODULE_NAME)\"
+endif
+
+ifneq ($(KERNEL_NTFS_MODULE_NAME),)
+  common_cflags += -DNTFS_MODULE_NAME=\"$(KERNEL_NTFS_MODULE_NAME)\"
+endif
+
 common_cflags += -Werror
 
 common_src_files := \
