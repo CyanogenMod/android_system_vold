@@ -20,6 +20,7 @@
 #ifdef __cplusplus
 #include <utils/List.h>
 #include <fs_mgr.h>
+#include <sys/types.h> //get the types of dev_t
 
 class NetlinkEvent;
 class VolumeManager;
