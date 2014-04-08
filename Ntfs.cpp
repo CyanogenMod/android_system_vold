@@ -92,9 +92,9 @@ int Ntfs::check(const char *fsPath) {
 
 int Ntfs::doMount(const char *fsPath, const char *mountPoint,
                  bool ro, bool remount, bool executable,
-                 int ownerUid, int ownerGid, int permMask, bool createLost) {
+                 int ownerUid, int ownerGid, int permMask, bool createLost, const char *mountOpts) {
     int rc;
-    char mountData[255];
+    char mountData[1024];
     const char *args[6];
     int status;
 
@@ -112,6 +112,7 @@ int Ntfs::doMount(const char *fsPath, const char *mountPoint,
         permMask = 0;
     }
 
+#ifndef NTFS_MODULE_NAME
     sprintf(mountData,
             "utf8,uid=%d,gid=%d,fmask=%o,dmask=%o,"
 	    "shortname=mixed,nodev,nosuid,dirsync",
@@ -123,6 +124,10 @@ int Ntfs::doMount(const char *fsPath, const char *mountPoint,
         strcat(mountData, ",ro");
     if (remount)
         strcat(mountData, ",remount");
+    if (mountOpts) {
+        strlcat(mountData, ",", sizeof(mountData));
+        strlcat(mountData, mountOpts, sizeof(mountData));
+    }
 
     SLOGD("Mounting ntfs with options:%s\n", mountData);
 
@@ -136,11 +141,37 @@ int Ntfs::doMount(const char *fsPath, const char *mountPoint,
     rc = android_fork_execvp(ARRAY_SIZE(args), (char **)args, &status, false,
             true);
 
+#else
+    unsigned long flags;
+
+    flags = MS_NOATIME | MS_NODEV | MS_NOSUID | MS_DIRSYNC;
+
+    flags |= (executable ? 0 : MS_NOEXEC);
+    flags |= (ro ? MS_RDONLY : 0);
+    flags |= (remount ? MS_REMOUNT : 0);
+
+    sprintf(mountData,
+            "uid=%d,gid=%d,fmask=%o,dmask=%o",
+            ownerUid, ownerGid, permMask, permMask);
+
+    if (mountOpts) {
+        strlcat(mountData, ",", sizeof(mountData));
+        strlcat(mountData, mountOpts, sizeof(mountData));
+    }
+
+    rc = mount(fsPath, mountPoint, NTFS_MODULE_NAME, flags, mountData);
+#endif
+
     if (rc && errno == EROFS) {
         SLOGE("%s appears to be a read only filesystem - retrying mount RO", fsPath);
+#ifndef NTFS_MODULE_NAME
         strcat(mountData, ",ro");
         rc = android_fork_execvp(ARRAY_SIZE(args), (char **)args, &status, false,
             true);
+#else
+        flags |= MS_RDONLY;
+        rc = mount(fsPath, mountPoint, NTFS_MODULE_NAME, flags, mountData);
+#endif
 
     }
 

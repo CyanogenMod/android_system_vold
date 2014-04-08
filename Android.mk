@@ -20,6 +20,14 @@ ifeq ($(BOARD_VOLD_CRYPTFS_MIGRATE), true)
 common_cflags += -DCRYPTFS_MIGRATE
 endif
 
+ifneq ($(KERNEL_EXFAT_MODULE_NAME),)
+  common_cflags += -DEXFAT_MODULE_NAME=\"$(KERNEL_EXFAT_MODULE_NAME)\"
+endif
+
+ifneq ($(KERNEL_NTFS_MODULE_NAME),)
+  common_cflags += -DNTFS_MODULE_NAME=\"$(KERNEL_NTFS_MODULE_NAME)\"
+endif
+
 common_cflags += -Werror
 
 common_src_files := \
