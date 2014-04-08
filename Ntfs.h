@@ -26,7 +26,7 @@ public:
     static int doMount(const char *fsPath, const char *mountPoint,
                        bool ro, bool remount, bool executable,
                        int ownerUid, int ownerGid, int permMask,
-                       bool createLost);
+                       bool createLost, const char *mountOpts = NULL);
     static int format(const char *fsPath, bool wipe);
 };
 
