@@ -1722,6 +1722,24 @@ int cryptfs_enable(char *howarg, char *passwd)
         goto error_shutting_down;
     }
 
+    /* Start the actual work of making an encrypted filesystem */
+    /* Initialize a crypt_mnt_ftr for the partition */
+    cryptfs_init_crypt_mnt_ftr(&crypt_ftr);
+
+    if (!strcmp(key_loc, KEY_IN_FOOTER)) {
+        crypt_ftr.fs_size = nr_sec - (CRYPT_FOOTER_OFFSET / 512);
+    } else {
+        crypt_ftr.fs_size = nr_sec;
+    }
+    crypt_ftr.flags |= CRYPT_ENCRYPTION_IN_PROGRESS;
+#ifndef CONFIG_HW_DISK_ENCRYPTION
+    strlcpy((char *)crypt_ftr.crypto_type_name, "aes-cbc-essiv:sha256", MAX_CRYPTO_TYPE_NAME_LEN);
+#else
+    strlcpy((char *)crypt_ftr.crypto_type_name, "aes-xts", MAX_CRYPTO_TYPE_NAME_LEN);
+    if(!set_hw_device_encryption_key(passwd, (char*)crypt_ftr.crypto_type_name))
+        goto error_shutting_down;
+#endif
+
     /* Do extra work for a better UX when doing the long inplace encryption */
     if (how == CRYPTO_ENABLE_INPLACE) {
         /* Now that /data is unmounted, we need to mount a tmpfs
@@ -1757,24 +1775,6 @@ int cryptfs_enable(char *howarg, char *passwd)
          * the progress bar as we work.
          */
     }
-
-    /* Start the actual work of making an encrypted filesystem */
-    /* Initialize a crypt_mnt_ftr for the partition */
-    cryptfs_init_crypt_mnt_ftr(&crypt_ftr);
-
-    if (!strcmp(key_loc, KEY_IN_FOOTER)) {
-        crypt_ftr.fs_size = nr_sec - (CRYPT_FOOTER_OFFSET / 512);
-    } else {
-        crypt_ftr.fs_size = nr_sec;
-    }
-    crypt_ftr.flags |= CRYPT_ENCRYPTION_IN_PROGRESS;
-#ifndef CONFIG_HW_DISK_ENCRYPTION
-    strcpy((char *)crypt_ftr.crypto_type_name, "aes-cbc-essiv:sha256");
-#else
-    strlcpy((char *)crypt_ftr.crypto_type_name, "aes-xts", MAX_CRYPTO_TYPE_NAME_LEN);
-    if(!set_hw_device_encryption_key(passwd, (char*)crypt_ftr.crypto_type_name))
-        goto error_shutting_down;
-#endif
 
     /* Make an encrypted master key */
     if (create_encrypted_random_key(passwd, crypt_ftr.master_key, crypt_ftr.salt, &crypt_ftr)) {
