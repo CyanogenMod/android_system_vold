@@ -16,7 +16,7 @@ ifneq ($(TARGET_USE_CUSTOM_LUN_FILE_PATH),)
 common_cflags += -DCUSTOM_LUN_FILE=\"$(TARGET_USE_CUSTOM_LUN_FILE_PATH)\"
 endif
 
-common_cflags += -Werror
+# common_cflags += -Werror
 
 common_src_files := \
 	VolumeManager.cpp \
