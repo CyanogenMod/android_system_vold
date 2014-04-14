@@ -39,6 +39,8 @@
 
 #include <logwrap/logwrap.h>
 
+#include <private/android_filesystem_config.h>
+
 #include "Ext4.h"
 #include "VoldUtil.h"
 
@@ -64,6 +66,13 @@ int Ext4::doMount(const char *fsPath, const char *mountPoint, bool ro, bool remo
     }
 
     rc = mount(fsPath, mountPoint, "ext4", flags, data);
+
+    if (sdcard && rc == 0) {
+        // Write access workaround
+        // Traverse the entire hierarchy and chown to media_rw is better but slow
+        chown(fsPath, AID_MEDIA_RW, AID_MEDIA_RW);
+        chmod(fsPath, 0755);
+    }
 
     if (rc && errno == EROFS) {
         SLOGE("%s appears to be a read only filesystem - retrying mount RO", fsPath);
