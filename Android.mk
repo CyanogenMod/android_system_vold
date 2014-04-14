@@ -25,7 +25,10 @@ common_c_includes := \
 	external/stlport/stlport \
 	bionic \
 	external/scrypt/lib/crypto \
-	frameworks/native/include
+	frameworks/native/include \
+	system/security/keystore \
+	hardware/libhardware/include/hardware \
+	system/security/softkeymaster/include/keymaster
 
 common_shared_libraries := \
 	libsysutils \
@@ -39,7 +42,9 @@ common_shared_libraries := \
 	libext4_utils \
 	libcrypto \
 	libselinux \
-	libutils
+	libutils \
+	libhardware \
+	libsoftkeymaster
 
 common_static_libraries := \
 	libfs_mgr \
