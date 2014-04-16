@@ -39,18 +39,20 @@ static int do_cmd(int sock, int argc, char **argv);
 int main(int argc, char **argv) {
     int sock;
     int wait_for_socket;
+    char *progname;
 
-    if (argc < 2)
-        usage(argv[0]);
+    progname = argv[0];
 
-    wait_for_socket = strcmp(argv[1], "--wait") == 0;
+    wait_for_socket = argc > 1 && strcmp(argv[1], "--wait") == 0;
     if(wait_for_socket) {
         argv++;
         argc--;
     }
 
-    if(argc < 2)
+    if(argc < 2) {
+        usage(progname);
         exit(5);
+    }
 
     while ((sock = socket_local_client("vold",
                                  ANDROID_SOCKET_NAMESPACE_RESERVED,
