@@ -52,6 +52,8 @@
 #include "ext4_utils.h"
 #include "CheckBattery.h"
 
+#include <hardware/keymaster.h>
+
 #define UNUSED __attribute__((unused))
 
 #define UNUSED __attribute__((unused))
@@ -72,12 +74,137 @@
 
 #define TABLE_LOAD_RETRIES 10
 
+#define RSA_DEFAULT_KEY_SIZE 2048
+#define RSA_DEFAULT_EXPONENT 0x10001
+
 char *me = "cryptfs";
 
 static unsigned char saved_master_key[KEY_LEN_BYTES];
 static char *saved_mount_point;
 static int  master_key_saved = 0;
 static struct crypt_persist_data *persist_data = NULL;
+
+static int keymaster_init(keymaster_device_t **keymaster_dev)
+{
+    int rc;
+
+    const hw_module_t* mod;
+    rc = hw_get_module_by_class(KEYSTORE_HARDWARE_MODULE_ID, NULL, &mod);
+    if (rc) {
+        ALOGE("could not find any keystore module");
+        goto out;
+    }
+
+    rc = keymaster_open(mod, keymaster_dev);
+    if (rc) {
+        ALOGE("could not open keymaster device in %s (%s)",
+            KEYSTORE_HARDWARE_MODULE_ID, strerror(-rc));
+        goto out;
+    }
+
+    return 0;
+
+out:
+    *keymaster_dev = NULL;
+    return rc;
+}
+
+/* Should we use keymaster? */
+static int keymaster_check_compatibility()
+{
+    keymaster_device_t *keymaster_dev = 0;
+    int rc = 0;
+
+    if (keymaster_init(&keymaster_dev)) {
+        SLOGE("Failed to init keymaster");
+        rc = -1;
+        goto out;
+    }
+
+    if (keymaster_dev->flags & KEYMASTER_BLOBS_ARE_STANDALONE) {
+        rc = 1;
+    }
+
+out:
+    keymaster_close(keymaster_dev);
+    return rc;
+}
+
+/* Create a new keymaster key and store it in this footer */
+static int keymaster_create_key(struct crypt_mnt_ftr *ftr)
+{
+    uint8_t* key = 0;
+    keymaster_device_t *keymaster_dev = 0;
+
+    if (keymaster_init(&keymaster_dev)) {
+        SLOGE("Failed to init keymaster");
+        return -1;
+    }
+
+    int rc = 0;
+
+    keymaster_rsa_keygen_params_t params;
+    memset(&params, '\0', sizeof(params));
+    params.public_exponent = RSA_DEFAULT_EXPONENT;
+    params.modulus_size = RSA_DEFAULT_KEY_SIZE;
+
+    size_t key_size;
+    if (keymaster_dev->generate_keypair(keymaster_dev, TYPE_RSA, &params,
+                                        &key, &key_size)) {
+        SLOGE("Failed to generate keypair");
+        rc = -1;
+        goto out;
+    }
+
+    if (key_size > KEYMASTER_BLOB_SIZE) {
+        SLOGE("Keymaster key too large for crypto footer");
+        rc = -1;
+        goto out;
+    }
+
+    memcpy(ftr->keymaster_blob, key, key_size);
+    ftr->keymaster_blob_size = key_size;
+
+out:
+    keymaster_close(keymaster_dev);
+    free(key);
+    return rc;
+}
+
+/* This signs the given object using the keymaster key */
+static int keymaster_sign_object(struct crypt_mnt_ftr *ftr,
+                                 const unsigned char *object,
+                                 const size_t object_size,
+                                 unsigned char **signature,
+                                 size_t *signature_size)
+{
+    int rc = 0;
+    keymaster_device_t *keymaster_dev = 0;
+    if (keymaster_init(&keymaster_dev)) {
+        SLOGE("Failed to init keymaster");
+        return -1;
+    }
+
+    /* We currently set the digest type to DIGEST_NONE because it's the
+     * only supported value for keymaster. A similar issue exists with
+     * PADDING_NONE. Long term both of these should likely change.
+     */
+    keymaster_rsa_sign_params_t params;
+    params.digest_type = DIGEST_NONE;
+    params.padding_type = PADDING_NONE;
+
+    rc = keymaster_dev->sign_data(keymaster_dev,
+                                  &params,
+                                  ftr->keymaster_blob,
+                                  ftr->keymaster_blob_size,
+                                  object,
+                                  object_size,
+                                  signature,
+                                  signature_size);
+
+    keymaster_close(keymaster_dev);
+    return rc;
+}
 
 /* Store password when userdata is successfully decrypted and mounted.
  * Cleared by cryptfs_clear_password
@@ -955,9 +1082,11 @@ errout:
 
 }
 
-static int pbkdf2(const char *passwd, unsigned char *salt,
+static int pbkdf2(const char *passwd, const unsigned char *salt,
                   unsigned char *ikey, void *params UNUSED)
 {
+    SLOGI("Using pbkdf2 for cryptfs KDF");
+
     /* Turn the password into a key and IV that can decrypt the master key */
     unsigned int keysize;
     char* master_key = (char*)convert_hex_ascii_to_key(passwd, &keysize);
@@ -965,13 +1094,16 @@ static int pbkdf2(const char *passwd, unsigned char *salt,
     PKCS5_PBKDF2_HMAC_SHA1(master_key, keysize, salt, SALT_LEN,
                            HASH_COUNT, KEY_LEN_BYTES+IV_LEN_BYTES, ikey);
 
+    memset(master_key, 0, keysize);
     free (master_key);
     return 0;
 }
 
-static int scrypt(const char *passwd, unsigned char *salt,
+static int scrypt(const char *passwd, const unsigned char *salt,
                   unsigned char *ikey, void *params)
 {
+    SLOGI("Using scrypt for cryptfs KDF");
+
     struct crypt_mnt_ftr *ftr = (struct crypt_mnt_ftr *) params;
 
     int N = 1 << ftr->N_factor;
@@ -985,12 +1117,62 @@ static int scrypt(const char *passwd, unsigned char *salt,
     crypto_scrypt(master_key, keysize, salt, SALT_LEN, N, r, p, ikey,
             KEY_LEN_BYTES + IV_LEN_BYTES);
 
+    memset(master_key, 0, keysize);
     free (master_key);
     return 0;
 }
 
-static int encrypt_master_key(const char *passwd, unsigned char *salt,
-                              unsigned char *decrypted_master_key,
+static int scrypt_keymaster(const char *passwd, const unsigned char *salt,
+                            unsigned char *ikey, void *params)
+{
+    SLOGI("Using scrypt with keymaster for cryptfs KDF");
+
+    int rc;
+    unsigned int key_size;
+    size_t signature_size;
+    unsigned char* signature;
+    struct crypt_mnt_ftr *ftr = (struct crypt_mnt_ftr *) params;
+
+    int N = 1 << ftr->N_factor;
+    int r = 1 << ftr->r_factor;
+    int p = 1 << ftr->p_factor;
+
+    unsigned char* master_key = convert_hex_ascii_to_key(passwd, &key_size);
+    if (!master_key) {
+        SLOGE("Failed to convert passwd from hex");
+        return -1;
+    }
+
+    rc = crypto_scrypt(master_key, key_size, salt, SALT_LEN,
+                       N, r, p, ikey, KEY_LEN_BYTES + IV_LEN_BYTES);
+    memset(master_key, 0, key_size);
+    free(master_key);
+
+    if (rc) {
+        SLOGE("scrypt failed");
+        return -1;
+    }
+
+    if (keymaster_sign_object(ftr, ikey, KEY_LEN_BYTES + IV_LEN_BYTES,
+                 &signature, &signature_size)) {
+        SLOGE("Signing failed");
+        return -1;
+    }
+
+    rc = crypto_scrypt(signature, signature_size, salt, SALT_LEN,
+                       N, r, p, ikey, KEY_LEN_BYTES + IV_LEN_BYTES);
+    free(signature);
+
+    if (rc) {
+        SLOGE("scrypt failed");
+        return -1;
+    }
+
+    return 0;
+}
+
+static int encrypt_master_key(const char *passwd, const unsigned char *salt,
+                              const unsigned char *decrypted_master_key,
                               unsigned char *encrypted_master_key,
                               struct crypt_mnt_ftr *crypt_ftr)
 {
@@ -1000,8 +1182,29 @@ static int encrypt_master_key(const char *passwd, unsigned char *salt,
 
     /* Turn the password into a key and IV that can decrypt the master key */
     get_device_scrypt_params(crypt_ftr);
-    if (scrypt(passwd, salt, ikey, crypt_ftr)) {
-        SLOGE("scrypt failed");
+
+    switch (crypt_ftr->kdf_type) {
+    case KDF_SCRYPT_KEYMASTER:
+        if (keymaster_create_key(crypt_ftr)) {
+            SLOGE("keymaster_create_key failed");
+            return -1;
+        }
+
+        if (scrypt_keymaster(passwd, salt, ikey, crypt_ftr)) {
+            SLOGE("scrypt failed");
+            return -1;
+        }
+        break;
+
+    case KDF_SCRYPT:
+        if (scrypt(passwd, salt, ikey, crypt_ftr)) {
+            SLOGE("scrypt failed");
+            return -1;
+        }
+        break;
+
+    default:
+        SLOGE("Invalid kdf_type");
         return -1;
     }
 
@@ -1026,9 +1229,9 @@ static int encrypt_master_key(const char *passwd, unsigned char *salt,
     if (encrypted_len + final_len != KEY_LEN_BYTES) {
         SLOGE("EVP_Encryption length check failed with %d, %d bytes\n", encrypted_len, final_len);
         return -1;
-    } else {
-        return 0;
     }
+
+    return 0;
 }
 
 static int decrypt_master_key_aux(char *passwd, unsigned char *salt,
@@ -1069,7 +1272,10 @@ static int decrypt_master_key_aux(char *passwd, unsigned char *salt,
 
 static void get_kdf_func(struct crypt_mnt_ftr *ftr, kdf_func *kdf, void** kdf_params)
 {
-    if (ftr->kdf_type == KDF_SCRYPT) {
+    if (ftr->kdf_type == KDF_SCRYPT_KEYMASTER) {
+        *kdf = scrypt_keymaster;
+        *kdf_params = ftr;
+    } else if (ftr->kdf_type == KDF_SCRYPT) {
         *kdf = scrypt;
         *kdf_params = ftr;
     } else {
@@ -1331,6 +1537,8 @@ static int test_mount_encrypted_fs(struct crypt_mnt_ftr* crypt_ftr,
   int rc;
   kdf_func kdf;
   void *kdf_params;
+  int use_keymaster = 0;
+  int upgrade = 0;
 
   SLOGD("crypt_ftr->fs_size = %lld\n", crypt_ftr->fs_size);
   orig_failed_decrypt_count = crypt_ftr->failed_decrypt_count;
@@ -1393,11 +1601,22 @@ static int test_mount_encrypted_fs(struct crypt_mnt_ftr* crypt_ftr,
     master_key_saved = 1;
     SLOGD("%s(): Master key saved\n", __FUNCTION__);
     rc = 0;
+
     /*
      * Upgrade if we're not using the latest KDF.
      */
-    if (crypt_ftr->kdf_type != KDF_SCRYPT) {
+    use_keymaster = keymaster_check_compatibility();
+    if (crypt_ftr->kdf_type == KDF_SCRYPT_KEYMASTER) {
+        // Don't allow downgrade to KDF_SCRYPT
+    } else if (use_keymaster == 1 && crypt_ftr->kdf_type != KDF_SCRYPT_KEYMASTER) {
+        crypt_ftr->kdf_type = KDF_SCRYPT_KEYMASTER;
+        upgrade = 1;
+    } else if (use_keymaster == 0 && crypt_ftr->kdf_type != KDF_SCRYPT) {
         crypt_ftr->kdf_type = KDF_SCRYPT;
+        upgrade = 1;
+    }
+
+    if (upgrade) {
         rc = encrypt_master_key(passwd, crypt_ftr->salt, saved_master_key,
                                 crypt_ftr->master_key, crypt_ftr);
         if (!rc) {
@@ -1558,7 +1777,7 @@ int cryptfs_verify_passwd(char *passwd)
  * Presumably, at a minimum, the caller will update the
  * filesystem size and crypto_type_name after calling this function.
  */
-static void cryptfs_init_crypt_mnt_ftr(struct crypt_mnt_ftr *ftr)
+static int cryptfs_init_crypt_mnt_ftr(struct crypt_mnt_ftr *ftr)
 {
     off64_t off;
 
@@ -1569,7 +1788,20 @@ static void cryptfs_init_crypt_mnt_ftr(struct crypt_mnt_ftr *ftr)
     ftr->ftr_size = sizeof(struct crypt_mnt_ftr);
     ftr->keysize = KEY_LEN_BYTES;
 
-    ftr->kdf_type = KDF_SCRYPT;
+    switch (keymaster_check_compatibility()) {
+    case 1:
+        ftr->kdf_type = KDF_SCRYPT_KEYMASTER;
+        break;
+
+    case 0:
+        ftr->kdf_type = KDF_SCRYPT;
+        break;
+
+    default:
+        SLOGE("keymaster_check_compatibility failed");
+        return -1;
+    }
+
     get_device_scrypt_params(ftr);
 
     ftr->persist_data_size = CRYPT_PERSIST_DATA_SIZE;
@@ -1578,6 +1810,8 @@ static void cryptfs_init_crypt_mnt_ftr(struct crypt_mnt_ftr *ftr)
         ftr->persist_data_offset[1] = off + CRYPT_FOOTER_TO_PERSIST_OFFSET +
                                     ftr->persist_data_size;
     }
+
+    return 0;
 }
 
 static int cryptfs_enable_wipe(char *crypto_blkdev, off64_t size, int type)
@@ -2257,7 +2491,9 @@ int cryptfs_enable_internal(char *howarg, int crypt_type, char *passwd,
     /* Start the actual work of making an encrypted filesystem */
     /* Initialize a crypt_mnt_ftr for the partition */
     if (previously_encrypted_upto == 0) {
-        cryptfs_init_crypt_mnt_ftr(&crypt_ftr);
+        if (cryptfs_init_crypt_mnt_ftr(&crypt_ftr)) {
+            goto error_shutting_down;
+        }
 
         if (!strcmp(key_loc, KEY_IN_FOOTER)) {
             crypt_ftr.fs_size = nr_sec

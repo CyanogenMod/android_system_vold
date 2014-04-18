@@ -66,6 +66,10 @@
 /* Key Derivation Function algorithms */
 #define KDF_PBKDF2 1
 #define KDF_SCRYPT 2
+#define KDF_SCRYPT_KEYMASTER 3
+
+/* Maximum allowed keymaster blob size. */
+#define KEYMASTER_BLOB_SIZE 2048
 
 /* __le32 and __le16 defined in system/extras/ext4_utils/ext4_utils.h */
 #define __le8  unsigned char
@@ -107,6 +111,12 @@ struct crypt_mnt_ftr {
   __le8  hash_first_block[SHA256_DIGEST_LENGTH]; /* When CRYPT_ENCRYPTION_IN_PROGRESS
                                                     set, hash of first block, used
                                                     to validate before continuing*/
+
+  /* key_master key, used to sign the derived key
+   * This key should be used for no other purposes! We use this key to sign unpadded 
+   * data, which is acceptable but only if the key is not reused elsewhere. */
+  __le8 keymaster_blob[KEYMASTER_BLOB_SIZE];
+  __le32 keymaster_blob_size;
 };
 
 /* Persistant data that should be available before decryption.
@@ -155,7 +165,7 @@ struct volume_info {
 extern "C" {
 #endif
 
-  typedef int (*kdf_func)(const char *passwd, unsigned char *salt,
+  typedef int (*kdf_func)(const char *passwd, const unsigned char *salt,
                           unsigned char *ikey, void *params);
 
   int cryptfs_crypto_complete(void);
