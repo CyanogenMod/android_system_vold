@@ -1708,20 +1708,20 @@ int VolumeManager::cleanupAsec(Volume *v, bool force) {
 }
 
 int VolumeManager::mkdirs(char* path) {
-    // Require that path lives under a volume we manage
+    // Require that path lives under a volume we manage and is mounted
     const char* emulated_source = getenv("EMULATED_STORAGE_SOURCE");
     const char* root = NULL;
     if (emulated_source && !strncmp(path, emulated_source, strlen(emulated_source))) {
         root = emulated_source;
     } else {
         Volume* vol = getVolumeForFile(path);
-        if (vol) {
+        if (vol && vol->getState() == Volume::State_Mounted) {
             root = vol->getMountpoint();
         }
     }
 
     if (!root) {
-        SLOGE("Failed to find volume for %s", path);
+        SLOGE("Failed to find mounted volume for %s", path);
         return -EINVAL;
     }
 
