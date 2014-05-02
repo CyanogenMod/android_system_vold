@@ -48,10 +48,14 @@ static char RESIZE2FS_PATH[] = "/system/bin/resize2fs";
 static char MKEXT4FS_PATH[] = "/system/bin/make_ext4fs";
 
 int Ext4::doMount(const char *fsPath, const char *mountPoint, bool ro, bool remount,
-        bool executable, bool sdcard) {
+        bool executable, bool sdcard, const char *mountOpts) {
     int rc;
     unsigned long flags;
-    const char *data = NULL;
+    char data[1024];
+
+    data[0] = '\0';
+    if (mountOpts)
+        strlcat(data, mountOpts, sizeof(data));
 
     flags = MS_NOATIME | MS_NODEV | MS_NOSUID | MS_DIRSYNC;
 
@@ -61,7 +65,9 @@ int Ext4::doMount(const char *fsPath, const char *mountPoint, bool ro, bool remo
 
     if (sdcard) {
         // Mount external volumes with forced context
-        data = "context=u:object_r:sdcard_external:s0";
+        if (data[0])
+            strlcat(data, ",", sizeof(data));
+        strlcat(data, "context=u:object_r:sdcard_external:s0", sizeof(data));
     }
 
     rc = mount(fsPath, mountPoint, "ext4", flags, data);
