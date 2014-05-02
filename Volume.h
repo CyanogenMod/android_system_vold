@@ -27,6 +27,7 @@ class Volume {
 private:
     int mState;
     int mFlags;
+    char* mOpts;
 
 public:
     static const int State_Init       = -1;
