@@ -28,6 +28,7 @@ class Volume {
 private:
     int mState;
     int mFlags;
+    char* mOpts;
 
 public:
 #endif
