@@ -121,6 +121,14 @@ static int keymaster_check_compatibility()
         goto out;
     }
 
+    SLOGI("keymaster version is %d", keymaster_dev->common.module->module_api_version);
+
+    if (keymaster_dev->common.module->module_api_version
+            < KEYMASTER_MODULE_API_VERSION_0_3) {
+        rc = 0;
+        goto out;
+    }
+
     if (keymaster_dev->flags & KEYMASTER_BLOBS_ARE_STANDALONE) {
         rc = 1;
     }
