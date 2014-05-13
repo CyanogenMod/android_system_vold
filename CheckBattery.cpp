@@ -64,8 +64,8 @@ extern "C" int is_battery_ok()
     status_t status = interface->getProperty(android::BATTERY_PROP_CAPACITY,
                                              &val);
     if (status == NO_ERROR) {
-        SLOGD("Capacity is %d", val.valueInt);
-        battery_ok = val.valueInt > 5 ? 1 : 0;
+        SLOGD("Capacity is %d", (int)val.valueInt64);
+        battery_ok = val.valueInt64 > 5 ? 1 : 0;
     } else {
         SLOGE("Failed to get battery charge");
         battery_ok = 1;
