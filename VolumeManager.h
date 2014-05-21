@@ -79,6 +79,7 @@ public:
 
     int listVolumes(SocketClient *cli);
     int mountVolume(const char *label);
+    int scanUuid(const char *label);
     int unmountVolume(const char *label, bool force, bool revert);
     int shareVolume(const char *label, const char *method);
     int unshareVolume(const char *label, const char *method);
