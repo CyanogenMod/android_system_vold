@@ -150,6 +150,12 @@ int CommandListener::VolumeCmd::runCommand(SocketClient *cli,
             return 0;
         }
         rc = vm->mountVolume(argv[2]);
+    } else if (!strcmp(argv[1], "scanuuid")) {
+        if (argc != 3) {
+            cli->sendMsg(ResponseCode::CommandSyntaxError, "Usage: volume scanuuid <path>", false);
+            return 0;
+        }
+        rc = vm->scanUuid(argv[2]);
     } else if (!strcmp(argv[1], "unmount")) {
         if (argc < 3 || argc > 4 ||
            ((argc == 4 && strcmp(argv[3], "force")) &&

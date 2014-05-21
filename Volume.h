@@ -72,6 +72,7 @@ public:
     Volume(VolumeManager *vm, const fstab_rec* rec, int flags);
     virtual ~Volume();
 
+    int scanUuid();
     int mountVol();
     int unmountVol(bool force, bool revert);
     int formatVol(bool wipe, const char *fstype = NULL);

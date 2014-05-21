@@ -1292,6 +1292,17 @@ int VolumeManager::mountVolume(const char *label) {
     return v->mountVol();
 }
 
+int VolumeManager::scanUuid(const char *label) {
+    Volume *v = lookupVolume(label);
+
+    if (!v) {
+        errno = ENOENT;
+        return -1;
+    }
+
+    return v->scanUuid();
+}
+
 int VolumeManager::listMountedObbs(SocketClient* cli) {
     char device[256];
     char mount_path[256];
