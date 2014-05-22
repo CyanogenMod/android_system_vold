@@ -32,6 +32,7 @@ public:
     static int destroyByDevice(const char *loopDevice);
     static int destroyByFile(const char *loopFile);
     static int createImageFile(const char *file, unsigned int numSectors);
+    static int resizeImageFile(const char *file, unsigned int numSectors);
 
     static int dumpState(SocketClient *c);
 };

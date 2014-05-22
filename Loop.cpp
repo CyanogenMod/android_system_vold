@@ -249,6 +249,34 @@ int Loop::createImageFile(const char *file, unsigned int numSectors) {
     return 0;
 }
 
+int Loop::resizeImageFile(const char *file, unsigned int numSectors) {
+    int fd;
+
+    if ((fd = open(file, O_RDWR)) < 0) {
+        SLOGE("Error opening imagefile (%s)", strerror(errno));
+        return -1;
+    }
+
+    SLOGD("Attempting to increase size of %s to %d sectors.", file, numSectors);
+
+    if (fallocate(fd, 0, 0, numSectors * 512)) {
+        if (errno == ENOSYS) {
+            SLOGW("fallocate not found. Falling back to ftruncate.");
+            if (ftruncate(fd, numSectors * 512) < 0) {
+                SLOGE("Error truncating imagefile (%s)", strerror(errno));
+                close(fd);
+                return -1;
+            }
+        } else {
+            SLOGE("Error allocating space (%s)", strerror(errno));
+            close(fd);
+            return -1;
+        }
+    }
+    close(fd);
+    return 0;
+}
+
 int Loop::lookupInfo(const char *loopDevice, struct asec_superblock *sb, unsigned int *nr_sec) {
     int fd;
     struct asec_superblock buffer;

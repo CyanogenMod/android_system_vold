@@ -43,7 +43,8 @@
 #include "Ext4.h"
 #include "VoldUtil.h"
 
-#define MKEXT4FS_PATH "/system/bin/make_ext4fs";
+#define MKEXT4FS_PATH "/system/bin/make_ext4fs"
+#define RESIZE2FS_PATH "/system/bin/resize2fs"
 
 int Ext4::doMount(const char *fsPath, const char *mountPoint, bool ro, bool remount,
         bool executable) {
@@ -65,6 +66,49 @@ int Ext4::doMount(const char *fsPath, const char *mountPoint, bool ro, bool remo
     }
 
     return rc;
+}
+
+int Ext4::resize(const char *fspath, unsigned int numSectors) {
+    const char *args[4];
+    char* size_str;
+    int rc;
+    int status;
+
+    args[0] = RESIZE2FS_PATH;
+    args[1] = "-f";
+    args[2] = fspath;
+    if (asprintf(&size_str, "%ds", numSectors) < 0)
+    {
+      SLOGE("Filesystem (ext4) resize failed to set size");
+      return -1;
+    }
+    args[3] = size_str;
+    rc = android_fork_execvp(ARRAY_SIZE(args), (char **)args, &status, false,
+            true);
+    free(size_str);
+    if (rc != 0) {
+        SLOGE("Filesystem (ext4) resize failed due to logwrap error");
+        errno = EIO;
+        return -1;
+    }
+
+    if (!WIFEXITED(status)) {
+        SLOGE("Filesystem (ext4) resize did not exit properly");
+        errno = EIO;
+        return -1;
+    }
+
+    status = WEXITSTATUS(status);
+
+    if (status == 0) {
+        SLOGI("Filesystem (ext4) resized OK");
+        return 0;
+    } else {
+        SLOGE("Resize (ext4) failed (unknown exit code %d)", status);
+        errno = EIO;
+        return -1;
+    }
+    return 0;
 }
 
 int Ext4::format(const char *fsPath, unsigned int numSectors, const char *mountpoint) {

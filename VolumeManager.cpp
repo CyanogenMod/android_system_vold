@@ -24,6 +24,7 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/mount.h>
+#include <sys/ioctl.h>
 #include <dirent.h>
 
 #include <linux/kdev_t.h>
@@ -56,6 +57,101 @@
 
 #define ROUND_UP_POWER_OF_2(number, po2) (((!!(number & ((1U << po2) - 1))) << po2)\
                                          + (number & (~((1U << po2) - 1))))
+
+/* writes superblock at end of file or device given by name */
+static int writeSuperBlock(const char* name, struct asec_superblock *sb, unsigned int numImgSectors) {
+    int sbfd = open(name, O_RDWR);
+    if (sbfd < 0) {
+        SLOGE("Failed to open %s for superblock write (%s)", name, strerror(errno));
+        return -1;
+    }
+
+    if (lseek(sbfd, (numImgSectors * 512), SEEK_SET) < 0) {
+        SLOGE("Failed to lseek for superblock (%s)", strerror(errno));
+        close(sbfd);
+        return -1;
+    }
+
+    if (write(sbfd, sb, sizeof(struct asec_superblock)) != sizeof(struct asec_superblock)) {
+        SLOGE("Failed to write superblock (%s)", strerror(errno));
+        close(sbfd);
+        return -1;
+    }
+    close(sbfd);
+    return 0;
+}
+
+static int adjustSectorNumExt4(unsigned numSectors) {
+    return ROUND_UP_POWER_OF_2(numSectors, 3);
+}
+
+static int adjustSectorNumFAT(unsigned numSectors) {
+    /*
+    * Add some headroom
+    */
+    unsigned fatSize = (((numSectors * 4) / 512) + 1) * 2;
+    numSectors += fatSize + 2;
+    /*
+    * FAT is aligned to 32 kb with 512b sectors.
+    */
+    return ROUND_UP_POWER_OF_2(numSectors, 6);
+}
+
+static int setupLoopDevice(char* buffer, size_t len, const char* asecFileName, const char* idHash, bool debug) {
+    if (Loop::lookupActive(idHash, buffer, len)) {
+        if (Loop::create(idHash, asecFileName, buffer, len)) {
+            SLOGE("ASEC loop device creation failed for %s (%s)", asecFileName, strerror(errno));
+            return -1;
+        }
+        if (debug) {
+            SLOGD("New loop device created at %s", buffer);
+        }
+    } else {
+        if (debug) {
+            SLOGD("Found active loopback for %s at %s", asecFileName, buffer);
+        }
+    }
+    return 0;
+}
+
+static int setupDevMapperDevice(char* buffer, size_t len, const char* loopDevice, const char* asecFileName, const char* key, const char* idHash , int numImgSectors, bool* createdDMDevice, bool debug) {
+    if (strcmp(key, "none")) {
+        if (Devmapper::lookupActive(idHash, buffer, len)) {
+            if (Devmapper::create(idHash, loopDevice, key, numImgSectors,
+                                  buffer, len)) {
+                SLOGE("ASEC device mapping failed for %s (%s)", asecFileName, strerror(errno));
+                return -1;
+            }
+            if (debug) {
+                SLOGD("New devmapper instance created at %s", buffer);
+            }
+        } else {
+            if (debug) {
+                SLOGD("Found active devmapper for %s at %s", asecFileName, buffer);
+            }
+        }
+        *createdDMDevice = true;
+    } else {
+        strcpy(buffer, loopDevice);
+        *createdDMDevice = false;
+    }
+    return 0;
+}
+
+static void waitForDevMapper(const char *dmDevice) {
+    /*
+     * Wait for the device mapper node to be created. Sometimes it takes a
+     * while. Wait for up to 1 second. We could also inspect incoming uevents,
+     * but that would take more effort.
+     */
+    int tries = 25;
+    while (tries--) {
+        if (!access(dmDevice, F_OK) || errno != ENOENT) {
+            break;
+        }
+        usleep(40 * 1000);
+    }
+}
 
 VolumeManager *VolumeManager::sInstance = NULL;
 
@@ -333,19 +429,11 @@ int VolumeManager::createAsec(const char *id, unsigned int numSectors, const cha
         return -1;
     }
 
-    /*
-     * Add some headroom
-     * This is likely off by a bit, and we may want to do something different for ext4
-     */
-    unsigned fatSize = (((numSectors * 4) / 512) + 1) * 2;
-    unsigned numImgSectors = numSectors + fatSize + 2;
-    /*
-     * ext4 is aligned to 4kb. fat is aligned to 32kb. Sectors are 512b.
-     */
+    unsigned numImgSectors;
     if (usingExt4)
-        numImgSectors = ROUND_UP_POWER_OF_2(numImgSectors, 3);
+        numImgSectors = adjustSectorNumExt4(numSectors);
     else
-        numImgSectors = ROUND_UP_POWER_OF_2(numImgSectors, 6);
+        numImgSectors = adjustSectorNumFAT(numSectors);
 
     // Add +1 for our superblock which is at the end
     if (Loop::createImageFile(asecFileName, numImgSectors + 1)) {
@@ -389,10 +477,7 @@ int VolumeManager::createAsec(const char *id, unsigned int numSectors, const cha
     /*
      * Drop down the superblock at the end of the file
      */
-
-    int sbfd = open(loopDevice, O_RDWR);
-    if (sbfd < 0) {
-        SLOGE("Failed to open new DM device for superblock write (%s)", strerror(errno));
+    if (writeSuperBlock(loopDevice, &sb, numImgSectors)) {
         if (cleanupDm) {
             Devmapper::destroy(idHash);
         }
@@ -400,29 +485,6 @@ int VolumeManager::createAsec(const char *id, unsigned int numSectors, const cha
         unlink(asecFileName);
         return -1;
     }
-
-    if (lseek(sbfd, (numImgSectors * 512), SEEK_SET) < 0) {
-        close(sbfd);
-        SLOGE("Failed to lseek for superblock (%s)", strerror(errno));
-        if (cleanupDm) {
-            Devmapper::destroy(idHash);
-        }
-        Loop::destroyByDevice(loopDevice);
-        unlink(asecFileName);
-        return -1;
-    }
-
-    if (write(sbfd, &sb, sizeof(sb)) != sizeof(sb)) {
-        close(sbfd);
-        SLOGE("Failed to write superblock (%s)", strerror(errno));
-        if (cleanupDm) {
-            Devmapper::destroy(idHash);
-        }
-        Loop::destroyByDevice(loopDevice);
-        unlink(asecFileName);
-        return -1;
-    }
-    close(sbfd);
 
     if (wantFilesystem) {
         int formatStatus;
@@ -501,6 +563,146 @@ int VolumeManager::createAsec(const char *id, unsigned int numSectors, const cha
 
     mActiveContainers->push_back(new ContainerData(strdup(id), ASEC));
     return 0;
+}
+
+int VolumeManager::resizeAsec(const char *id, unsigned numSectors, const char *key) {
+    char asecFileName[255];
+    char mountPoint[255];
+    bool cleanupDm = false;
+
+    if (!isLegalAsecId(id)) {
+        SLOGE("resizeAsec: Invalid asec id \"%s\"", id);
+        errno = EINVAL;
+        return -1;
+    }
+
+    if (findAsec(id, asecFileName, sizeof(asecFileName))) {
+        SLOGE("Couldn't find ASEC %s", id);
+        return -1;
+    }
+
+    int written = snprintf(mountPoint, sizeof(mountPoint), "%s/%s", Volume::ASECDIR, id);
+    if ((written < 0) || (size_t(written) >= sizeof(mountPoint))) {
+       SLOGE("ASEC resize failed for %s: couldn't construct mountpoint", id);
+       return -1;
+    }
+
+    if (isMountpointMounted(mountPoint)) {
+       SLOGE("ASEC %s mounted. Unmount before resizing", id);
+       errno = EBUSY;
+       return -1;
+    }
+
+    struct asec_superblock sb;
+    int fd;
+    unsigned int oldNumSec = 0;
+
+    if ((fd = open(asecFileName, O_RDONLY)) < 0) {
+        SLOGE("Failed to open ASEC file (%s)", strerror(errno));
+        return -1;
+    }
+
+    struct stat info;
+    if (fstat(fd, &info) < 0) {
+        SLOGE("Failed to get file size (%s)", strerror(errno));
+        close(fd);
+        return -1;
+    }
+
+    oldNumSec = info.st_size / 512;
+
+    unsigned numImgSectors;
+    if (sb.c_opts & ASEC_SB_C_OPTS_EXT4)
+        numImgSectors = adjustSectorNumExt4(numSectors);
+    else
+        numImgSectors = adjustSectorNumFAT(numSectors);
+    /*
+     *  add one block for the superblock
+     */
+    SLOGD("Resizing from %d sectors to %d sectors", oldNumSec, numImgSectors + 1);
+    if (oldNumSec >= numImgSectors + 1) {
+        SLOGE("Only growing is currently supported.");
+        close(fd);
+        return -1;
+    }
+
+    /*
+     * Try to read superblock.
+     */
+    memset(&sb, 0, sizeof(struct asec_superblock));
+    if (lseek(fd, ((oldNumSec - 1) * 512), SEEK_SET) < 0) {
+        SLOGE("lseek failed (%s)", strerror(errno));
+        close(fd);
+        return -1;
+    }
+    if (read(fd, &sb, sizeof(struct asec_superblock)) != sizeof(struct asec_superblock)) {
+        SLOGE("superblock read failed (%s)", strerror(errno));
+        close(fd);
+        return -1;
+    }
+    close(fd);
+
+    if (mDebug) {
+        SLOGD("Container sb magic/ver (%.8x/%.2x)", sb.magic, sb.ver);
+    }
+    if (sb.magic != ASEC_SB_MAGIC || sb.ver != ASEC_SB_VER) {
+        SLOGE("Bad container magic/version (%.8x/%.2x)", sb.magic, sb.ver);
+        errno = EMEDIUMTYPE;
+        return -1;
+    }
+
+    if (!(sb.c_opts & ASEC_SB_C_OPTS_EXT4)) {
+        SLOGE("Only ext4 partitions are supported for resize");
+        errno = EINVAL;
+        return -1;
+    }
+
+    if (Loop::resizeImageFile(asecFileName, numImgSectors + 1)) {
+        SLOGE("Resize of ASEC image file failed. Could not resize %s", id);
+        return -1;
+    }
+
+    /*
+     * Drop down a copy of the superblock at the end of the file
+     */
+    if (writeSuperBlock(asecFileName, &sb, numImgSectors))
+        goto fail;
+
+    char idHash[33];
+    if (!asecHash(id, idHash, sizeof(idHash))) {
+        SLOGE("Hash of '%s' failed (%s)", id, strerror(errno));
+        goto fail;
+    }
+
+    char loopDevice[255];
+    if (setupLoopDevice(loopDevice, sizeof(loopDevice), asecFileName, idHash, mDebug))
+        goto fail;
+
+    char dmDevice[255];
+
+    if (setupDevMapperDevice(dmDevice, sizeof(dmDevice), loopDevice, asecFileName, key, idHash, numImgSectors, &cleanupDm, mDebug)) {
+        Loop::destroyByDevice(loopDevice);
+        goto fail;
+    }
+
+    /*
+     * Wait for the device mapper node to be created.
+     */
+    waitForDevMapper(dmDevice);
+
+    if (Ext4::resize(dmDevice, numImgSectors)) {
+        SLOGE("Unable to resize %s (%s)", id, strerror(errno));
+        if (cleanupDm) {
+            Devmapper::destroy(idHash);
+        }
+        Loop::destroyByDevice(loopDevice);
+        goto fail;
+    }
+
+    return 0;
+fail:
+    Loop::resizeImageFile(asecFileName, oldNumSec);
+    return -1;
 }
 
 int VolumeManager::finalizeAsec(const char *id) {
@@ -1060,19 +1262,8 @@ int VolumeManager::mountAsec(const char *id, const char *key, int ownerUid) {
     }
 
     char loopDevice[255];
-    if (Loop::lookupActive(idHash, loopDevice, sizeof(loopDevice))) {
-        if (Loop::create(idHash, asecFileName, loopDevice, sizeof(loopDevice))) {
-            SLOGE("ASEC loop device creation failed (%s)", strerror(errno));
-            return -1;
-        }
-        if (mDebug) {
-            SLOGD("New loop device created at %s", loopDevice);
-        }
-    } else {
-        if (mDebug) {
-            SLOGD("Found active loopback for %s at %s", asecFileName, loopDevice);
-        }
-    }
+    if (setupLoopDevice(loopDevice, sizeof(loopDevice), asecFileName, idHash, mDebug))
+        return -1;
 
     char dmDevice[255];
     bool cleanupDm = false;
@@ -1095,25 +1286,9 @@ int VolumeManager::mountAsec(const char *id, const char *key, int ownerUid) {
     }
     nr_sec--; // We don't want the devmapping to extend onto our superblock
 
-    if (strcmp(key, "none")) {
-        if (Devmapper::lookupActive(idHash, dmDevice, sizeof(dmDevice))) {
-            if (Devmapper::create(idHash, loopDevice, key, nr_sec,
-                                  dmDevice, sizeof(dmDevice))) {
-                SLOGE("ASEC device mapping failed (%s)", strerror(errno));
-                Loop::destroyByDevice(loopDevice);
-                return -1;
-            }
-            if (mDebug) {
-                SLOGD("New devmapper instance created at %s", dmDevice);
-            }
-        } else {
-            if (mDebug) {
-                SLOGD("Found active devmapper for %s at %s", asecFileName, dmDevice);
-            }
-        }
-        cleanupDm = true;
-    } else {
-        strcpy(dmDevice, loopDevice);
+    if (setupDevMapperDevice(dmDevice, sizeof(dmDevice), loopDevice, asecFileName, key, idHash , nr_sec, &cleanupDm, mDebug)) {
+        Loop::destroyByDevice(loopDevice);
+        return -1;
     }
 
     if (mkdir(mountPoint, 0000)) {
@@ -1128,17 +1303,9 @@ int VolumeManager::mountAsec(const char *id, const char *key, int ownerUid) {
     }
 
     /*
-     * The device mapper node needs to be created. Sometimes it takes a
-     * while. Wait for up to 1 second. We could also inspect incoming uevents,
-     * but that would take more effort.
+     * Wait for the device mapper node to be created.
      */
-    int tries = 25;
-    while (tries--) {
-        if (!access(dmDevice, F_OK) || errno != ENOENT) {
-            break;
-        }
-        usleep(40 * 1000);
-    }
+    waitForDevMapper(dmDevice);
 
     int result;
     if (sb.c_opts & ASEC_SB_C_OPTS_EXT4) {
@@ -1201,19 +1368,8 @@ int VolumeManager::mountObb(const char *img, const char *key, int ownerGid) {
     }
 
     char loopDevice[255];
-    if (Loop::lookupActive(idHash, loopDevice, sizeof(loopDevice))) {
-        if (Loop::create(idHash, img, loopDevice, sizeof(loopDevice))) {
-            SLOGE("Image loop device creation failed (%s)", strerror(errno));
-            return -1;
-        }
-        if (mDebug) {
-            SLOGD("New loop device created at %s", loopDevice);
-        }
-    } else {
-        if (mDebug) {
-            SLOGD("Found active loopback for %s at %s", img, loopDevice);
-        }
-    }
+    if (setupLoopDevice(loopDevice, sizeof(loopDevice), img, idHash, mDebug))
+        return -1;
 
     char dmDevice[255];
     bool cleanupDm = false;
@@ -1235,25 +1391,9 @@ int VolumeManager::mountObb(const char *img, const char *key, int ownerGid) {
 
     close(fd);
 
-    if (strcmp(key, "none")) {
-        if (Devmapper::lookupActive(idHash, dmDevice, sizeof(dmDevice))) {
-            if (Devmapper::create(idHash, loopDevice, key, nr_sec,
-                                  dmDevice, sizeof(dmDevice))) {
-                SLOGE("ASEC device mapping failed (%s)", strerror(errno));
-                Loop::destroyByDevice(loopDevice);
-                return -1;
-            }
-            if (mDebug) {
-                SLOGD("New devmapper instance created at %s", dmDevice);
-            }
-        } else {
-            if (mDebug) {
-                SLOGD("Found active devmapper for %s at %s", img, dmDevice);
-            }
-        }
-        cleanupDm = true;
-    } else {
-        strcpy(dmDevice, loopDevice);
+    if (setupDevMapperDevice(dmDevice, sizeof(loopDevice), loopDevice, img,key, idHash , nr_sec, &cleanupDm, mDebug)) {
+        Loop::destroyByDevice(loopDevice);
+        return -1;
     }
 
     if (mkdir(mountPoint, 0755)) {

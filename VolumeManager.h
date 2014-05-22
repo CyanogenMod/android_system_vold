@@ -91,6 +91,7 @@ public:
             const char **directory = NULL) const;
     int createAsec(const char *id, unsigned numSectors, const char *fstype,
                    const char *key, const int ownerUid, bool isExternal);
+    int resizeAsec(const char *id, unsigned numSectors, const char *key);
     int finalizeAsec(const char *id);
 
     /**
