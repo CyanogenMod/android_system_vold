@@ -54,6 +54,9 @@
 
 #define MASS_STORAGE_FILE_PATH  "/sys/class/android_usb/android0/f_mass_storage/lun/file"
 
+#define ROUND_UP_POWER_OF_2(number, po2) (((!!(number & ((1U << po2) - 1))) << po2)\
+                                         + (number & (~((1U << po2) - 1))))
+
 VolumeManager *VolumeManager::sInstance = NULL;
 
 VolumeManager *VolumeManager::Instance() {
@@ -332,13 +335,17 @@ int VolumeManager::createAsec(const char *id, unsigned int numSectors, const cha
 
     /*
      * Add some headroom
+     * This is likely off by a bit, and we may want to do something different for ext4
      */
     unsigned fatSize = (((numSectors * 4) / 512) + 1) * 2;
     unsigned numImgSectors = numSectors + fatSize + 2;
-
-    if (numImgSectors % 63) {
-        numImgSectors += (63 - (numImgSectors % 63));
-    }
+    /*
+     * ext4 is aligned to 4kb. fat is aligned to 32kb. Sectors are 512b.
+     */
+    if (usingExt4)
+        numImgSectors = ROUND_UP_POWER_OF_2(numImgSectors, 3);
+    else
+        numImgSectors = ROUND_UP_POWER_OF_2(numImgSectors, 6);
 
     // Add +1 for our superblock which is at the end
     if (Loop::createImageFile(asecFileName, numImgSectors + 1)) {
@@ -433,7 +440,7 @@ int VolumeManager::createAsec(const char *id, unsigned int numSectors, const cha
         }
 
         if (usingExt4) {
-            formatStatus = Ext4::format(dmDevice, mountPoint);
+            formatStatus = Ext4::format(dmDevice, numImgSectors, mountPoint);
         } else {
             formatStatus = Fat::format(dmDevice, numImgSectors, 0);
         }

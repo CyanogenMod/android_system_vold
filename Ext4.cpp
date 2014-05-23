@@ -67,9 +67,9 @@ int Ext4::doMount(const char *fsPath, const char *mountPoint, bool ro, bool remo
     return rc;
 }
 
-int Ext4::format(const char *fsPath, const char *mountpoint) {
+int Ext4::format(const char *fsPath, unsigned int numSectors, const char *mountpoint) {
     int fd;
-    const char *args[5];
+    const char *args[7];
     int rc;
     int status;
 
@@ -77,7 +77,18 @@ int Ext4::format(const char *fsPath, const char *mountpoint) {
     args[1] = "-J";
     args[2] = "-a";
     args[3] = mountpoint;
-    args[4] = fsPath;
+    if (numSectors) {
+        char tmp[32];
+        snprintf(tmp, sizeof(tmp), "%u", numSectors * 512);
+        const char *size = tmp;
+        args[4] = "-l";
+        args[5] = size;
+        args[6] = fsPath;
+        rc = android_fork_execvp(ARRAY_SIZE(args), (char **)args, &status, false, true);
+    } else {
+        args[4] = fsPath;
+        rc = android_fork_execvp(5, (char **)args, &status, false, true);
+    }
     rc = android_fork_execvp(ARRAY_SIZE(args), (char **)args, &status, false,
             true);
     if (rc != 0) {
