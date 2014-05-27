@@ -18,6 +18,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
+#include <fnmatch.h>
 
 #include <linux/kdev_t.h>
 
@@ -32,6 +33,42 @@
 #include "cryptfs.h"
 
 // #define PARTITION_DEBUG
+
+PathInfo::PathInfo(const char *p)
+{
+    warned = false;
+    pattern = strdup(p);
+
+    if (!strchr(pattern, '*')) {
+        patternType = prefix;
+    } else {
+        patternType = wildcard;
+    }
+}
+
+PathInfo::~PathInfo()
+{
+    free(pattern);
+}
+
+bool PathInfo::match(const char *path)
+{
+    switch (patternType) {
+    case prefix:
+    {
+        bool ret = (strncmp(path, pattern, strlen(pattern)) == 0);
+        if (!warned && ret && (strlen(pattern) != strlen(path))) {
+            SLOGW("Deprecated implied prefix pattern detected, please use '%s*' instead", pattern);
+            warned = true;
+        }
+        return ret;
+    }
+    case wildcard:
+        return fnmatch(pattern, path, 0) == 0;
+    }
+    SLOGE("Bad matching type");
+    return false;
+}
 
 DirectVolume::DirectVolume(VolumeManager *vm, const fstab_rec* rec, int flags) :
         Volume(vm, rec, flags) {
@@ -62,12 +99,12 @@ DirectVolume::~DirectVolume() {
     PathCollection::iterator it;
 
     for (it = mPaths->begin(); it != mPaths->end(); ++it)
-        free(*it);
+        delete *it;
     delete mPaths;
 }
 
 int DirectVolume::addPath(const char *path) {
-    mPaths->push_back(strdup(path));
+    mPaths->push_back(new PathInfo(path));
     return 0;
 }
 
@@ -96,7 +133,7 @@ int DirectVolume::handleBlockEvent(NetlinkEvent *evt) {
 
     PathCollection::iterator  it;
     for (it = mPaths->begin(); it != mPaths->end(); ++it) {
-        if (!strncmp(dp, *it, strlen(*it))) {
+        if ((*it)->match(dp)) {
             /* We can handle this disk */
             int action = evt->getAction();
             const char *devtype = evt->findParam("DEVTYPE");
@@ -401,7 +438,7 @@ int DirectVolume::updateDeviceInfo(char *new_path, int new_major, int new_minor)
     }
 
     it = mPaths->begin();
-    free(*it); /* Free the string storage */
+    delete *it; /* Free the string storage */
     mPaths->erase(it); /* Remove it from the list */
     addPath(new_path); /* Put the new path on the list */
 

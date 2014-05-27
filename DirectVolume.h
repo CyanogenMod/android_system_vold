@@ -21,7 +21,19 @@
 
 #include "Volume.h"
 
-typedef android::List<char *> PathCollection;
+class PathInfo {
+public:
+	PathInfo(const char *pattern);
+	~PathInfo();
+	bool match(const char *path);
+private:
+	bool warned;
+	char *pattern;
+	enum PatternType { prefix, wildcard };
+	PatternType patternType;
+};
+
+typedef android::List<PathInfo *> PathCollection;
 
 class DirectVolume : public Volume {
 public:
