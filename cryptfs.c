@@ -1907,6 +1907,8 @@ struct encryptGroupsData
     char* buffer;
     off64_t last_written_sector;
     int completed;
+    time_t time_started;
+    int remaining_time;
 };
 
 static void update_progress(struct encryptGroupsData* data, int is_used)
@@ -1928,8 +1930,25 @@ static void update_progress(struct encryptGroupsData* data, int is_used)
         data->cur_pct = data->new_pct;
         snprintf(buf, sizeof(buf), "%lld", data->cur_pct);
         property_set("vold.encrypt_progress", buf);
-
         SLOGI("Encrypted %lld percent of drive", data->cur_pct);
+    }
+
+    if (data->cur_pct >= 5) {
+        double elapsed_time = difftime(time(NULL), data->time_started);
+        off64_t remaining_blocks = data->tot_used_blocks
+                                   - data->used_blocks_already_done;
+        int remaining_time = (int)(elapsed_time * remaining_blocks
+                                   / data->used_blocks_already_done);
+        if (data->remaining_time == -1
+            || remaining_time < data->remaining_time) {
+            char buf[8];
+            snprintf(buf, sizeof(buf), "%d", remaining_time);
+            property_set("vold.encrypt_time_remaining", buf);
+
+            SLOGI("Encrypted %lld percent of drive, %d seconds to go",
+                  data->cur_pct, remaining_time);
+            data->remaining_time = remaining_time;
+        }
     }
 }
 
@@ -2106,6 +2125,8 @@ static int cryptfs_enable_inplace_ext4(char *crypto_blkdev,
 
     data.one_pct = data.tot_used_blocks / 100;
     data.cur_pct = 0;
+    data.time_started = time(NULL);
+    data.remaining_time = -1;
 
     rc = encrypt_groups(&data);
     if (rc) {
