@@ -1900,6 +1900,7 @@ struct encryptGroupsData
     off64_t numblocks;
     off64_t one_pct, cur_pct, new_pct;
     off64_t blocks_already_done, tot_numblocks;
+    off64_t used_blocks_already_done, tot_used_blocks;
     char* real_blkdev, * crypto_blkdev;
     int count;
     off64_t offset;
@@ -1908,15 +1909,27 @@ struct encryptGroupsData
     int completed;
 };
 
-static void update_progress(struct encryptGroupsData* data)
+static void update_progress(struct encryptGroupsData* data, int is_used)
 {
     data->blocks_already_done++;
-    data->new_pct = data->blocks_already_done / data->one_pct;
+
+    if (is_used) {
+        data->used_blocks_already_done++;
+    }
+
+    if (data->tot_used_blocks) {
+        data->new_pct = data->used_blocks_already_done / data->one_pct;
+    } else {
+        data->new_pct = data->blocks_already_done / data->one_pct;
+    }
+
     if (data->new_pct > data->cur_pct) {
         char buf[8];
         data->cur_pct = data->new_pct;
         snprintf(buf, sizeof(buf), "%lld", data->cur_pct);
         property_set("vold.encrypt_progress", buf);
+
+        SLOGI("Encrypted %lld percent of drive", data->cur_pct);
     }
 }
 
@@ -1994,8 +2007,9 @@ static int encrypt_groups(struct encryptGroupsData* data)
         data->count = 0;
 
         for (block = 0; block < block_count; block++) {
-            update_progress(data);
-            if (bitmap_get_bit(block_bitmap, block)) {
+            int used = bitmap_get_bit(block_bitmap, block);
+            update_progress(data, used);
+            if (used) {
                 if (data->count == 0) {
                     data->offset = offset;
                 }
@@ -2044,7 +2058,7 @@ static int cryptfs_enable_inplace_ext4(char *crypto_blkdev,
                                        off64_t tot_size,
                                        off64_t previously_encrypted_upto)
 {
-    int i;
+    u32 i;
     struct encryptGroupsData data;
     int rc = -1;
 
@@ -2085,7 +2099,12 @@ static int cryptfs_enable_inplace_ext4(char *crypto_blkdev,
 
     SLOGI("Encrypting filesystem in place...");
 
-    data.one_pct = data.tot_numblocks / 100;
+    data.tot_used_blocks = data.numblocks;
+    for (i = 0; i < aux_info.groups; ++i) {
+      data.tot_used_blocks -= aux_info.bg_desc[i].bg_free_blocks_count;
+    }
+
+    data.one_pct = data.tot_used_blocks / 100;
     data.cur_pct = 0;
 
     rc = encrypt_groups(&data);
