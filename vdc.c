@@ -62,7 +62,7 @@ static int do_cmd(int sock, int argc, char **argv) {
     for (i = 1; i < argc; i++) {
         char *cmp;
 
-        if (!index(argv[i], ' '))
+        if (!strchr(argv[i], ' '))
             asprintf(&cmp, "%s%s", argv[i], (i == (argc -1)) ? "" : " ");
         else
             asprintf(&cmp, "\"%s\"%s", argv[i], (i == (argc -1)) ? "" : " ");
