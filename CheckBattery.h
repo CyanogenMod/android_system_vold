@@ -21,7 +21,8 @@
 extern "C" {
 #endif
 
-int is_battery_ok();
+int is_battery_ok_to_start();
+int is_battery_ok_to_continue();
 
 #ifdef __cplusplus
 }

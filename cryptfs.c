@@ -2049,7 +2049,7 @@ static int encrypt_groups(struct encryptGroupsData* data)
                 }
             }
 
-            if (!is_battery_ok()) {
+            if (!is_battery_ok_to_continue()) {
                 SLOGE("Stopping encryption due to low battery");
                 rc = 0;
                 goto errout;
@@ -2231,7 +2231,7 @@ static int cryptfs_enable_inplace_full(char *crypto_blkdev, char *real_blkdev,
                   i * CRYPT_SECTORS_PER_BUFSIZE);
         }
 
-       if (!is_battery_ok()) {
+       if (!is_battery_ok_to_continue()) {
             SLOGE("Stopping encryption due to low battery");
             *size_already_done += (i + 1) * CRYPT_SECTORS_PER_BUFSIZE - 1;
             rc = 0;
@@ -2332,8 +2332,8 @@ static int cryptfs_enable_all_volumes(struct crypt_mnt_ftr *crypt_ftr, int how,
     off64_t cur_encryption_done=0, tot_encryption_size=0;
     int i, rc = -1;
 
-    if (!is_battery_ok()) {
-        SLOGE("Stopping encryption due to low battery");
+    if (!is_battery_ok_to_start()) {
+        SLOGW("Not starting encryption due to low battery");
         return 0;
     }
 
@@ -2348,11 +2348,11 @@ static int cryptfs_enable_all_volumes(struct crypt_mnt_ftr *crypt_ftr, int how,
                                     tot_encryption_size,
                                     previously_encrypted_upto);
 
-        if (!rc && cur_encryption_done != (off64_t)crypt_ftr->fs_size) {
+        if (!rc) {
             crypt_ftr->encrypted_upto = cur_encryption_done;
         }
 
-        if (!rc && !crypt_ftr->encrypted_upto) {
+        if (!rc && crypt_ftr->encrypted_upto == crypt_ftr->fs_size) {
             /* The inplace routine never actually sets the progress to 100% due
              * to the round down nature of integer division, so set it here */
             property_set("vold.encrypt_progress", "100");
@@ -2601,10 +2601,10 @@ int cryptfs_enable_internal(char *howarg, int crypt_type, char *passwd,
     }
 
     /* Calculate checksum if we are not finished */
-    if (!rc && crypt_ftr.encrypted_upto) {
+    if (!rc && crypt_ftr.encrypted_upto != crypt_ftr.fs_size) {
         rc = cryptfs_SHA256_fileblock(crypto_blkdev,
                                       crypt_ftr.hash_first_block);
-        if (!rc) {
+        if (rc) {
             SLOGE("Error calculating checksum for continuing encryption");
             rc = -1;
         }
@@ -2618,19 +2618,22 @@ int cryptfs_enable_internal(char *howarg, int crypt_type, char *passwd,
     if (! rc) {
         /* Success */
 
-        /* Clear the encryption in progres flag in the footer */
-        if (!crypt_ftr.encrypted_upto) {
+        /* Clear the encryption in progress flag in the footer */
+        if (crypt_ftr.encrypted_upto == crypt_ftr.fs_size) {
             crypt_ftr.flags &= ~CRYPT_ENCRYPTION_IN_PROGRESS;
         } else {
             SLOGD("Encrypted up to sector %lld - will continue after reboot",
                   crypt_ftr.encrypted_upto);
         }
-        put_crypt_ftr_and_key(&crypt_ftr);
+
+        if (crypt_ftr.encrypted_upto) {
+            put_crypt_ftr_and_key(&crypt_ftr);
+        }
 
         sleep(2); /* Give the UI a chance to show 100% progress */
                   /* Partially encrypted - ensure writes are flushed to ssd */
 
-        if (!crypt_ftr.encrypted_upto) {
+        if (crypt_ftr.encrypted_upto == crypt_ftr.fs_size) {
             cryptfs_reboot(reboot);
         } else {
             cryptfs_reboot(shutdown);
