@@ -82,6 +82,12 @@ static int writeSuperBlock(const char* name, struct asec_superblock *sb, unsigne
 }
 
 static int adjustSectorNumExt4(unsigned numSectors) {
+    // Ext4 started to reserve 2% or 4096 clusters, whichever is smaller for
+    // preventing costly operations or unexpected ENOSPC error.
+    // Ext4::format() uses default block size without clustering.
+    unsigned clusterSectors = 4096 / 512;
+    unsigned reservedSectors = (numSectors * 2)/100 + (numSectors % 50 > 0);
+    numSectors += reservedSectors > (4096 * clusterSectors) ? (4096 * clusterSectors) : reservedSectors;
     return ROUND_UP_POWER_OF_2(numSectors, 3);
 }
 
