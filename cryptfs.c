@@ -70,7 +70,7 @@
 #define DEFAULT_PASSWORD "64656661756c745f70617373776f7264"
 
 #define EXT4_FS 1
-#define FAT_FS 2
+#define F2FS_FS 2
 
 #define TABLE_LOAD_RETRIES 10
 
@@ -1461,7 +1461,7 @@ static int cryptfs_restart_internal(int restart_main)
             struct fstab_rec* rec = fs_mgr_get_entry_for_mount_point(fstab, DATA_MNT_POINT);
             rec->flags |= MS_RDONLY;
         }
-        
+
         /* If that succeeded, then mount the decrypted filesystem */
         fs_mgr_do_mount(fstab, DATA_MNT_POINT, crypto_blkdev, 0);
 
@@ -1842,22 +1842,16 @@ static int cryptfs_enable_wipe(char *crypto_blkdev, off64_t size, int type)
         num_args = 6;
         SLOGI("Making empty filesystem with command %s %s %s %s %s %s\n",
               args[0], args[1], args[2], args[3], args[4], args[5]);
-    } else if (type== FAT_FS) {
-        args[0] = "/system/bin/newfs_msdos";
-        args[1] = "-F";
-        args[2] = "32";
-        args[3] = "-O";
-        args[4] = "android";
-        args[5] = "-c";
-        args[6] = "8";
-        args[7] = "-s";
+    } else if (type == F2FS_FS) {
+        args[0] = "/system/bin/mkfs.f2fs";
+        args[1] = "-t";
+        args[2] = "-d1";
+        args[3] = crypto_blkdev;
         snprintf(size_str, sizeof(size_str), "%lld", size);
-        args[8] = size_str;
-        args[9] = crypto_blkdev;
-        num_args = 10;
-        SLOGI("Making empty filesystem with command %s %s %s %s %s %s %s %s %s %s\n",
-              args[0], args[1], args[2], args[3], args[4], args[5],
-              args[6], args[7], args[8], args[9]);
+        args[4] = size_str;
+        num_args = 5;
+        SLOGI("Making empty filesystem with command %s %s %s %s %s\n",
+              args[0], args[1], args[2], args[3], args[4]);
     } else {
         SLOGE("cryptfs_enable_wipe(): unknown filesystem type %d\n", type);
         return -1;
@@ -2325,6 +2319,17 @@ static int cryptfs_SHA256_fileblock(const char* filename, __le8* buf)
     return 0;
 }
 
+static int get_fs_type(struct fstab_rec *rec)
+{
+    if (!strcmp(rec->fs_type, "ext4")) {
+        return EXT4_FS;
+    } else if (!strcmp(rec->fs_type, "f2fs")) {
+        return F2FS_FS;
+    } else {
+        return -1;
+    }
+}
+
 static int cryptfs_enable_all_volumes(struct crypt_mnt_ftr *crypt_ftr, int how,
                                       char *crypto_blkdev, char *real_blkdev,
                                       int previously_encrypted_upto)
@@ -2341,7 +2346,13 @@ static int cryptfs_enable_all_volumes(struct crypt_mnt_ftr *crypt_ftr, int how,
     tot_encryption_size = crypt_ftr->fs_size;
 
     if (how == CRYPTO_ENABLE_WIPE) {
-        rc = cryptfs_enable_wipe(crypto_blkdev, crypt_ftr->fs_size, EXT4_FS);
+        struct fstab_rec* rec = fs_mgr_get_entry_for_mount_point(fstab, DATA_MNT_POINT);
+        int fs_type = get_fs_type(rec);
+        if (fs_type < 0) {
+            SLOGE("cryptfs_enable: unsupported fs type %s\n", rec->fs_type);
+            return -1;
+        }
+        rc = cryptfs_enable_wipe(crypto_blkdev, crypt_ftr->fs_size, fs_type);
     } else if (how == CRYPTO_ENABLE_INPLACE) {
         rc = cryptfs_enable_inplace(crypto_blkdev, real_blkdev,
                                     crypt_ftr->fs_size, &cur_encryption_done,
