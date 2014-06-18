@@ -164,10 +164,16 @@ int VolumeManager::listVolumes(SocketClient *cli) {
     VolumeCollection::iterator i;
 
     for (i = mVolumes->begin(); i != mVolumes->end(); ++i) {
+        const char *uuid;
+        uuid = (*i)->getUuid();
+        if (!uuid) {
+            uuid = "0";
+        }
         char *buffer;
-        asprintf(&buffer, "%s %s %d",
+        asprintf(&buffer, "%s %s %d %s",
                  (*i)->getLabel(), (*i)->getFuseMountpoint(),
-                 (*i)->getState());
+                 (*i)->getState(),
+                 uuid);
         cli->sendMsg(ResponseCode::VolumeListResult, buffer, false);
         free(buffer);
     }
