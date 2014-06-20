@@ -68,6 +68,11 @@ static void *do_fstrim_filesystems(void *thread_arg)
 
     SLOGI("Starting fstrim work...\n");
 
+    /* Get a wakelock as this may take a while, and we don't want the
+     * device to sleep on us.
+     */
+    acquire_wake_lock(PARTIAL_WAKE_LOCK, FSTRIM_WAKELOCK);
+
     /* Log the start time in the event log */
     LOG_EVENT_LONG(LOG_FSTRIM_START, get_boot_time_ms());
 
@@ -132,11 +137,6 @@ int fstrim_filesystems(int deep_trim)
 {
     pthread_t t;
     int ret;
-
-    /* Get a wakelock as this may take a while, and we don't want the
-     * device to sleep on us.
-     */
-    acquire_wake_lock(PARTIAL_WAKE_LOCK, FSTRIM_WAKELOCK);
 
     /* Depending on the emmc chip and size, this can take upwards
      * of a few minutes.  If done in the same thread as the caller
