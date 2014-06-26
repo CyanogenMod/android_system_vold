@@ -24,6 +24,7 @@
 #include <sys/wait.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+#include <inttypes.h>
 #include <unistd.h>
 #include <stdio.h>
 #include <sys/ioctl.h>
@@ -1448,7 +1449,7 @@ static int cryptfs_enable_wipe(char *crypto_blkdev, off64_t size, int type)
         args[1] = "-a";
         args[2] = "/data";
         args[3] = "-l";
-        snprintf(size_str, sizeof(size_str), "%lld", size * 512);
+        snprintf(size_str, sizeof(size_str), "%" PRId64, size * 512);
         args[4] = size_str;
         args[5] = crypto_blkdev;
         num_args = 6;
@@ -1463,7 +1464,7 @@ static int cryptfs_enable_wipe(char *crypto_blkdev, off64_t size, int type)
         args[5] = "-c";
         args[6] = "8";
         args[7] = "-s";
-        snprintf(size_str, sizeof(size_str), "%lld", size);
+        snprintf(size_str, sizeof(size_str), "%" PRId64, size);
         args[8] = size_str;
         args[9] = crypto_blkdev;
         num_args = 10;
@@ -1540,7 +1541,7 @@ static int cryptfs_enable_inplace(char *crypto_blkdev, char *real_blkdev, off64_
             char buf[8];
 
             cur_pct = new_pct;
-            snprintf(buf, sizeof(buf), "%lld", cur_pct);
+            snprintf(buf, sizeof(buf), "%" PRId64, cur_pct);
             property_set("vold.encrypt_progress", buf);
         }
         if (unix_read(realfd, buf, CRYPT_INPLACE_BUFSIZE) <= 0) {
