@@ -1953,7 +1953,7 @@ static int flush_outstanding_data(struct encryptGroupsData* data)
         return 0;
     }
 
-    SLOGV("Copying %d blocks at offset %" PRId64, data->count, data->offset);
+    SLOGV("Copying %d blocks at offset %" PRIx64, data->count, data->offset);
 
     if (pread64(data->realfd, data->buffer,
                 info.block_size * data->count, data->offset)
