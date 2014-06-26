@@ -25,6 +25,7 @@
 #include <sys/stat.h>
 #include <ctype.h>
 #include <fcntl.h>
+#include <inttypes.h>
 #include <unistd.h>
 #include <stdio.h>
 #include <sys/ioctl.h>
@@ -1836,7 +1837,7 @@ static int cryptfs_enable_wipe(char *crypto_blkdev, off64_t size, int type)
         args[1] = "-a";
         args[2] = "/data";
         args[3] = "-l";
-        snprintf(size_str, sizeof(size_str), "%lld", size * 512);
+        snprintf(size_str, sizeof(size_str), "%" PRId64, size * 512);
         args[4] = size_str;
         args[5] = crypto_blkdev;
         num_args = 6;
@@ -1847,7 +1848,7 @@ static int cryptfs_enable_wipe(char *crypto_blkdev, off64_t size, int type)
         args[1] = "-t";
         args[2] = "-d1";
         args[3] = crypto_blkdev;
-        snprintf(size_str, sizeof(size_str), "%lld", size);
+        snprintf(size_str, sizeof(size_str), "%" PRId64, size);
         args[4] = size_str;
         num_args = 5;
         SLOGI("Making empty filesystem with command %s %s %s %s %s\n",
@@ -1922,9 +1923,9 @@ static void update_progress(struct encryptGroupsData* data, int is_used)
     if (data->new_pct > data->cur_pct) {
         char buf[8];
         data->cur_pct = data->new_pct;
-        snprintf(buf, sizeof(buf), "%lld", data->cur_pct);
+        snprintf(buf, sizeof(buf), "%" PRId64, data->cur_pct);
         property_set("vold.encrypt_progress", buf);
-        SLOGI("Encrypted %lld percent of drive", data->cur_pct);
+        SLOGI("Encrypted %" PRId64 " percent of drive", data->cur_pct);
     }
 
     if (data->cur_pct >= 5) {
@@ -1939,7 +1940,7 @@ static void update_progress(struct encryptGroupsData* data, int is_used)
             snprintf(buf, sizeof(buf), "%d", remaining_time);
             property_set("vold.encrypt_time_remaining", buf);
 
-            SLOGI("Encrypted %lld percent of drive, %d seconds to go",
+            SLOGI("Encrypted %" PRId64 " percent of drive, %d seconds to go",
                   data->cur_pct, remaining_time);
             data->remaining_time = remaining_time;
         }
@@ -1952,7 +1953,7 @@ static int flush_outstanding_data(struct encryptGroupsData* data)
         return 0;
     }
 
-    SLOGV("Copying %d blocks at offset %llx", data->count, data->offset);
+    SLOGV("Copying %d blocks at offset %" PRId64, data->count, data->offset);
 
     if (pread64(data->realfd, data->buffer,
                 info.block_size * data->count, data->offset)
@@ -1969,7 +1970,7 @@ static int flush_outstanding_data(struct encryptGroupsData* data)
               data->crypto_blkdev);
         return -1;
     } else {
-        SLOGI("Encrypted %d blocks at sector %lld",
+        SLOGI("Encrypted %d blocks at sector %" PRId64,
               data->count, data->offset / info.block_size * CRYPT_SECTOR_SIZE);
     }
 
@@ -2196,7 +2197,7 @@ static int cryptfs_enable_inplace_full(char *crypto_blkdev, char *real_blkdev,
                   "inplace encrypt\n", crypto_blkdev);
             goto errout;
         } else {
-            SLOGI("Encrypted 1 block at %lld", i);
+            SLOGI("Encrypted 1 block at %" PRId64, i);
         }
     }
 
@@ -2209,7 +2210,7 @@ static int cryptfs_enable_inplace_full(char *crypto_blkdev, char *real_blkdev,
             char buf[8];
 
             cur_pct = new_pct;
-            snprintf(buf, sizeof(buf), "%lld", cur_pct);
+            snprintf(buf, sizeof(buf), "%" PRId64, cur_pct);
             property_set("vold.encrypt_progress", buf);
         }
         if (unix_read(realfd, buf, CRYPT_INPLACE_BUFSIZE) <= 0) {
@@ -2220,7 +2221,7 @@ static int cryptfs_enable_inplace_full(char *crypto_blkdev, char *real_blkdev,
             SLOGE("Error writing crypto_blkdev %s for inplace encrypt", crypto_blkdev);
             goto errout;
         } else {
-            SLOGD("Encrypted %d block at %lld",
+            SLOGD("Encrypted %d block at %" PRId64,
                   CRYPT_SECTORS_PER_BUFSIZE,
                   i * CRYPT_SECTORS_PER_BUFSIZE);
         }
@@ -2263,7 +2264,7 @@ static int cryptfs_enable_inplace(char *crypto_blkdev, char *real_blkdev,
                                   off64_t previously_encrypted_upto)
 {
     if (previously_encrypted_upto) {
-        SLOGD("Continuing encryption from %lld", previously_encrypted_upto);
+        SLOGD("Continuing encryption from %" PRId64, previously_encrypted_upto);
     }
 
     if (*size_already_done + size < previously_encrypted_upto) {
