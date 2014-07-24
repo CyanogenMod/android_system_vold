@@ -372,19 +372,14 @@ static void upgrade_crypt_ftr(int fd, struct crypt_mnt_ftr *crypt_ftr, off64_t o
 }
 
 
-static int get_crypt_ftr_and_key(struct crypt_mnt_ftr *crypt_ftr)
+static int get_crypt_ftr_and_key_from(struct crypt_mnt_ftr *crypt_ftr,
+        char* fname, off64_t starting_off)
 {
   int fd;
   unsigned int cnt;
-  off64_t starting_off;
   int rc = -1;
-  char *fname = NULL;
   struct stat statbuf;
 
-  if (get_crypt_ftr_info(&fname, &starting_off)) {
-    SLOGE("Unable to get crypt_ftr_info\n");
-    return -1;
-  }
   if (fname[0] != '/') {
     SLOGE("Unexpected value for crypto key location\n");
     return -1;
@@ -441,6 +436,79 @@ static int get_crypt_ftr_and_key(struct crypt_mnt_ftr *crypt_ftr)
 errout:
   close(fd);
   return rc;
+}
+
+#ifdef CRYPTFS_MIGRATE
+static int maybe_move_crypt_ftr()
+{
+    static int migrate_done = 0;
+    struct crypt_mnt_ftr crypt_ftr;
+    unsigned int nr_sec;
+    off64_t offset = 0;
+    int fd = -1;
+    int ret = -1;
+
+    if (migrate_done) {
+        return -1;
+    }
+
+    struct fstab_rec* old_part = fs_mgr_get_entry_for_mount_point(fstab, "/data");
+    if (old_part == NULL) {
+        SLOGE("can't get userdata partition!");
+        goto errout;
+    }
+    char* real_blkdev = old_part->blk_device;
+
+    if ((fd = open(real_blkdev, O_RDWR)) < 0) {
+        SLOGE("can't open %s", real_blkdev);
+        goto errout;
+    }
+    if ((nr_sec = get_blkdev_size(fd)) == 0) {
+        SLOGE("zero block size!");
+        goto errout;
+    }
+    offset = ((off64_t)nr_sec * 512) - CRYPT_FOOTER_OFFSET;
+    if (get_crypt_ftr_and_key_from(&crypt_ftr, real_blkdev, offset)) {
+        SLOGE("can't get footer from %s at %lu", real_blkdev, offset);
+        goto errout;
+    }
+    if (put_crypt_ftr_and_key(&crypt_ftr)) {
+        goto errout;
+    }
+
+    /* Success! */
+    ret = 0;
+
+errout:
+    if (fd > 0) {
+        close(fd);
+    }
+    migrate_done = 1;
+    return ret;
+}
+#endif
+
+static int get_crypt_ftr_and_key(struct crypt_mnt_ftr *crypt_ftr)
+{
+    off64_t starting_off;
+    char *fname = NULL;
+
+    if (get_crypt_ftr_info(&fname, &starting_off)) {
+        SLOGE("Unable to get crypt_ftr_info\n");
+        return -1;
+    }
+
+    int rc = get_crypt_ftr_and_key_from(crypt_ftr, fname, starting_off);
+#ifdef CRYPTFS_MIGRATE
+    if (rc) {
+
+        if (maybe_move_crypt_ftr()) {
+            return rc;
+        }
+        rc = get_crypt_ftr_and_key_from(crypt_ftr, fname, starting_off);
+    }
+#endif
+    return rc;
 }
 
 static int validate_persistent_data_storage(struct crypt_mnt_ftr *crypt_ftr)
