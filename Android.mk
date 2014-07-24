@@ -16,6 +16,10 @@ ifneq ($(TARGET_USE_CUSTOM_LUN_FILE_PATH),)
 common_cflags += -DCUSTOM_LUN_FILE=\"$(TARGET_USE_CUSTOM_LUN_FILE_PATH)\"
 endif
 
+ifeq ($(BOARD_VOLD_CRYPTFS_MIGRATE), true)
+common_cflags += -DCRYPTFS_MIGRATE
+endif
+
 common_cflags += -Werror
 
 common_src_files := \
