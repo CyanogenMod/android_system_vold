@@ -131,7 +131,8 @@ int CommandListener::VolumeCmd::runCommand(SocketClient *cli,
     int rc = 0;
 
     if (!strcmp(argv[1], "list")) {
-        return vm->listVolumes(cli);
+        bool broadcast = argc >= 3 && !strcmp(argv[2], "broadcast");
+        return vm->listVolumes(cli, broadcast);
     } else if (!strcmp(argv[1], "debug")) {
         if (argc != 3 || (argc == 3 && (strcmp(argv[2], "off") && strcmp(argv[2], "on")))) {
             cli->sendMsg(ResponseCode::CommandSyntaxError, "Usage: volume debug <off/on>", false);

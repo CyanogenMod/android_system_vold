@@ -260,8 +260,9 @@ void VolumeManager::handleBlockEvent(NetlinkEvent *evt) {
     }
 }
 
-int VolumeManager::listVolumes(SocketClient *cli) {
+int VolumeManager::listVolumes(SocketClient *cli, bool broadcast) {
     VolumeCollection::iterator i;
+    char msg[256];
 
     for (i = mVolumes->begin(); i != mVolumes->end(); ++i) {
         char *buffer;
@@ -270,6 +271,20 @@ int VolumeManager::listVolumes(SocketClient *cli) {
                  (*i)->getState());
         cli->sendMsg(ResponseCode::VolumeListResult, buffer, false);
         free(buffer);
+        if (broadcast) {
+            if((*i)->getUuid()) {
+                snprintf(msg, sizeof(msg), "%s %s \"%s\"", (*i)->getLabel(),
+                    (*i)->getFuseMountpoint(), (*i)->getUuid());
+                mBroadcaster->sendBroadcast(ResponseCode::VolumeUuidChange,
+                    msg, false);
+            }
+            if((*i)->getUserLabel()) {
+                snprintf(msg, sizeof(msg), "%s %s \"%s\"", (*i)->getLabel(),
+                    (*i)->getFuseMountpoint(), (*i)->getUserLabel());
+                mBroadcaster->sendBroadcast(ResponseCode::VolumeUserLabelChange,
+                    msg, false);
+            }
+        }
     }
     cli->sendMsg(ResponseCode::CommandOkay, "Volumes listed.", false);
     return 0;

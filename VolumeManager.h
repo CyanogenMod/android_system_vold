@@ -77,7 +77,7 @@ public:
 
     int addVolume(Volume *v);
 
-    int listVolumes(SocketClient *cli);
+    int listVolumes(SocketClient *cli, bool broadcast);
     int mountVolume(const char *label);
     int unmountVolume(const char *label, bool force, bool revert);
     int shareVolume(const char *label, const char *method);
