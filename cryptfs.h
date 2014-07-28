@@ -44,8 +44,11 @@
 
 /* definitions of flags in the structure below */
 #define CRYPT_MNT_KEY_UNENCRYPTED 0x1 /* The key for the partition is not encrypted. */
-#define CRYPT_ENCRYPTION_IN_PROGRESS 0x2 /* Set when starting encryption,
-                                          * clear when done before rebooting */
+#define CRYPT_ENCRYPTION_IN_PROGRESS 0x2 /* Encryption partially completed,
+                                            encrypted_upto valid*/
+#define CRYPT_INCONSISTENT_STATE 0x4 /* Set when starting encryption, clear when
+                                        exit cleanly, either through success or
+                                        correctly marked partial encryption */
 
 /* Allowed values for type in the structure below */
 #define CRYPT_TYPE_PASSWORD 0 /* master_key is encrypted with a password

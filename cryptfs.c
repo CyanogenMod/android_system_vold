@@ -1524,7 +1524,8 @@ static int do_crypto_complete(char *mount_point UNUSED)
     }
   }
 
-  if (crypt_ftr.flags & CRYPT_ENCRYPTION_IN_PROGRESS) {
+  if (crypt_ftr.flags
+      & (CRYPT_ENCRYPTION_IN_PROGRESS | CRYPT_INCONSISTENT_STATE)) {
     SLOGE("Encryption process didn't finish successfully\n");
     return -2;  /* -2 is the clue to the UI that there is no usable data on the disk,
                  * and give the user an option to wipe the disk */
@@ -2412,6 +2413,15 @@ int cryptfs_enable_internal(char *howarg, int crypt_type, char *passwd,
           && (crypt_ftr.flags & CRYPT_ENCRYPTION_IN_PROGRESS)) {
         previously_encrypted_upto = crypt_ftr.encrypted_upto;
         crypt_ftr.encrypted_upto = 0;
+        crypt_ftr.flags &= ~CRYPT_ENCRYPTION_IN_PROGRESS;
+
+        /* At this point, we are in an inconsistent state. Until we successfully
+           complete encryption, a reboot will leave us broken. So mark the
+           encryption failed in case that happens.
+           On successfully completing encryption, remove this flag */
+        crypt_ftr.flags |= CRYPT_INCONSISTENT_STATE;
+
+        put_crypt_ftr_and_key(&crypt_ftr);
     }
 
     property_get("ro.crypto.state", encrypted_state, "");
@@ -2561,7 +2571,11 @@ int cryptfs_enable_internal(char *howarg, int crypt_type, char *passwd,
         } else {
             crypt_ftr.fs_size = nr_sec;
         }
-        crypt_ftr.flags |= CRYPT_ENCRYPTION_IN_PROGRESS;
+        /* At this point, we are in an inconsistent state. Until we successfully
+           complete encryption, a reboot will leave us broken. So mark the
+           encryption failed in case that happens.
+           On successfully completing encryption, remove this flag */
+        crypt_ftr.flags |= CRYPT_INCONSISTENT_STATE;
         crypt_ftr.crypt_type = crypt_type;
         strcpy((char *)crypt_ftr.crypto_type_name, "aes-cbc-essiv:sha256");
 
@@ -2629,18 +2643,15 @@ int cryptfs_enable_internal(char *howarg, int crypt_type, char *passwd,
 
     if (! rc) {
         /* Success */
+        crypt_ftr.flags &= ~CRYPT_INCONSISTENT_STATE;
 
-        /* Clear the encryption in progress flag in the footer */
-        if (crypt_ftr.encrypted_upto == crypt_ftr.fs_size) {
-            crypt_ftr.flags &= ~CRYPT_ENCRYPTION_IN_PROGRESS;
-        } else {
+        if (crypt_ftr.encrypted_upto != crypt_ftr.fs_size) {
             SLOGD("Encrypted up to sector %lld - will continue after reboot",
                   crypt_ftr.encrypted_upto);
+            crypt_ftr.flags |= CRYPT_ENCRYPTION_IN_PROGRESS;
         }
 
-        if (crypt_ftr.encrypted_upto) {
-            put_crypt_ftr_and_key(&crypt_ftr);
-        }
+        put_crypt_ftr_and_key(&crypt_ftr);
 
         sleep(2); /* Give the UI a chance to show 100% progress */
                   /* Partially encrypted - ensure writes are flushed to ssd */
@@ -2924,9 +2935,10 @@ int cryptfs_mount_default_encrypted(void)
         }
     }
 
-    /** @TODO make sure we factory wipe in this situation
-     *  In general if we got here there is no recovery
+    /** Corrupt. Allow us to boot into framework, which will detect bad
+        crypto when it calls do_crypto_complete, then do a factory reset
      */
+    property_set("vold.decrypt", "trigger_restart_min_framework");
     return 0;
 }
 
@@ -2938,6 +2950,10 @@ int cryptfs_get_password_type(void)
 
     if (get_crypt_ftr_and_key(&crypt_ftr)) {
         SLOGE("Error getting crypt footer and key\n");
+        return -1;
+    }
+
+    if (crypt_ftr.flags & CRYPT_INCONSISTENT_STATE) {
         return -1;
     }
 
