@@ -737,7 +737,14 @@ int CommandListener::FstrimCmd::runCommand(SocketClient *cli,
             return 0;
         }
         dumpArgs(argc, argv, -1);
-        rc = fstrim_filesystems();
+        rc = fstrim_filesystems(0);
+    } else if (!strcmp(argv[1], "dodtrim")) {
+        if (argc != 2) {
+            cli->sendMsg(ResponseCode::CommandSyntaxError, "Usage: fstrim dodtrim", false);
+            return 0;
+        }
+        dumpArgs(argc, argv, -1);
+        rc = fstrim_filesystems(1);   /* Do Deep Discard trim */
     } else {
         dumpArgs(argc, argv, -1);
         cli->sendMsg(ResponseCode::CommandSyntaxError, "Unknown fstrim cmd", false);

@@ -17,7 +17,7 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-    int fstrim_filesystems(void);
+    int fstrim_filesystems(int deep_trim);
 #ifdef __cplusplus
 }
 #endif

@@ -52,7 +52,7 @@ static unsigned long long get_boot_time_ms(void)
     return time_ms;
 }
 
-static void *do_fstrim_filesystems(void *ignored UNUSED)
+static void *do_fstrim_filesystems(void *thread_arg)
 {
     int i;
     int fd;
@@ -60,6 +60,7 @@ static void *do_fstrim_filesystems(void *ignored UNUSED)
     struct fstrim_range range = { 0 };
     struct stat sb;
     extern struct fstab *fstab;
+    int deep_trim = !!thread_arg;
 
     SLOGI("Starting fstrim work...\n");
 
@@ -100,9 +101,19 @@ static void *do_fstrim_filesystems(void *ignored UNUSED)
 
         memset(&range, 0, sizeof(range));
         range.len = ULLONG_MAX;
-        SLOGI("Invoking FITRIM ioctl on %s", fstab->recs[i].mount_point);
-        if (ioctl(fd, FITRIM, &range)) {
-            SLOGE("FITRIM ioctl failed on %s", fstab->recs[i].mount_point);
+        SLOGI("Invoking %s ioctl on %s", deep_trim ? "FIDTRIM" : "FITRIM", fstab->recs[i].mount_point);
+#if defined(FIDTRIM)
+        ret = ioctl(fd, deep_trim ? FIDTRIM : FITRIM, &range);
+#else
+        if (deep_trim) {
+            ret = -1;
+            errno = EINVAL;
+        } else {
+            ret = ioctl(fd, FITRIM, &range);
+        }
+#endif
+        if (ret) {
+            SLOGE("FIDTRIM ioctl failed on %s (error %d/%s)", fstab->recs[i].mount_point, errno, strerror(errno));
             ret = -1;
         } else {
             SLOGI("Trimmed %llu bytes on %s\n", range.len, fstab->recs[i].mount_point);
@@ -121,7 +132,7 @@ static void *do_fstrim_filesystems(void *ignored UNUSED)
     return (void *)(uintptr_t)ret;
 }
 
-int fstrim_filesystems(void)
+int fstrim_filesystems(int deep_trim)
 {
     pthread_t t;
     int ret;
@@ -142,7 +153,7 @@ int fstrim_filesystems(void)
      * the kernel will "do the right thing" and split the work between
      * the two ioctls invoked in separate threads.
      */
-    ret = pthread_create(&t, NULL, do_fstrim_filesystems, NULL);
+    ret = pthread_create(&t, NULL, do_fstrim_filesystems, (void *)(intptr_t)deep_trim);
     if (ret) {
         SLOGE("Cannot create thread to do fstrim");
         return ret;
