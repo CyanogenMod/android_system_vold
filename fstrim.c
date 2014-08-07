@@ -113,7 +113,7 @@ static void *do_fstrim_filesystems(void *thread_arg)
         }
 #endif
         if (ret) {
-            SLOGE("FIDTRIM ioctl failed on %s (error %d/%s)", fstab->recs[i].mount_point, errno, strerror(errno));
+            SLOGE("%s ioctl failed on %s (error %d/%s)", deep_trim ? "FIDTRIM" : "FITRIM", fstab->recs[i].mount_point, errno, strerror(errno));
             ret = -1;
         } else {
             SLOGI("Trimmed %llu bytes on %s\n", range.len, fstab->recs[i].mount_point);
