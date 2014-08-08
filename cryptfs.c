@@ -1188,8 +1188,9 @@ static int encrypt_master_key(const char *passwd, const unsigned char *salt,
     unsigned char ikey[32+32] = { 0 }; /* Big enough to hold a 256 bit key and 256 bit IV */
     EVP_CIPHER_CTX e_ctx;
     int encrypted_len, final_len;
+    int rc = 0;
 
-    /* Turn the password into a key and IV that can decrypt the master key */
+    /* Turn the password into an intermediate key and IV that can decrypt the master key */
     get_device_scrypt_params(crypt_ftr);
 
     switch (crypt_ftr->kdf_type) {
@@ -1240,19 +1241,40 @@ static int encrypt_master_key(const char *passwd, const unsigned char *salt,
         return -1;
     }
 
+    /* Store the scrypt of the intermediate key, so we can validate if it's a
+       password error or mount error when things go wrong.
+       Note there's no need to check for errors, since if this is incorrect, we
+       simply won't wipe userdata, which is the correct default behavior
+    */
+    int N = 1 << crypt_ftr->N_factor;
+    int r = 1 << crypt_ftr->r_factor;
+    int p = 1 << crypt_ftr->p_factor;
+
+    rc = crypto_scrypt(ikey, KEY_LEN_BYTES,
+                       crypt_ftr->salt, sizeof(crypt_ftr->salt), N, r, p,
+                       crypt_ftr->scrypted_intermediate_key,
+                       sizeof(crypt_ftr->scrypted_intermediate_key));
+
+    if (rc) {
+      SLOGE("encrypt_master_key: crypto_scrypt failed");
+    }
+
     return 0;
 }
 
 static int decrypt_master_key_aux(char *passwd, unsigned char *salt,
-                              unsigned char *encrypted_master_key,
-                              unsigned char *decrypted_master_key,
-                              kdf_func kdf, void *kdf_params)
+                                  unsigned char *encrypted_master_key,
+                                  unsigned char *decrypted_master_key,
+                                  kdf_func kdf, void *kdf_params,
+                                  unsigned char** intermediate_key,
+                                  size_t* intermediate_key_size)
 {
   unsigned char ikey[32+32] = { 0 }; /* Big enough to hold a 256 bit key and 256 bit IV */
   EVP_CIPHER_CTX d_ctx;
   int decrypted_len, final_len;
 
-  /* Turn the password into a key and IV that can decrypt the master key */
+  /* Turn the password into an intermediate key and IV that can decrypt the
+     master key */
   if (kdf(passwd, salt, ikey, kdf_params)) {
     SLOGE("kdf failed");
     return -1;
@@ -1274,9 +1296,18 @@ static int decrypt_master_key_aux(char *passwd, unsigned char *salt,
 
   if (decrypted_len + final_len != KEY_LEN_BYTES) {
     return -1;
-  } else {
-    return 0;
   }
+
+  /* Copy intermediate key if needed by params */
+  if (intermediate_key && intermediate_key_size) {
+    *intermediate_key = (unsigned char*) malloc(KEY_LEN_BYTES);
+    if (intermediate_key) {
+      memcpy(*intermediate_key, ikey, KEY_LEN_BYTES);
+      *intermediate_key_size = KEY_LEN_BYTES;
+    }
+  }
+
+  return 0;
 }
 
 static void get_kdf_func(struct crypt_mnt_ftr *ftr, kdf_func *kdf, void** kdf_params)
@@ -1294,15 +1325,18 @@ static void get_kdf_func(struct crypt_mnt_ftr *ftr, kdf_func *kdf, void** kdf_pa
 }
 
 static int decrypt_master_key(char *passwd, unsigned char *decrypted_master_key,
-        struct crypt_mnt_ftr *crypt_ftr)
+                              struct crypt_mnt_ftr *crypt_ftr,
+                              unsigned char** intermediate_key,
+                              size_t* intermediate_key_size)
 {
     kdf_func kdf;
     void *kdf_params;
     int ret;
 
     get_kdf_func(crypt_ftr, &kdf, &kdf_params);
-    ret = decrypt_master_key_aux(passwd, crypt_ftr->salt, crypt_ftr->master_key, decrypted_master_key, kdf,
-            kdf_params);
+    ret = decrypt_master_key_aux(passwd, crypt_ftr->salt, crypt_ftr->master_key,
+                                 decrypted_master_key, kdf, kdf_params,
+                                 intermediate_key, intermediate_key_size);
     if (ret != 0) {
         SLOGW("failure decrypting master key");
     }
@@ -1549,14 +1583,18 @@ static int test_mount_encrypted_fs(struct crypt_mnt_ftr* crypt_ftr,
   void *kdf_params;
   int use_keymaster = 0;
   int upgrade = 0;
+  unsigned char* intermediate_key = 0;
+  size_t intermediate_key_size = 0;
 
   SLOGD("crypt_ftr->fs_size = %lld\n", crypt_ftr->fs_size);
   orig_failed_decrypt_count = crypt_ftr->failed_decrypt_count;
 
   if (! (crypt_ftr->flags & CRYPT_MNT_KEY_UNENCRYPTED) ) {
-    if (decrypt_master_key(passwd, decrypted_master_key, crypt_ftr)) {
+    if (decrypt_master_key(passwd, decrypted_master_key, crypt_ftr,
+                           &intermediate_key, &intermediate_key_size)) {
       SLOGE("Failed to decrypt master key\n");
-      return -1;
+      rc = -1;
+      goto errout;
     }
   }
 
@@ -1565,7 +1603,8 @@ static int test_mount_encrypted_fs(struct crypt_mnt_ftr* crypt_ftr,
   if (create_crypto_blk_dev(crypt_ftr, decrypted_master_key,
                             real_blkdev, crypto_blkdev, label)) {
     SLOGE("Error creating decrypted block device\n");
-    return -1;
+    rc = -1;
+    goto errout;
   }
 
   /* If init detects an encrypted filesystem, it writes a file for each such
@@ -1580,25 +1619,37 @@ static int test_mount_encrypted_fs(struct crypt_mnt_ftr* crypt_ftr,
   if (fs_mgr_do_mount(fstab, DATA_MNT_POINT, crypto_blkdev, tmp_mount_point)) {
     SLOGE("Error temp mounting decrypted block device\n");
     delete_crypto_blk_dev(label);
-    crypt_ftr->failed_decrypt_count++;
+
+    /* Work out if the problem is the password or the data */
+    unsigned char scrypted_intermediate_key[sizeof(crypt_ftr->
+                                                   scrypted_intermediate_key)];
+    int N = 1 << crypt_ftr->N_factor;
+    int r = 1 << crypt_ftr->r_factor;
+    int p = 1 << crypt_ftr->p_factor;
+
+    rc = crypto_scrypt(intermediate_key, intermediate_key_size,
+                       crypt_ftr->salt, sizeof(crypt_ftr->salt),
+                       N, r, p, scrypted_intermediate_key,
+                       sizeof(scrypted_intermediate_key));
+    if (rc == 0 && memcmp(scrypted_intermediate_key,
+                          crypt_ftr->scrypted_intermediate_key,
+                          sizeof(scrypted_intermediate_key)) == 0) {
+      SLOGE("Right password, so wipe");
+      rc = -1;
+    } else {
+      SLOGE(rc ? "scrypt failure, so allow retry" :
+                 "Wrong password, so allow retry");
+      rc = ++crypt_ftr->failed_decrypt_count;
+      put_crypt_ftr_and_key(crypt_ftr);
+    }
   } else {
-    /* Success, so just umount and we'll mount it properly when we restart
-     * the framework.
+    /* Success!
+     * umount and we'll mount it properly when we restart the framework.
      */
     umount(tmp_mount_point);
     crypt_ftr->failed_decrypt_count  = 0;
-  }
 
-  if (orig_failed_decrypt_count != crypt_ftr->failed_decrypt_count) {
-    put_crypt_ftr_and_key(crypt_ftr);
-  }
-
-  if (crypt_ftr->failed_decrypt_count) {
-    /* We failed to mount the device, so return an error */
-    rc = crypt_ftr->failed_decrypt_count;
-
-  } else {
-    /* Woot!  Success!  Save the name of the crypto block device
+    /* Save the name of the crypto block device
      * so we can mount it when restarting the framework.
      */
     property_set("ro.crypto.fs_crypto_blkdev", crypto_blkdev);
@@ -1636,6 +1687,11 @@ static int test_mount_encrypted_fs(struct crypt_mnt_ftr* crypt_ftr,
     }
   }
 
+ errout:
+  if (intermediate_key) {
+    memset(intermediate_key, 0, intermediate_key_size);
+    free(intermediate_key);
+  }
   return rc;
 }
 
@@ -1768,7 +1824,7 @@ int cryptfs_verify_passwd(char *passwd)
         /* If the device has no password, then just say the password is valid */
         rc = 0;
     } else {
-        decrypt_master_key(passwd, decrypted_master_key, &crypt_ftr);
+        decrypt_master_key(passwd, decrypted_master_key, &crypt_ftr, 0, 0);
         if (!memcmp(decrypted_master_key, saved_master_key, crypt_ftr.keysize)) {
             /* They match, the password is correct */
             rc = 0;
@@ -2603,7 +2659,7 @@ int cryptfs_enable_internal(char *howarg, int crypt_type, char *passwd,
         }
     }
 
-    decrypt_master_key(passwd, decrypted_master_key, &crypt_ftr);
+    decrypt_master_key(passwd, decrypted_master_key, &crypt_ftr, 0, 0);
     create_crypto_blk_dev(&crypt_ftr, decrypted_master_key, real_blkdev, crypto_blkdev,
                           "userdata");
 

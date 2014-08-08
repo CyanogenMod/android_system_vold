@@ -41,6 +41,7 @@
 
 #define MAX_KEY_LEN 48
 #define SALT_LEN 16
+#define SCRYPT_LEN 32
 
 /* definitions of flags in the structure below */
 #define CRYPT_MNT_KEY_UNENCRYPTED 0x1 /* The key for the partition is not encrypted. */
@@ -115,11 +116,28 @@ struct crypt_mnt_ftr {
                                                     set, hash of first block, used
                                                     to validate before continuing*/
 
-  /* key_master key, used to sign the derived key
+  /* key_master key, used to sign the derived key which is then used to generate
+   * the intermediate key
    * This key should be used for no other purposes! We use this key to sign unpadded 
    * data, which is acceptable but only if the key is not reused elsewhere. */
   __le8 keymaster_blob[KEYMASTER_BLOB_SIZE];
   __le32 keymaster_blob_size;
+
+  /* Store scrypt of salted intermediate key. When decryption fails, we can
+     check if this matches, and if it does, we know that the problem is with the
+     drive, and there is no point in asking the user for more passwords.
+
+     Note that if any part of this structure is corrupt, this will not match and
+     we will continue to believe the user entered the wrong password. In that
+     case the only solution is for the user to enter a password enough times to
+     force a wipe.
+
+     Note also that there is no need to worry about migration. If this data is
+     wrong, we simply won't recognise a right password, and will continue to
+     prompt. On the first password change, this value will be populated and
+     then we will be OK.
+   */
+  unsigned char scrypted_intermediate_key[SCRYPT_LEN];
 };
 
 /* Persistant data that should be available before decryption.
