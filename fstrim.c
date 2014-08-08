@@ -39,6 +39,9 @@
 
 #define UNUSED __attribute__((unused))
 
+/* From a would-be kernel header */
+#define FIDTRIM         _IOWR('f', 128, struct fstrim_range)    /* Deep discard trim */
+
 static unsigned long long get_boot_time_ms(void)
 {
     struct timespec t;
@@ -102,16 +105,8 @@ static void *do_fstrim_filesystems(void *thread_arg)
         memset(&range, 0, sizeof(range));
         range.len = ULLONG_MAX;
         SLOGI("Invoking %s ioctl on %s", deep_trim ? "FIDTRIM" : "FITRIM", fstab->recs[i].mount_point);
-#if defined(FIDTRIM)
+
         ret = ioctl(fd, deep_trim ? FIDTRIM : FITRIM, &range);
-#else
-        if (deep_trim) {
-            ret = -1;
-            errno = EINVAL;
-        } else {
-            ret = ioctl(fd, FITRIM, &range);
-        }
-#endif
         if (ret) {
             SLOGE("%s ioctl failed on %s (error %d/%s)", deep_trim ? "FIDTRIM" : "FITRIM", fstab->recs[i].mount_point, errno, strerror(errno));
             ret = -1;
