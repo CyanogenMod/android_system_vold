@@ -252,7 +252,7 @@ int Volume::formatVol(bool wipe) {
     dev_t diskNode = getDiskDevice();
     dev_t partNode =
         MKDEV(MAJOR(diskNode),
-              MINOR(diskNode) + (formatEntireDevice ? 1 : mPartIdx));
+              MINOR(diskNode) + (formatEntireDevice ? 0 : mPartIdx));
 
     setState(Volume::State_Formatting);
 
