@@ -21,7 +21,6 @@ common_src_files := \
 
 common_c_includes := \
 	system/extras/ext4_utils \
-	system/extras/f2fs_utils \
 	external/openssl/include \
 	external/stlport/stlport \
 	bionic \
@@ -41,7 +40,6 @@ common_shared_libraries := \
 	libhardware_legacy \
 	liblogwrap \
 	libext4_utils \
-	libf2fs_sparseblock \
 	libcrypto \
 	libselinux \
 	libutils \
