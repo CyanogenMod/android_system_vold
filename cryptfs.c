@@ -51,7 +51,6 @@
 #include "VoldUtil.h"
 #include "crypto_scrypt.h"
 #include "ext4_utils.h"
-#include "f2fs_sparseblock.h"
 #include "CheckBattery.h"
 
 #include <hardware/keymaster.h>
@@ -346,10 +345,6 @@ static unsigned int get_fs_size(char *dev)
 
     close(fd);
 
-    if (le32_to_cpu(sb.s_magic) != EXT4_SUPER_MAGIC) {
-        SLOGE("Not a valid ext4 superblock");
-        return 0;
-    }
     block_size = 1024 << sb.s_log_block_size;
     /* compute length in bytes */
     len = ( ((off64_t)sb.s_blocks_count_hi << 32) + sb.s_blocks_count_lo) * block_size;
@@ -1975,6 +1970,7 @@ static void update_progress(struct encryptGroupsData* data, int is_used)
     if (is_used) {
         data->used_blocks_already_done++;
     }
+
     if (data->tot_used_blocks) {
         data->new_pct = data->used_blocks_already_done / data->one_pct;
     } else {
@@ -2200,107 +2196,6 @@ errout:
     return rc;
 }
 
-static int encrypt_one_block_f2fs(u64 pos, void *data)
-{
-    struct encryptGroupsData *priv_dat = (struct encryptGroupsData *)data;
-
-    priv_dat->blocks_already_done = pos - 1;
-    update_progress(priv_dat, 1);
-
-    off64_t offset = pos * CRYPT_INPLACE_BUFSIZE;
-
-    if (pread64(priv_dat->realfd, priv_dat->buffer, CRYPT_INPLACE_BUFSIZE, offset) <= 0) {
-        SLOGE("Error reading real_blkdev %s for inplace encrypt", priv_dat->crypto_blkdev);
-        return -1;
-    }
-
-    if (pwrite64(priv_dat->cryptofd, priv_dat->buffer, CRYPT_INPLACE_BUFSIZE, offset) <= 0) {
-        SLOGE("Error writing crypto_blkdev %s for inplace encrypt", priv_dat->crypto_blkdev);
-        return -1;
-    } else {
-        SLOGD("Encrypted block %"PRIu64, pos);
-    }
-
-    return 0;
-}
-
-static int cryptfs_enable_inplace_f2fs(char *crypto_blkdev,
-                                       char *real_blkdev,
-                                       off64_t size,
-                                       off64_t *size_already_done,
-                                       off64_t tot_size,
-                                       off64_t previously_encrypted_upto)
-{
-    u32 i;
-    struct encryptGroupsData data;
-    struct f2fs_info *f2fs_info = NULL;
-    int rc = -1;
-    if (previously_encrypted_upto > *size_already_done) {
-        SLOGD("Not fast encrypting since resuming part way through");
-        return -1;
-    }
-    memset(&data, 0, sizeof(data));
-    data.real_blkdev = real_blkdev;
-    data.crypto_blkdev = crypto_blkdev;
-    data.realfd = -1;
-    data.cryptofd = -1;
-    if ( (data.realfd = open64(real_blkdev, O_RDWR)) < 0) {
-        SLOGE("Error opening real_blkdev %s for inplace encrypt\n",
-              real_blkdev);
-        goto errout;
-    }
-    if ( (data.cryptofd = open64(crypto_blkdev, O_WRONLY)) < 0) {
-        SLOGE("Error opening crypto_blkdev %s for inplace encrypt\n",
-              crypto_blkdev);
-        goto errout;
-    }
-
-    f2fs_info = generate_f2fs_info(data.realfd);
-    if (!f2fs_info)
-      goto errout;
-
-    data.numblocks = size / CRYPT_SECTORS_PER_BUFSIZE;
-    data.tot_numblocks = tot_size / CRYPT_SECTORS_PER_BUFSIZE;
-    data.blocks_already_done = *size_already_done / CRYPT_SECTORS_PER_BUFSIZE;
-
-    data.tot_used_blocks = get_num_blocks_used(f2fs_info);
-
-    data.one_pct = data.tot_used_blocks / 100;
-    data.cur_pct = 0;
-    data.time_started = time(NULL);
-    data.remaining_time = -1;
-
-    data.buffer = malloc(f2fs_info->block_size);
-    if (!data.buffer) {
-        SLOGE("Failed to allocate crypto buffer");
-        goto errout;
-    }
-
-    data.count = 0;
-
-    /* Currently, this either runs to completion, or hits a nonrecoverable error */
-    rc = run_on_used_blocks(data.blocks_already_done, f2fs_info, &encrypt_one_block_f2fs, &data);
-
-    if (rc) {
-        SLOGE("Error in running over blocks");
-        goto errout;
-    }
-
-    *size_already_done += size;
-    rc = 0;
-
-errout:
-    if (rc)
-        SLOGE("Failed to encrypt f2fs filesystem on %s", real_blkdev);
-
-    free(f2fs_info);
-    free(data.buffer);
-    close(data.realfd);
-    close(data.cryptofd);
-
-    return rc;
-}
-
 static int cryptfs_enable_inplace_full(char *crypto_blkdev, char *real_blkdev,
                                        off64_t size, off64_t *size_already_done,
                                        off64_t tot_size,
@@ -2434,20 +2329,10 @@ static int cryptfs_enable_inplace(char *crypto_blkdev, char *real_blkdev,
         return 0;
     }
 
-    /* TODO: identify filesystem type.
-     * As is, cryptfs_enable_inplace_ext4 will fail on an f2fs partition, and
-     * then we will drop down to cryptfs_enable_inplace_f2fs.
-     * */
     if (cryptfs_enable_inplace_ext4(crypto_blkdev, real_blkdev,
-                                size, size_already_done,
-                                tot_size, previously_encrypted_upto) == 0) {
-      return 0;
-    }
-
-    if (cryptfs_enable_inplace_f2fs(crypto_blkdev, real_blkdev,
-                                size, size_already_done,
-                                tot_size, previously_encrypted_upto) == 0) {
-      return 0;
+                                    size, size_already_done,
+                                    tot_size, previously_encrypted_upto) == 0) {
+        return 0;
     }
 
     return cryptfs_enable_inplace_full(crypto_blkdev, real_blkdev,
@@ -2616,10 +2501,8 @@ int cryptfs_enable_internal(char *howarg, int crypt_type, char *passwd,
     /* If doing inplace encryption, make sure the orig fs doesn't include the crypto footer */
     if ((how == CRYPTO_ENABLE_INPLACE) && (!strcmp(key_loc, KEY_IN_FOOTER))) {
         unsigned int fs_size_sec, max_fs_size_sec;
-        fs_size_sec = get_fs_size(real_blkdev);
-        if (fs_size_sec == 0)
-            fs_size_sec = get_f2fs_filesystem_size_sec(real_blkdev);
 
+        fs_size_sec = get_fs_size(real_blkdev);
         max_fs_size_sec = nr_sec - (CRYPT_FOOTER_OFFSET / CRYPT_SECTOR_SIZE);
 
         if (fs_size_sec > max_fs_size_sec) {
