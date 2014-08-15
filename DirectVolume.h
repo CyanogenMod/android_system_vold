@@ -84,6 +84,7 @@ private:
     void handlePartitionChanged(const char *devpath, NetlinkEvent *evt);
 
     int doMountVfat(const char *deviceNode, const char *mountPoint);
+    void doUnmount(int major, int minor);
 
 };
 
