@@ -641,7 +641,10 @@ int VolumeManager::resizeAsec(const char *id, unsigned numSectors, const char *k
      *  add one block for the superblock
      */
     SLOGD("Resizing from %d sectors to %d sectors", oldNumSec, numImgSectors + 1);
-    if (oldNumSec >= numImgSectors + 1) {
+    if (oldNumSec == numImgSectors + 1) {
+        SLOGW("Size unchanged; ignoring resize request");
+        return 0;
+    } else if (oldNumSec > numImgSectors + 1) {
         SLOGE("Only growing is currently supported.");
         close(fd);
         return -1;
@@ -1249,7 +1252,7 @@ int VolumeManager::findAsec(const char *id, char *asecPath, size_t asecPathLen,
     return 0;
 }
 
-int VolumeManager::mountAsec(const char *id, const char *key, int ownerUid) {
+int VolumeManager::mountAsec(const char *id, const char *key, int ownerUid, bool readOnly) {
     char asecFileName[255];
     char mountPoint[255];
 
@@ -1330,9 +1333,9 @@ int VolumeManager::mountAsec(const char *id, const char *key, int ownerUid) {
 
     int result;
     if (sb.c_opts & ASEC_SB_C_OPTS_EXT4) {
-        result = Ext4::doMount(dmDevice, mountPoint, true, false, true);
+        result = Ext4::doMount(dmDevice, mountPoint, readOnly, false, readOnly);
     } else {
-        result = Fat::doMount(dmDevice, mountPoint, true, false, true, ownerUid, 0, 0222, false);
+        result = Fat::doMount(dmDevice, mountPoint, readOnly, false, readOnly, ownerUid, 0, 0222, false);
     }
 
     if (result) {

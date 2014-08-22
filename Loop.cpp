@@ -260,7 +260,7 @@ int Loop::resizeImageFile(const char *file, unsigned int numSectors) {
     SLOGD("Attempting to increase size of %s to %d sectors.", file, numSectors);
 
     if (fallocate(fd, 0, 0, numSectors * 512)) {
-        if (errno == ENOSYS) {
+        if (errno == ENOSYS || errno == ENOTSUP) {
             SLOGW("fallocate not found. Falling back to ftruncate.");
             if (ftruncate(fd, numSectors * 512) < 0) {
                 SLOGE("Error truncating imagefile (%s)", strerror(errno));
