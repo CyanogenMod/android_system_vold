@@ -403,12 +403,16 @@ int CommandListener::AsecCmd::runCommand(SocketClient *cli,
         rc = vm->destroyAsec(argv[2], force);
     } else if (!strcmp(argv[1], "mount")) {
         dumpArgs(argc, argv, 3);
-        if (argc != 5) {
+        if (argc != 6) {
             cli->sendMsg(ResponseCode::CommandSyntaxError,
-                    "Usage: asec mount <namespace-id> <key> <ownerUid>", false);
+                    "Usage: asec mount <namespace-id> <key> <ownerUid> <ro|rw>", false);
             return 0;
         }
-        rc = vm->mountAsec(argv[2], argv[3], atoi(argv[4]));
+        bool readOnly = true;
+        if (!strcmp(argv[5], "rw")) {
+            readOnly = false;
+        }
+        rc = vm->mountAsec(argv[2], argv[3], atoi(argv[4]), readOnly);
     } else if (!strcmp(argv[1], "unmount")) {
         dumpArgs(argc, argv, -1);
         if (argc < 3) {

@@ -106,7 +106,7 @@ public:
      */
     int fixupAsecPermissions(const char *id, gid_t gid, const char* privateFilename);
     int destroyAsec(const char *id, bool force);
-    int mountAsec(const char *id, const char *key, int ownerUid);
+    int mountAsec(const char *id, const char *key, int ownerUid, bool readOnly);
     int unmountAsec(const char *id, bool force);
     int renameAsec(const char *id1, const char *id2);
     int getAsecMountPath(const char *id, char *buffer, int maxlen);
