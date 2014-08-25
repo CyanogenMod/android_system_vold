@@ -2830,12 +2830,22 @@ int cryptfs_enable_internal(char *howarg, int crypt_type, char *passwd,
 
         put_crypt_ftr_and_key(&crypt_ftr);
 
-        sleep(2); /* Give the UI a chance to show 100% progress */
-                  /* Partially encrypted - ensure writes are flushed to ssd */
-
         if (crypt_ftr.encrypted_upto == crypt_ftr.fs_size) {
+          char value[PROPERTY_VALUE_MAX];
+          property_get("ro.crypto.state", value, "");
+          if (!strcmp(value, "")) {
+            /* default encryption - continue first boot sequence */
+            property_set("ro.crypto.state", "encrypted");
+            release_wake_lock(lockid);
+            cryptfs_check_passwd(DEFAULT_PASSWORD);
+            cryptfs_restart_internal(1);
+            return 0;
+          } else {
+            sleep(2); /* Give the UI a chance to show 100% progress */
             cryptfs_reboot(reboot);
+          }
         } else {
+            sleep(2); /* Partially encrypted, ensure writes flushed to ssd */
             cryptfs_reboot(shutdown);
         }
     } else {
