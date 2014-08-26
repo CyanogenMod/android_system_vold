@@ -1995,8 +1995,12 @@ static void update_progress(struct encryptGroupsData* data, int is_used)
                                    - data->used_blocks_already_done;
         int remaining_time = (int)(elapsed_time * remaining_blocks
                                    / data->used_blocks_already_done);
+
+        // Change time only if not yet set, lower, or a lot higher for
+        // best user experience
         if (data->remaining_time == -1
-            || remaining_time < data->remaining_time) {
+            || remaining_time < data->remaining_time
+            || remaining_time > data->remaining_time + 60) {
             char buf[8];
             snprintf(buf, sizeof(buf), "%d", remaining_time);
             property_set("vold.encrypt_time_remaining", buf);
