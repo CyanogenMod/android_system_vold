@@ -50,6 +50,8 @@
 #define CRYPT_INCONSISTENT_STATE 0x4 /* Set when starting encryption, clear when
                                         exit cleanly, either through success or
                                         correctly marked partial encryption */
+#define CRYPT_DATA_CORRUPT 0x8 /* Set when encryption is fine, but the
+                                  underlying volume is corrupt */
 
 /* Allowed values for type in the structure below */
 #define CRYPT_TYPE_PASSWORD 0 /* master_key is encrypted with a password
@@ -181,6 +183,14 @@ struct volume_info {
 #define VOL_PROVIDES_ASEC  0x8
 
 #define DATA_MNT_POINT "/data"
+
+/* Return values for cryptfs_crypto_complete */
+#define CRYPTO_COMPLETE_NOT_ENCRYPTED  1
+#define CRYPTO_COMPLETE_ENCRYPTED      0
+#define CRYPTO_COMPLETE_BAD_METADATA  -1
+#define CRYPTO_COMPLETE_PARTIAL       -2
+#define CRYPTO_COMPLETE_INCONSISTENT  -3
+#define CRYPTO_COMPLETE_CORRUPT       -4
 
 #ifdef __cplusplus
 extern "C" {
