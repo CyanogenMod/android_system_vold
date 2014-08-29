@@ -1429,6 +1429,40 @@ static int prep_data_fs(void)
     }
 }
 
+static void cryptfs_set_corrupt()
+{
+    // Mark the footer as bad
+    struct crypt_mnt_ftr crypt_ftr;
+    if (get_crypt_ftr_and_key(&crypt_ftr)) {
+        SLOGE("Failed to get crypto footer - panic");
+        return;
+    }
+
+    crypt_ftr.flags |= CRYPT_DATA_CORRUPT;
+    if (put_crypt_ftr_and_key(&crypt_ftr)) {
+        SLOGE("Failed to set crypto footer - panic");
+        return;
+    }
+}
+
+static void cryptfs_trigger_restart_min_framework()
+{
+    if (fs_mgr_do_tmpfs_mount(DATA_MNT_POINT)) {
+      SLOGE("Failed to mount tmpfs on data - panic");
+      return;
+    }
+
+    if (property_set("vold.decrypt", "trigger_post_fs_data")) {
+        SLOGE("Failed to trigger post fs data - panic");
+        return;
+    }
+
+    if (property_set("vold.decrypt", "trigger_restart_min_framework")) {
+        SLOGE("Failed to trigger restart min framework - panic");
+        return;
+    }
+}
+
 static int cryptfs_restart_internal(int restart_main)
 {
     char fs_type[32];
@@ -1503,7 +1537,13 @@ static int cryptfs_restart_internal(int restart_main)
         }
 
         /* If that succeeded, then mount the decrypted filesystem */
-        fs_mgr_do_mount(fstab, DATA_MNT_POINT, crypto_blkdev, 0);
+        if (fs_mgr_do_mount(fstab, DATA_MNT_POINT, crypto_blkdev, 0)) {
+            SLOGE("Failed to mount decrypted data");
+            cryptfs_set_corrupt();
+            cryptfs_trigger_restart_min_framework();
+            SLOGI("Started framework to offer wipe");
+            return -1;
+        }
 
         property_set("vold.decrypt", "trigger_load_persist_props");
         /* Create necessary paths on /data */
@@ -1541,7 +1581,7 @@ static int do_crypto_complete(char *mount_point UNUSED)
   property_get("ro.crypto.state", encrypted_state, "");
   if (strcmp(encrypted_state, "encrypted") ) {
     SLOGE("not running with encryption, aborting");
-    return 1;
+    return CRYPTO_COMPLETE_NOT_ENCRYPTED;
   }
 
   if (get_crypt_ftr_and_key(&crypt_ftr)) {
@@ -1556,22 +1596,31 @@ static int do_crypto_complete(char *mount_point UNUSED)
      */
     if ((key_loc[0] == '/') && (access("key_loc", F_OK) == -1)) {
       SLOGE("master key file does not exist, aborting");
-      return 1;
+      return CRYPTO_COMPLETE_NOT_ENCRYPTED;
     } else {
       SLOGE("Error getting crypt footer and key\n");
-      return -1;
+      return CRYPTO_COMPLETE_BAD_METADATA;
     }
   }
 
-  if (crypt_ftr.flags
-      & (CRYPT_ENCRYPTION_IN_PROGRESS | CRYPT_INCONSISTENT_STATE)) {
-    SLOGE("Encryption process didn't finish successfully\n");
-    return -2;  /* -2 is the clue to the UI that there is no usable data on the disk,
-                 * and give the user an option to wipe the disk */
+  // Test for possible error flags
+  if (crypt_ftr.flags & CRYPT_ENCRYPTION_IN_PROGRESS){
+    SLOGE("Encryption process is partway completed\n");
+    return CRYPTO_COMPLETE_PARTIAL;
+  }
+
+  if (crypt_ftr.flags & CRYPT_INCONSISTENT_STATE){
+    SLOGE("Encryption process was interrupted but cannot continue\n");
+    return CRYPTO_COMPLETE_INCONSISTENT;
+  }
+
+  if (crypt_ftr.flags & CRYPT_DATA_CORRUPT){
+    SLOGE("Encryption is successful but data is corrupt\n");
+    return CRYPTO_COMPLETE_CORRUPT;
   }
 
   /* We passed the test! We shall diminish, and return to the west */
-  return 0;
+  return CRYPTO_COMPLETE_ENCRYPTED;
 }
 
 static int test_mount_encrypted_fs(struct crypt_mnt_ftr* crypt_ftr,
@@ -1605,72 +1654,68 @@ static int test_mount_encrypted_fs(struct crypt_mnt_ftr* crypt_ftr,
 
   fs_mgr_get_crypt_info(fstab, 0, real_blkdev, sizeof(real_blkdev));
 
+  // Create crypto block device - all (non fatal) code paths
+  // need it
   if (create_crypto_blk_dev(crypt_ftr, decrypted_master_key,
                             real_blkdev, crypto_blkdev, label)) {
-    SLOGE("Error creating decrypted block device\n");
-    rc = -1;
-    goto errout;
+     SLOGE("Error creating decrypted block device\n");
+     rc = -1;
+     goto errout;
   }
 
-  /* If init detects an encrypted filesystem, it writes a file for each such
-   * encrypted fs into the tmpfs /data filesystem, and then the framework finds those
-   * files and passes that data to me */
-  /* Create a tmp mount point to try mounting the decryptd fs
-   * Since we're here, the mount_point should be a tmpfs filesystem, so make
-   * a directory in it to test mount the decrypted filesystem.
-   */
-  sprintf(tmp_mount_point, "%s/tmp_mnt", mount_point);
-  mkdir(tmp_mount_point, 0755);
-  if (fs_mgr_do_mount(fstab, DATA_MNT_POINT, crypto_blkdev, tmp_mount_point)) {
-    SLOGE("Error temp mounting decrypted block device\n");
-    delete_crypto_blk_dev(label);
+  /* Work out if the problem is the password or the data */
+  unsigned char scrypted_intermediate_key[sizeof(crypt_ftr->
+                                                 scrypted_intermediate_key)];
+  int N = 1 << crypt_ftr->N_factor;
+  int r = 1 << crypt_ftr->r_factor;
+  int p = 1 << crypt_ftr->p_factor;
 
-    /* Work out if the problem is the password or the data */
-    unsigned char scrypted_intermediate_key[sizeof(crypt_ftr->
-                                                   scrypted_intermediate_key)];
-    int N = 1 << crypt_ftr->N_factor;
-    int r = 1 << crypt_ftr->r_factor;
-    int p = 1 << crypt_ftr->p_factor;
+  rc = crypto_scrypt(intermediate_key, intermediate_key_size,
+                     crypt_ftr->salt, sizeof(crypt_ftr->salt),
+                     N, r, p, scrypted_intermediate_key,
+                     sizeof(scrypted_intermediate_key));
 
-    rc = crypto_scrypt(intermediate_key, intermediate_key_size,
-                       crypt_ftr->salt, sizeof(crypt_ftr->salt),
-                       N, r, p, scrypted_intermediate_key,
-                       sizeof(scrypted_intermediate_key));
-    if (rc == 0 && memcmp(scrypted_intermediate_key,
-                          crypt_ftr->scrypted_intermediate_key,
-                          sizeof(scrypted_intermediate_key)) == 0) {
-      SLOGE("Right password, so wipe");
-      rc = -1;
-    } else {
-      SLOGE(rc ? "scrypt failure, so allow retry" :
-                 "Wrong password, so allow retry");
+  // Does the key match the crypto footer?
+  if (rc == 0 && memcmp(scrypted_intermediate_key,
+                        crypt_ftr->scrypted_intermediate_key,
+                        sizeof(scrypted_intermediate_key)) == 0) {
+    SLOGI("Password matches");
+    rc = 0;
+  } else {
+    /* Try mounting the file system anyway, just in case the problem's with
+     * the footer, not the key. */
+    sprintf(tmp_mount_point, "%s/tmp_mnt", mount_point);
+    mkdir(tmp_mount_point, 0755);
+    if (fs_mgr_do_mount(fstab, DATA_MNT_POINT, crypto_blkdev, tmp_mount_point)) {
+      SLOGE("Error temp mounting decrypted block device\n");
+      delete_crypto_blk_dev(label);
+
       rc = ++crypt_ftr->failed_decrypt_count;
       put_crypt_ftr_and_key(crypt_ftr);
+    } else {
+      /* Success! */
+      SLOGI("Password did not match but decrypted drive mounted - continue");
+      umount(tmp_mount_point);
+      rc = 0;
     }
-  } else {
-    /* Success!
-     * umount and we'll mount it properly when we restart the framework.
-     */
-    umount(tmp_mount_point);
-    crypt_ftr->failed_decrypt_count  = 0;
+  }
+
+  if (rc == 0) {
+    crypt_ftr->failed_decrypt_count = 0;
 
     /* Save the name of the crypto block device
-     * so we can mount it when restarting the framework.
-     */
+     * so we can mount it when restarting the framework. */
     property_set("ro.crypto.fs_crypto_blkdev", crypto_blkdev);
 
     /* Also save a the master key so we can reencrypted the key
-     * the key when we want to change the password on it.
-     */
+     * the key when we want to change the password on it. */
     memcpy(saved_master_key, decrypted_master_key, KEY_LEN_BYTES);
     saved_mount_point = strdup(mount_point);
     master_key_saved = 1;
     SLOGD("%s(): Master key saved\n", __FUNCTION__);
     rc = 0;
 
-    /*
-     * Upgrade if we're not using the latest KDF.
-     */
+    // Upgrade if we're not using the latest KDF.
     use_keymaster = keymaster_check_compatibility();
     if (crypt_ftr->kdf_type == KDF_SCRYPT_KEYMASTER) {
         // Don't allow downgrade to KDF_SCRYPT
@@ -2139,7 +2184,7 @@ static int cryptfs_enable_inplace_ext4(char *crypto_blkdev,
 {
     u32 i;
     struct encryptGroupsData data;
-    int rc = -1;
+    int rc; // Can't initialize without causing warning -Wclobbered
 
     if (previously_encrypted_upto > *size_already_done) {
         SLOGD("Not fast encrypting since resuming part way through");
@@ -2153,22 +2198,26 @@ static int cryptfs_enable_inplace_ext4(char *crypto_blkdev,
     if ( (data.realfd = open(real_blkdev, O_RDWR)) < 0) {
         SLOGE("Error opening real_blkdev %s for inplace encrypt\n",
               real_blkdev);
+        rc = -1;
         goto errout;
     }
 
     if ( (data.cryptofd = open(crypto_blkdev, O_WRONLY)) < 0) {
         SLOGE("Error opening crypto_blkdev %s for inplace encrypt\n",
               crypto_blkdev);
+        rc = -1;
         goto errout;
     }
 
     if (setjmp(setjmp_env)) {
         SLOGE("Reading extent caused an exception");
+        rc = -1;
         goto errout;
     }
 
     if (read_ext(data.realfd, 0) != 0) {
         SLOGE("Failed to read extent");
+        rc = -1;
         goto errout;
     }
 
