@@ -1090,8 +1090,14 @@ int VolumeManager::unmountLoopImage(const char *id, const char *idHash,
         SLOGE("Timed out trying to rmdir %s (%s)", mountPoint, strerror(errno));
     }
 
-    if (Devmapper::destroy(idHash) && errno != ENXIO) {
-        SLOGE("Failed to destroy devmapper instance (%s)", strerror(errno));
+    for (i=1; i <= UNMOUNT_RETRIES; i++) {
+        if (Devmapper::destroy(idHash) && errno != ENXIO) {
+            SLOGE("Failed to destroy devmapper instance (%s)", strerror(errno));
+            usleep(UNMOUNT_SLEEP_BETWEEN_RETRY_MS);
+            continue;
+        } else {
+          break;
+        }
     }
 
     char loopDevice[255];
