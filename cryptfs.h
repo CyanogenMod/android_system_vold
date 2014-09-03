@@ -72,7 +72,8 @@
 /* Key Derivation Function algorithms */
 #define KDF_PBKDF2 1
 #define KDF_SCRYPT 2
-#define KDF_SCRYPT_KEYMASTER 3
+#define KDF_SCRYPT_KEYMASTER_IMPROPER 3
+#define KDF_SCRYPT_KEYMASTER 4
 
 /* Maximum allowed keymaster blob size. */
 #define KEYMASTER_BLOB_SIZE 2048

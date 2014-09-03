@@ -76,8 +76,9 @@
 
 #define TABLE_LOAD_RETRIES 10
 
-#define RSA_DEFAULT_KEY_SIZE 2048
-#define RSA_DEFAULT_EXPONENT 0x10001
+#define RSA_KEY_SIZE 2048
+#define RSA_KEY_SIZE_BYTES (RSA_KEY_SIZE / 8)
+#define RSA_EXPONENT 0x10001
 
 char *me = "cryptfs";
 
@@ -155,8 +156,8 @@ static int keymaster_create_key(struct crypt_mnt_ftr *ftr)
 
     keymaster_rsa_keygen_params_t params;
     memset(&params, '\0', sizeof(params));
-    params.public_exponent = RSA_DEFAULT_EXPONENT;
-    params.modulus_size = RSA_DEFAULT_KEY_SIZE;
+    params.public_exponent = RSA_EXPONENT;
+    params.modulus_size = RSA_KEY_SIZE;
 
     size_t key_size;
     if (keymaster_dev->generate_keypair(keymaster_dev, TYPE_RSA, &params,
@@ -181,8 +182,11 @@ out:
     return rc;
 }
 
-/* This signs the given object using the keymaster key */
-static int keymaster_sign_object(struct crypt_mnt_ftr *ftr,
+/* This signs the given object using the keymaster key.  It incorrectly
+ * signs a too-short value which shouldn't work but somehow does on some
+ * keymaster implementations.
+ */
+static int keymaster_sign_object_improperly(struct crypt_mnt_ftr *ftr,
                                  const unsigned char *object,
                                  const size_t object_size,
                                  unsigned char **signature,
@@ -203,12 +207,53 @@ static int keymaster_sign_object(struct crypt_mnt_ftr *ftr,
     params.digest_type = DIGEST_NONE;
     params.padding_type = PADDING_NONE;
 
+    SLOGE("Signing unpadded object");
     rc = keymaster_dev->sign_data(keymaster_dev,
                                   &params,
                                   ftr->keymaster_blob,
                                   ftr->keymaster_blob_size,
                                   object,
                                   object_size,
+                                  signature,
+                                  signature_size);
+
+    keymaster_close(keymaster_dev);
+    return rc;
+}
+
+/* This signs the given object using the keymaster key, correctly. */
+static int keymaster_sign_object_properly(struct crypt_mnt_ftr *ftr,
+                                 const unsigned char *object,
+                                 const size_t object_size,
+                                 unsigned char **signature,
+                                 size_t *signature_size)
+{
+    int rc = 0;
+    keymaster_device_t *keymaster_dev = 0;
+    if (keymaster_init(&keymaster_dev)) {
+        SLOGE("Failed to init keymaster");
+        return -1;
+    }
+
+    /* We currently set the digest type to DIGEST_NONE because it's the
+     * only supported value for keymaster. A similar issue exists with
+     * PADDING_NONE. Long term both of these should likely change.
+     */
+    keymaster_rsa_sign_params_t params;
+    params.digest_type = DIGEST_NONE;
+    params.padding_type = PADDING_NONE;
+
+    unsigned char to_sign[RSA_KEY_SIZE_BYTES];
+    memset(to_sign, 0, RSA_KEY_SIZE_BYTES);
+    memcpy(to_sign, object, min(RSA_KEY_SIZE_BYTES, object_size));
+
+    SLOGI("Signing padded object");
+    rc = keymaster_dev->sign_data(keymaster_dev,
+                                  &params,
+                                  ftr->keymaster_blob,
+                                  ftr->keymaster_blob_size,
+                                  to_sign,
+                                  RSA_KEY_SIZE_BYTES,
                                   signature,
                                   signature_size);
 
@@ -1167,10 +1212,18 @@ static int scrypt_keymaster(const char *passwd, const unsigned char *salt,
         return -1;
     }
 
-    if (keymaster_sign_object(ftr, ikey, KEY_LEN_BYTES + IV_LEN_BYTES,
-                 &signature, &signature_size)) {
-        SLOGE("Signing failed");
-        return -1;
+    if (ftr->kdf_type == KDF_SCRYPT_KEYMASTER_IMPROPER) {
+        if (keymaster_sign_object_improperly(ftr, ikey, KEY_LEN_BYTES + IV_LEN_BYTES,
+                                             &signature, &signature_size)) {
+            SLOGE("Signing failed");
+            return -1;
+        }
+    } else {
+        if (keymaster_sign_object_properly(ftr, ikey, KEY_LEN_BYTES + IV_LEN_BYTES,
+                                             &signature, &signature_size)) {
+            SLOGE("Signing failed");
+            return -1;
+        }
     }
 
     rc = crypto_scrypt(signature, signature_size, salt, SALT_LEN,
@@ -1199,6 +1252,7 @@ static int encrypt_master_key(const char *passwd, const unsigned char *salt,
     get_device_scrypt_params(crypt_ftr);
 
     switch (crypt_ftr->kdf_type) {
+    case KDF_SCRYPT_KEYMASTER_IMPROPER:
     case KDF_SCRYPT_KEYMASTER:
         if (keymaster_create_key(crypt_ftr)) {
             SLOGE("keymaster_create_key failed");
@@ -1317,7 +1371,7 @@ static int decrypt_master_key_aux(char *passwd, unsigned char *salt,
 
 static void get_kdf_func(struct crypt_mnt_ftr *ftr, kdf_func *kdf, void** kdf_params)
 {
-    if (ftr->kdf_type == KDF_SCRYPT_KEYMASTER) {
+    if (ftr->kdf_type == KDF_SCRYPT_KEYMASTER_IMPROPER || ftr->kdf_type == KDF_SCRYPT_KEYMASTER) {
         *kdf = scrypt_keymaster;
         *kdf_params = ftr;
     } else if (ftr->kdf_type == KDF_SCRYPT) {
@@ -1718,7 +1772,7 @@ static int test_mount_encrypted_fs(struct crypt_mnt_ftr* crypt_ftr,
     // Upgrade if we're not using the latest KDF.
     use_keymaster = keymaster_check_compatibility();
     if (crypt_ftr->kdf_type == KDF_SCRYPT_KEYMASTER) {
-        // Don't allow downgrade to KDF_SCRYPT
+        // Don't allow downgrade
     } else if (use_keymaster == 1 && crypt_ftr->kdf_type != KDF_SCRYPT_KEYMASTER) {
         crypt_ftr->kdf_type = KDF_SCRYPT_KEYMASTER;
         upgrade = 1;
