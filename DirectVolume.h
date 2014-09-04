@@ -52,6 +52,7 @@ protected:
     int            mDiskNumParts;
     int            mPendingPartCount;
     int            mIsDecrypted;
+    bool           mIsValid;
 
 public:
     DirectVolume(VolumeManager *vm, const fstab_rec* rec, int flags);
@@ -61,6 +62,8 @@ public:
 
     const char *getMountpoint() { return mMountpoint; }
     const char *getFuseMountpoint() { return mFuseMountpoint; }
+    bool isValidSysfs() { return mIsValid; }
+    void setValidSysfs(bool val) { mIsValid = val; }
 
     int handleBlockEvent(NetlinkEvent *evt);
     dev_t getDiskDevice();
@@ -84,6 +87,7 @@ private:
     void handlePartitionChanged(const char *devpath, NetlinkEvent *evt);
 
     int doMountVfat(const char *deviceNode, const char *mountPoint);
+    int getUICCVolumeNum(const char *dp);
 
 };
 

@@ -81,6 +81,10 @@ public:
     virtual const char *getMountpoint() = 0;
     virtual const char *getFuseMountpoint() = 0;
 
+    /* validity of the mount points */
+    virtual void setValidSysfs(bool val) = 0;
+    virtual bool isValidSysfs() = 0;
+
     virtual int handleBlockEvent(NetlinkEvent *evt);
     virtual dev_t getDiskDevice();
     virtual dev_t getShareDevice();
