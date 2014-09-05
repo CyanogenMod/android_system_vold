@@ -1704,17 +1704,20 @@ bool VolumeManager::isMountpointMounted(const char *mp)
 }
 
 int VolumeManager::cleanupAsec(Volume *v, bool force) {
-    // Only primary storage needs ASEC cleanup
-    if (!(v->getFlags() & VOL_PROVIDES_ASEC)) {
-        return 0;
-    }
-
     int rc = 0;
 
     char asecFileName[255];
 
     AsecIdCollection removeAsec;
     AsecIdCollection removeObb;
+
+    // Continue for the primary storage (VOL_PROVIDES_ASEC) and for the
+    // external apps volume (VOL_EXTERNAL_APPS) if app moving is enabled
+    if ((v->getFlags() & VOL_PROVIDES_ASEC) == 0
+                && ((v->getFlags() & VOL_EXTERNAL_APPS) == 0
+                        || !v->isExternalAppsEnabled())) {
+        return 0;
+    }
 
     for (AsecIdCollection::iterator it = mActiveContainers->begin(); it != mActiveContainers->end();
             ++it) {

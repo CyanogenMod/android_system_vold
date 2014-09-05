@@ -216,6 +216,22 @@ void Volume::setUserLabel(const char* userLabel) {
             msg, false);
 }
 
+bool Volume::isExternalAppsEnabled() {
+    const char* disablePath = "/data/system/no-external-apps";
+
+    int flags = getFlags();
+    bool externalApps = (flags & VOL_EXTERNAL_APPS) != 0;
+
+    if (externalApps) {
+        if (access(disablePath, F_OK) != -1) {
+            SLOGV("Application moving disabled; will not touch ASEC\n");
+            return false;
+        }
+        return true;
+    }
+    return false;
+}
+
 void Volume::setState(int state) {
     char msg[255];
     int oldState = mState;
@@ -376,6 +392,7 @@ int Volume::mountVol() {
 
     int flags = getFlags();
     bool providesAsec = (flags & VOL_PROVIDES_ASEC) != 0;
+    bool externalApps = (flags & VOL_EXTERNAL_APPS) != 0 && isExternalAppsEnabled();
 
     // TODO: handle "bind" style mounts, for emulated storage
 
@@ -565,7 +582,8 @@ int Volume::mountVol() {
         extractMetadata(devicePath);
 
 #ifndef MINIVOLD
-        if (providesAsec && mountAsecExternal() != 0) {
+        // Create android_secure on external SD
+        if ((externalApps || providesAsec) && mountAsecExternal() != 0) {
             SLOGE("Failed to mount secure area (%s)", strerror(errno));
             umount(getMountpoint());
             setState(Volume::State_Idle);
@@ -653,6 +671,7 @@ int Volume::doUnmount(const char *path, bool force) {
 int Volume::unmountVol(bool force, bool revert) {
     int flags = getFlags();
     bool providesAsec = (flags & VOL_PROVIDES_ASEC) != 0;
+    bool externalApps = (flags & VOL_EXTERNAL_APPS) != 0 && isExternalAppsEnabled();
 
     if (getState() != Volume::State_Mounted) {
         SLOGE("Volume %s unmount request when not mounted", getLabel());
@@ -671,7 +690,7 @@ int Volume::unmountVol(bool force, bool revert) {
 
     // TODO: determine failure mode if FUSE times out
 
-    if (providesAsec && doUnmount(Volume::SEC_ASECDIR_EXT, force) != 0) {
+    if ((externalApps || providesAsec) && doUnmount(Volume::SEC_ASECDIR_EXT, force) != 0) {
         SLOGE("Failed to unmount secure area on %s (%s)", getMountpoint(), strerror(errno));
         goto out_mounted;
     }
@@ -707,7 +726,7 @@ int Volume::unmountVol(bool force, bool revert) {
     return 0;
 
 fail_remount_secure:
-    if (providesAsec && mountAsecExternal() != 0) {
+    if ((externalApps || providesAsec) && mountAsecExternal() != 0) {
         SLOGE("Failed to remount secure area (%s)", strerror(errno));
         goto out_nomedia;
     }

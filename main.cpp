@@ -36,6 +36,10 @@
 #include "DirectVolume.h"
 #include "cryptfs.h"
 
+#ifndef EXTERNAL_APPS_DEVICE_LABEL
+#define EXTERNAL_APPS_DEVICE_LABEL ""
+#endif
+
 static int process_config(VolumeManager *vm);
 static void coldboot(const char *path);
 
@@ -183,6 +187,10 @@ static int process_config(VolumeManager *vm)
             /* Only set this flag if there is not an emulated sd card */
             if (fs_mgr_is_noemulatedsd(&fstab->recs[i])) {
                 flags |= VOL_PROVIDES_ASEC;
+            }
+            /* Set this flag if the storage device supports having external apps */
+            if (strcmp(fstab->recs[i].label, EXTERNAL_APPS_DEVICE_LABEL) == 0) {
+                flags |= VOL_EXTERNAL_APPS;
             }
             dv = new DirectVolume(vm, &(fstab->recs[i]), flags);
 
