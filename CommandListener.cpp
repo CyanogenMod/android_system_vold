@@ -568,7 +568,17 @@ int CommandListener::CryptfsCmd::runCommand(SocketClient *cli,
 
     int rc = 0;
 
-    if (!strcmp(argv[1], "checkpw")) {
+    if (!strcmp(argv[1], "pfe")) {
+        if (argc != 3) {
+            cli->sendMsg(ResponseCode::CommandSyntaxError, "Usage: cryptfs pfe <enable|disable>", false);
+            return 0;
+        }
+        dumpArgs(argc, argv, 2);
+        if (!strcmp(argv[2], "enable"))
+            rc = cryptfs_pfe_activate();
+        else if (!strcmp(argv[2], "disable"))
+            rc = cryptfs_pfe_deactivate();
+    } else if (!strcmp(argv[1], "checkpw")) {
         if (argc != 3) {
             cli->sendMsg(ResponseCode::CommandSyntaxError, "Usage: cryptfs checkpw <passwd>", false);
             return 0;

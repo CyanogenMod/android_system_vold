@@ -81,6 +81,12 @@ int main() {
         SLOGE("Error reading configuration (%s)... continuing anyways", strerror(errno));
     }
 
+    /*
+     * Mount /data to dm-req-crypt if PFE activated.
+     * Must call after process_config() because of fstab initialization.
+     */
+    cryptfs_pfe_boot();
+
     if (nm->start()) {
         SLOGE("Unable to start NetlinkManager (%s)", strerror(errno));
         exit(1);

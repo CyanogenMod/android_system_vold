@@ -3158,6 +3158,8 @@ int cryptfs_enable_internal(char *howarg, int crypt_type, char *passwd,
             crypt_ftr.flags |= CRYPT_ENCRYPTION_IN_PROGRESS;
         }
 
+        if (how == CRYPTO_ENABLE_INPLACE)
+            crypt_ftr.flags |= CRYPT_FDE_COMPLETED;
         put_crypt_ftr_and_key(&crypt_ftr);
 
         if (crypt_ftr.encrypted_upto == crypt_ftr.fs_size) {
@@ -3233,6 +3235,250 @@ error_shutting_down:
     if (lockid[0]) {
         release_wake_lock(lockid);
     }
+    return -1;
+}
+
+/**
+ *  Map /data to dm-req-crypt upon PFE Activation.
+ *
+ *  The UI framework needs to be shut-down and restart.
+ *
+ * based on cryptfs_enable() + cryptfs_restart()
+ */
+int cryptfs_pfe_activate(void)
+{
+    char crypto_blkdev[MAXPATHLEN];
+    char real_blkdev[MAXPATHLEN];
+    unsigned long nr_sec;
+    unsigned char decrypted_master_key[KEY_LEN_BYTES] = {0}; /* N.A */
+    int rc = -1;
+    int fd = -1; /* real_blkdev file descriptor */
+    struct crypt_mnt_ftr crypt_ftr = {0};
+    char encrypted_state[PROPERTY_VALUE_MAX] = {0};
+    char pfe_state[PROPERTY_VALUE_MAX] = {0};
+    char lockid[32] = { 0};
+    char key_loc[PROPERTY_VALUE_MAX] = {0};
+    int retry = 5; /* mount retry, /data might be hold by services going down */
+
+    SLOGI("Start PFE mapping upon activation..");
+
+    property_get("vold.pfe", pfe_state, "");
+    if (!strcmp(pfe_state, "activated") ) {
+        SLOGI("PFE already activated!");
+        return 0;
+    }
+
+    /* If FDE actiavted, no mapping required, just set a flag in the footer */
+    property_get("ro.crypto.state", encrypted_state, "");
+    if (strcmp(encrypted_state, "encrypted") == 0) {
+        SLOGI("FDE activated , no need to map crypto-device");
+
+        /* get the footer */
+        if (get_crypt_ftr_and_key(&crypt_ftr)) {
+            SLOGE("Error getting crypt footer");
+            return -1;
+        }
+
+        /* Set PFE flag */
+        crypt_ftr.flags |= CRYPT_PFE_ACTIVATED;
+
+        /* save the flag in the footer */
+        if (put_crypt_ftr_and_key(&crypt_ftr)) {
+            SLOGE("Error saving crypt footer");
+            return -1;
+        }
+
+        property_set("vold.pfe", "activated");
+        SLOGI("%s: PFE-Enable (after FDE) completed OK", __func__);
+
+        return 0;
+    }
+
+    property_set("vold.pfe", ""); /* reset prop */
+
+    fs_mgr_get_crypt_info(fstab, key_loc, 0, sizeof(key_loc));
+
+    fs_mgr_get_crypt_info(fstab, 0, real_blkdev, sizeof(real_blkdev));
+
+    /* Get the size of the real block device */
+    fd = open(real_blkdev, O_RDONLY);
+    if ( (nr_sec = get_blkdev_size(fd)) == 0) {
+        SLOGE("Cannot get size of block device %s", real_blkdev);
+        goto get_size_error;
+    }
+    close(fd);
+
+    /* Get a wakelock as this may take a while, and we don't want the
+     * device to sleep on us.  We'll grab a partial wakelock, and if the UI
+     * wants to keep the screen on, it can grab a full wakelock.
+     */
+    snprintf(lockid, sizeof(lockid), "enablecrypto%d", (int) getpid());
+    acquire_wake_lock(PARTIAL_WAKE_LOCK, lockid);
+
+    /* Allow caller to get response */
+    sleep(1);
+
+    /* The init files are setup to stop the class main and late start when
+     * vold sets trigger_shutdown_framework.
+     */
+    property_set("vold.decrypt", "trigger_shutdown_framework");
+    SLOGI("Just asked init to shut down class main");
+
+    if (vold_unmountAllAsecs()) {
+        /* Just report the error.  If any are left mounted,
+         * umounting /data below will fail and handle the error.
+         */
+        SLOGE("Error unmounting internal asecs");
+    }
+
+    /* Now unmount the /data partition. */
+    if (wait_and_unmount(DATA_MNT_POINT)) {
+        SLOGE("%s: Unmount /data failed", __func__);
+        goto unmount_error;
+    }
+
+    /* Start the actual work of making an encrypted filesystem */
+    /* Initialize a crypt_mnt_ftr for the partition */
+    cryptfs_init_crypt_mnt_ftr(&crypt_ftr);
+
+    if (!strcmp(key_loc, KEY_IN_FOOTER)) {
+        SLOGI("Use fs_size from footer");
+        crypt_ftr.fs_size = nr_sec - (CRYPT_FOOTER_OFFSET / 512);
+    } else {
+        SLOGI("Use fs_size from get-blk-size");
+        crypt_ftr.fs_size = nr_sec;
+    }
+
+    strlcpy((char *)crypt_ftr.crypto_type_name, "aes-xts", MAX_CRYPTO_TYPE_NAME_LEN);
+
+    rc = create_crypto_blk_dev(&crypt_ftr, decrypted_master_key,
+                               real_blkdev, crypto_blkdev, "userdata");
+    if (rc) {
+        SLOGE("%s: Create crypto block-device failed !", __func__);
+        goto mapping_err;
+    }
+
+    sleep(1); // Sleep before mount
+
+    /* If that succeeded, then mount the decrypted filesystem */
+    while (retry) {
+        rc = fs_mgr_do_mount(fstab, DATA_MNT_POINT, crypto_blkdev, 0);
+        if (rc) {
+            SLOGE("%s: Mount /data to crypto device FAILED !", __func__);
+            if (retry == 0) {
+                goto mapping_err;
+            }
+        } else {
+            SLOGI("%s: Mount /data to crypto device OK !", __func__);
+            break;
+        }
+        retry--;
+        sleep(3); // Sleep few seconds before retry
+    }
+
+    property_set("vold.decrypt", "trigger_load_persist_props");
+    /* Create necessary paths on /data */
+    if (prep_data_fs()) {
+        SLOGE("%s: prep_data_fs() FAILED !", __func__);
+        goto mapping_err;
+    }
+
+    /* startup service classes main and late_start */
+    property_set("vold.decrypt", "trigger_restart_framework");
+    SLOGI("Just triggered restart_framework");
+
+    /* Give it a few moments to get started */
+    sleep(1);
+
+    release_wake_lock(lockid);
+
+    crypt_ftr.flags |= CRYPT_PFE_ACTIVATED;
+
+    /* Write the footer with flag activated */
+    put_crypt_ftr_and_key(&crypt_ftr);
+
+    property_set("vold.pfe", "activated");
+
+    SLOGI("%s: PFE-Enable (no FDE) completed OK", __func__);
+    return 0;
+
+error_shutting_down:
+mapping_err:
+    delete_crypto_blk_dev("userdata");
+error_unencrypted:
+random_key_error:
+unmount_error:
+    release_wake_lock(lockid);
+get_size_error:
+    property_set("vold.pfe", "failed");
+    SLOGI("%s: PFE Enable Failed", __func__);
+
+    return -1;
+}
+
+/* Clear PFE activated flag. */
+int cryptfs_pfe_deactivate(void)
+{
+    struct crypt_mnt_ftr crypt_ftr;
+
+    SLOGI("Start cryptfs_pfe_deactivate");
+
+    /* get the footer */
+    if (get_crypt_ftr_and_key(&crypt_ftr)) {
+        SLOGE("Error getting crypt footer");
+        return -1;
+    }
+
+    /* clear the flag */
+    crypt_ftr.flags &= ~CRYPT_PFE_ACTIVATED;
+
+    /* save the footer */
+    if (put_crypt_ftr_and_key(&crypt_ftr)) {
+        SLOGE("Error saving crypt footer");
+        return -1;
+    }
+
+    property_set("vold.pfe", "deactivated");
+
+    return 0;
+}
+
+/*
+ *  Mount /data to dm-req-crypt on BOOT (if activated), same as after FDE.
+ *
+ *  Note: After FDE is encrypted, the following commands are called on boot:
+ *  1. cryptocomplete   -> cryptfs_crypto_complete()
+ *  2. checkpw          -> cryptfs_check_passwd()
+ *  3. restart          -> cryptfs_restart()
+ *
+ * see test_mount_encrypted_fs()
+ */
+int cryptfs_pfe_boot(void)
+{
+    struct crypt_mnt_ftr crypt_ftr = {0};
+
+    SLOGI("Check if PFE is activated on Boot");
+
+    if (get_crypt_ftr_and_key(&crypt_ftr)) {
+        SLOGE("Error getting crypt footer and key");
+        goto exit_err;
+    }
+
+    if (!(crypt_ftr.flags & CRYPT_PFE_ACTIVATED) ) {
+        SLOGE("PFE not activated");
+        goto exit_err;
+    }
+
+    if (crypt_ftr.flags & CRYPT_FDE_COMPLETED) {
+        SLOGI("FDE Completed , let FDE do the crypto mount");
+        goto exit_err;
+    }
+
+    /* Mount /data , same as on activate command */
+    return cryptfs_pfe_activate();
+
+exit_err:
+    property_set("vold.pfe", "deactivated");  /* Default */
     return -1;
 }
 
