@@ -1788,6 +1788,17 @@ static int test_mount_encrypted_fs(struct crypt_mnt_ftr* crypt_ftr,
             rc = put_crypt_ftr_and_key(crypt_ftr);
         }
         SLOGD("Key Derivation Function upgrade: rc=%d\n", rc);
+
+        // Do not fail even if upgrade failed - machine is bootable
+        // Note that if this code is ever hit, there is a *serious* problem
+        // since KDFs should never fail. You *must* fix the kdf before
+        // proceeding!
+        if (rc) {
+          SLOGW("Upgrade failed with error %d,"
+                " but continuing with previous state",
+                rc);
+          rc = 0;
+        }
     }
   }
 
