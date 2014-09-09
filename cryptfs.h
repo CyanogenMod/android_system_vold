@@ -72,8 +72,11 @@
 /* Key Derivation Function algorithms */
 #define KDF_PBKDF2 1
 #define KDF_SCRYPT 2
-#define KDF_SCRYPT_KEYMASTER_IMPROPER 3
-#define KDF_SCRYPT_KEYMASTER 4
+/* TODO(paullawrence): Remove KDF_SCRYPT_KEYMASTER_UNPADDED and KDF_SCRYPT_KEYMASTER_BADLY_PADDED
+ * when it is safe to do so. */
+#define KDF_SCRYPT_KEYMASTER_UNPADDED 3
+#define KDF_SCRYPT_KEYMASTER_BADLY_PADDED 4
+#define KDF_SCRYPT_KEYMASTER 5
 
 /* Maximum allowed keymaster blob size. */
 #define KEYMASTER_BLOB_SIZE 2048
@@ -220,4 +223,3 @@ extern "C" {
 #ifdef __cplusplus
 }
 #endif
-
