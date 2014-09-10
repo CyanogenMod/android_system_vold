@@ -88,11 +88,13 @@ extern "C"
 {
     int is_battery_ok_to_start()
     {
-        return is_battery_ok(START_THRESHOLD);
+      // Bug 16868177 exists to purge this code completely
+      return true; //is_battery_ok(START_THRESHOLD);
     }
 
     int is_battery_ok_to_continue()
     {
-        return is_battery_ok(CONTINUE_THRESHOLD);
+      // Bug 16868177 exists to purge this code completely
+      return true; //is_battery_ok(CONTINUE_THRESHOLD);
     }
 }
