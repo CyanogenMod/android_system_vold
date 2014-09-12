@@ -80,6 +80,9 @@
 #define RSA_KEY_SIZE_BYTES (RSA_KEY_SIZE / 8)
 #define RSA_EXPONENT 0x10001
 
+#define RETRY_MOUNT_ATTEMPTS 10
+#define RETRY_MOUNT_DELAY_SECONDS 1
+
 char *me = "cryptfs";
 
 static unsigned char saved_master_key[KEY_LEN_BYTES];
@@ -1519,6 +1522,7 @@ static void cryptfs_trigger_restart_min_framework()
     }
 }
 
+/* returns < 0 on failure */
 static int cryptfs_restart_internal(int restart_main)
 {
     char fs_type[32];
@@ -1593,12 +1597,31 @@ static int cryptfs_restart_internal(int restart_main)
         }
 
         /* If that succeeded, then mount the decrypted filesystem */
-        if (fs_mgr_do_mount(fstab, DATA_MNT_POINT, crypto_blkdev, 0)) {
-            SLOGE("Failed to mount decrypted data");
-            cryptfs_set_corrupt();
-            cryptfs_trigger_restart_min_framework();
-            SLOGI("Started framework to offer wipe");
-            return -1;
+        int retries = RETRY_MOUNT_ATTEMPTS;
+        int mount_rc;
+        while ((mount_rc = fs_mgr_do_mount(fstab, DATA_MNT_POINT,
+                                           crypto_blkdev, 0))
+               != 0) {
+            if (mount_rc == FS_MGR_DOMNT_BUSY) {
+                /* TODO: invoke something similar to
+                   Process::killProcessWithOpenFiles(DATA_MNT_POINT,
+                                   retries > RETRY_MOUNT_ATTEMPT/2 ? 1 : 2 ) */
+                SLOGI("Failed to mount %s because it is busy - waiting",
+                      crypto_blkdev);
+                if (--retries) {
+                    sleep(RETRY_MOUNT_DELAY_SECONDS);
+                } else {
+                    /* Let's hope that a reboot clears away whatever is keeping
+                       the mount busy */
+                    cryptfs_reboot(reboot);
+                }
+            } else {
+                SLOGE("Failed to mount decrypted data");
+                cryptfs_set_corrupt();
+                cryptfs_trigger_restart_min_framework();
+                SLOGI("Started framework to offer wipe");
+                return -1;
+            }
         }
 
         property_set("vold.decrypt", "trigger_load_persist_props");
