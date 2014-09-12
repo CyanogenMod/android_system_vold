@@ -22,13 +22,10 @@ common_src_files := \
 common_c_includes := \
 	system/extras/ext4_utils \
 	external/openssl/include \
-	external/stlport/stlport \
-	bionic \
 	external/scrypt/lib/crypto
 
 common_shared_libraries := \
 	libsysutils \
-	libstlport \
 	libcutils \
 	liblog \
 	libdiskconfig \
@@ -45,48 +42,38 @@ common_static_libraries := \
 
 include $(CLEAR_VARS)
 
+LOCAL_ADDITIONAL_DEPENDENCIES := $(LOCAL_PATH)/Android.mk
 LOCAL_MODULE := libvold
-
 LOCAL_SRC_FILES := $(common_src_files)
-
 LOCAL_C_INCLUDES := $(common_c_includes)
-
 LOCAL_SHARED_LIBRARIES := $(common_shared_libraries)
-
 LOCAL_STATIC_LIBRARIES := $(common_static_libraries)
-
 LOCAL_MODULE_TAGS := eng tests
 
+include external/stlport/libstlport.mk
 include $(BUILD_STATIC_LIBRARY)
 
 include $(CLEAR_VARS)
 
+LOCAL_ADDITIONAL_DEPENDENCIES := $(LOCAL_PATH)/Android.mk
 LOCAL_MODULE:= vold
-
 LOCAL_SRC_FILES := \
 	main.cpp \
 	$(common_src_files)
 
 LOCAL_C_INCLUDES := $(common_c_includes)
-
 LOCAL_CFLAGS := -Werror=format
-
 LOCAL_SHARED_LIBRARIES := $(common_shared_libraries)
-
 LOCAL_STATIC_LIBRARIES := $(common_static_libraries)
 
+include external/stlport/libstlport.mk
 include $(BUILD_EXECUTABLE)
 
 include $(CLEAR_VARS)
 
+LOCAL_ADDITIONAL_DEPENDENCIES := $(LOCAL_PATH)/Android.mk
 LOCAL_SRC_FILES:= vdc.c
-
 LOCAL_MODULE:= vdc
-
-LOCAL_C_INCLUDES :=
-
-LOCAL_CFLAGS := 
-
 LOCAL_SHARED_LIBRARIES := libcutils
 
 include $(BUILD_EXECUTABLE)
