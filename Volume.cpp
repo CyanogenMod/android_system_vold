@@ -518,6 +518,16 @@ int Volume::mountVol() {
                 }
 
             } else if (strcmp(fstype, "f2fs") == 0) {
+                /*
+                 * fsck.f2fs does not fix any inconsistencies "yet".
+                 *
+                 * Disable fsck routine as this is just wasting time
+                 * consumed to mount f2fs volumes.
+                 *
+                 * The kernel can determine if a f2fs volume is too damaged
+                 * that it shouldn't get mounted.
+                 */
+                #if 0
                 if (F2FS::check(devicePath)) {
                     errno = EIO;
                     /* Badness - abort the mount */
@@ -526,6 +536,7 @@ int Volume::mountVol() {
                     free(fstype);
                     return -1;
                 }
+                #endif
 
                 if (F2FS::doMount(devicePath, getMountpoint(), false, false, false, true)) {
                     SLOGE("%s failed to mount via F2FS (%s)\n", devicePath, strerror(errno));
