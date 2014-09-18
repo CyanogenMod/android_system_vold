@@ -82,6 +82,12 @@ LOCAL_C_INCLUDES := $(common_c_includes)
 
 LOCAL_CFLAGS := -Werror=format
 
+ifeq ($(TARGET_HW_DISK_ENCRYPTION),true)
+LOCAL_C_INCLUDES += $(TARGET_CRYPTFS_HW_PATH)
+common_shared_libraries += libcryptfs_hw
+LOCAL_CFLAGS += -DCONFIG_HW_DISK_ENCRYPTION
+endif
+
 LOCAL_SHARED_LIBRARIES := $(common_shared_libraries)
 
 LOCAL_STATIC_LIBRARIES := $(common_static_libraries)
