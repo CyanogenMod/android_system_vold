@@ -996,6 +996,10 @@ static int load_crypto_mapping_table(struct crypt_mnt_ftr *crypt_ftr, unsigned c
   convert_key_to_hex_ascii(master_key, crypt_ftr->keysize, master_key_ascii);
   sprintf(crypt_params, "%s %s 0 %s 0 %s", crypt_ftr->crypto_type_name,
           master_key_ascii, real_blk_name, extra_params);
+
+  SLOGI("%s: target_type = %s\n", __func__, tgt->target_type);
+  SLOGI("%s: crypt_params = %s\n", __func__, crypt_params);
+
   crypt_params += strlen(crypt_params) + 1;
   crypt_params = (char *) (((unsigned long)crypt_params + 7) & ~8); /* Align to an 8 byte boundary */
   tgt->next = crypt_params - buffer;
