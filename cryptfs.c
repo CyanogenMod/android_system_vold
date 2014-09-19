@@ -1281,7 +1281,8 @@ static int encrypt_master_key(const char *passwd, const unsigned char *salt,
     }
 
     /* Initialize the decryption engine */
-    if (! EVP_EncryptInit(&e_ctx, EVP_aes_128_cbc(), ikey, ikey+KEY_LEN_BYTES)) {
+    EVP_CIPHER_CTX_init(&e_ctx);
+    if (! EVP_EncryptInit_ex(&e_ctx, EVP_aes_128_cbc(), NULL, ikey, ikey+KEY_LEN_BYTES)) {
         SLOGE("EVP_EncryptInit failed\n");
         return -1;
     }
@@ -1293,7 +1294,7 @@ static int encrypt_master_key(const char *passwd, const unsigned char *salt,
         SLOGE("EVP_EncryptUpdate failed\n");
         return -1;
     }
-    if (! EVP_EncryptFinal(&e_ctx, encrypted_master_key + encrypted_len, &final_len)) {
+    if (! EVP_EncryptFinal_ex(&e_ctx, encrypted_master_key + encrypted_len, &final_len)) {
         SLOGE("EVP_EncryptFinal failed\n");
         return -1;
     }
@@ -1343,7 +1344,8 @@ static int decrypt_master_key_aux(char *passwd, unsigned char *salt,
   }
 
   /* Initialize the decryption engine */
-  if (! EVP_DecryptInit(&d_ctx, EVP_aes_128_cbc(), ikey, ikey+KEY_LEN_BYTES)) {
+  EVP_CIPHER_CTX_init(&d_ctx);
+  if (! EVP_DecryptInit_ex(&d_ctx, EVP_aes_128_cbc(), NULL, ikey, ikey+KEY_LEN_BYTES)) {
     return -1;
   }
   EVP_CIPHER_CTX_set_padding(&d_ctx, 0); /* Turn off padding as our data is block aligned */
@@ -1352,7 +1354,7 @@ static int decrypt_master_key_aux(char *passwd, unsigned char *salt,
                             encrypted_master_key, KEY_LEN_BYTES)) {
     return -1;
   }
-  if (! EVP_DecryptFinal(&d_ctx, decrypted_master_key + decrypted_len, &final_len)) {
+  if (! EVP_DecryptFinal_ex(&d_ctx, decrypted_master_key + decrypted_len, &final_len)) {
     return -1;
   }
 
