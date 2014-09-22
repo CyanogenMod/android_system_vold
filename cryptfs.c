@@ -2121,7 +2121,6 @@ static void update_progress(struct encryptGroupsData* data, int is_used)
         data->cur_pct = data->new_pct;
         snprintf(buf, sizeof(buf), "%" PRId64, data->cur_pct);
         property_set("vold.encrypt_progress", buf);
-        SLOGI("Encrypted %" PRId64 " percent of drive", data->cur_pct);
     }
 
     if (data->cur_pct >= 5) {
@@ -2139,11 +2138,34 @@ static void update_progress(struct encryptGroupsData* data, int is_used)
             char buf[8];
             snprintf(buf, sizeof(buf), "%d", remaining_time);
             property_set("vold.encrypt_time_remaining", buf);
-
-            SLOGI("Encrypted %" PRId64 " percent of drive, %d seconds to go",
-                  data->cur_pct, remaining_time);
             data->remaining_time = remaining_time;
         }
+    }
+}
+
+static void log_progress(struct encryptGroupsData const* data, bool completed)
+{
+    // Precondition - if completed data = 0 else data != 0
+
+    // Track progress so we can skip logging blocks
+    static off64_t offset = -1;
+
+    // Need to close existing 'Encrypting from' log?
+    if (completed || (offset != -1 && data->offset != offset)) {
+        SLOGI("Encrypted to sector %" PRId64,
+              offset / info.block_size * CRYPT_SECTOR_SIZE);
+        offset = -1;
+    }
+
+    // Need to start new 'Encrypting from' log?
+    if (!completed && offset != data->offset) {
+        SLOGI("Encrypting from sector %" PRId64,
+              data->offset / info.block_size * CRYPT_SECTOR_SIZE);
+    }
+
+    // Update offset
+    if (!completed) {
+        offset = data->offset + (off64_t)data->count * info.block_size;
     }
 }
 
@@ -2170,8 +2192,7 @@ static int flush_outstanding_data(struct encryptGroupsData* data)
               data->crypto_blkdev);
         return -1;
     } else {
-        SLOGI("Encrypted %d blocks at sector %" PRId64,
-              data->count, data->offset / info.block_size * CRYPT_SECTOR_SIZE);
+      log_progress(data, false);
     }
 
     data->count = 0;
@@ -2260,6 +2281,7 @@ static int encrypt_groups(struct encryptGroupsData* data)
     rc = 0;
 
 errout:
+    log_progress(0, true);
     free(data->buffer);
     free(block_bitmap);
     return rc;
@@ -2343,6 +2365,30 @@ errout:
     return rc;
 }
 
+static void log_progress_f2fs(u64 block, bool completed)
+{
+    // Precondition - if completed data = 0 else data != 0
+
+    // Track progress so we can skip logging blocks
+    static u64 last_block = (u64)-1;
+
+    // Need to close existing 'Encrypting from' log?
+    if (completed || (last_block != (u64)-1 && block != last_block + 1)) {
+        SLOGI("Encrypted to block %" PRId64, last_block);
+        last_block = -1;
+    }
+
+    // Need to start new 'Encrypting from' log?
+    if (!completed && (last_block == (u64)-1 || block != last_block + 1)) {
+        SLOGI("Encrypting from block %" PRId64, block);
+    }
+
+    // Update offset
+    if (!completed) {
+        last_block = block;
+    }
+}
+
 static int encrypt_one_block_f2fs(u64 pos, void *data)
 {
     struct encryptGroupsData *priv_dat = (struct encryptGroupsData *)data;
@@ -2361,7 +2407,7 @@ static int encrypt_one_block_f2fs(u64 pos, void *data)
         SLOGE("Error writing crypto_blkdev %s for inplace encrypt", priv_dat->crypto_blkdev);
         return -1;
     } else {
-        SLOGD("Encrypted block %"PRIu64, pos);
+        log_progress_f2fs(pos, false);
     }
 
     return 0;
@@ -2436,6 +2482,7 @@ errout:
     if (rc)
         SLOGE("Failed to encrypt f2fs filesystem on %s", real_blkdev);
 
+    log_progress_f2fs(0, true);
     free(f2fs_info);
     free(data.buffer);
     close(data.realfd);
