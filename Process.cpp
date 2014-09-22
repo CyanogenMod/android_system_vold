@@ -170,6 +170,10 @@ int Process::getPid(const char *s) {
     return result;
 }
 
+extern "C" void vold_killProcessesWithOpenFiles(const char *path, int action) {
+	Process::killProcessesWithOpenFiles(path, action);
+}
+
 /*
  * Hunt down processes that have files open at the given mount point.
  * action = 0 to just warn,
