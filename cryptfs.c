@@ -1428,7 +1428,7 @@ static int create_encrypted_random_key(char *passwd, unsigned char *master_key, 
 
 static int wait_and_unmount(char *mountpoint)
 {
-    int i, rc;
+    int i, err, rc;
 #define WAIT_UNMOUNT_COUNT 20
 
     /*  Now umount the tmpfs filesystem */
@@ -1440,6 +1440,7 @@ static int wait_and_unmount(char *mountpoint)
                  */
                 break;
             }
+            err = errno;
             sleep(1);
             i++;
         } else {
@@ -1452,7 +1453,7 @@ static int wait_and_unmount(char *mountpoint)
       rc = 0;
     } else {
       vold_killProcessesWithOpenFiles(mountpoint, 0);
-      SLOGE("unmounting %s failed\n", mountpoint);
+      SLOGE("unmounting %s failed: %s\n", mountpoint, strerror(err));
       rc = -1;
     }
 
