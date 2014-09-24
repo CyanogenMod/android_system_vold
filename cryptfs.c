@@ -1783,8 +1783,9 @@ static int test_mount_encrypted_fs(struct crypt_mnt_ftr* crypt_ftr,
   fs_mgr_get_crypt_info(fstab, 0, real_blkdev, sizeof(real_blkdev));
 
 #ifdef CONFIG_HW_DISK_ENCRYPTION
-  if(!set_hw_device_encryption_key(passwd, (char*) crypt_ftr->crypto_type_name))
-    return -1;
+  if(is_hw_disk_encryption((char*) crypt_ftr->crypto_type_name))
+    if (!set_hw_device_encryption_key(passwd, (char*) crypt_ftr->crypto_type_name))
+      rc = -1;
 #endif
 
   // Create crypto block device - all (non fatal) code paths
@@ -3585,7 +3586,9 @@ int cryptfs_changepw(int crypt_type, const char *newpw)
     put_crypt_ftr_and_key(&crypt_ftr);
 
 #ifdef CONFIG_HW_DISK_ENCRYPTION
-    update_hw_device_encryption_key(newpw, (char*)crypt_ftr.crypto_type_name);
+    update_hw_device_encryption_key(crypt_type == CRYPT_TYPE_DEFAULT ?
+                                    DEFAULT_PASSWORD : newpw,
+                                    (char*)crypt_ftr.crypto_type_name);
 #endif
     return 0;
 }
