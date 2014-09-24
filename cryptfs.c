@@ -53,6 +53,7 @@
 #include "ext4_utils.h"
 #include "f2fs_sparseblock.h"
 #include "CheckBattery.h"
+#include "Process.h"
 
 #include <hardware/keymaster.h>
 
@@ -1450,6 +1451,7 @@ static int wait_and_unmount(char *mountpoint)
       SLOGD("unmounting %s succeeded\n", mountpoint);
       rc = 0;
     } else {
+      vold_killProcessesWithOpenFiles(mountpoint, 0);
       SLOGE("unmounting %s failed\n", mountpoint);
       rc = -1;
     }

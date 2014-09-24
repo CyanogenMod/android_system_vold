@@ -17,6 +17,8 @@
 #ifndef _PROCESS_H
 #define _PROCESS_H
 
+#ifdef __cplusplus
+
 class Process {
 public:
     static void killProcessesWithOpenFiles(const char *path, int action);
@@ -31,5 +33,12 @@ private:
     static int readSymLink(const char *path, char *link, size_t max);
     static int pathMatchesMountPoint(const char *path, const char *mountPoint);
 };
+
+extern "C" {
+#endif /* __cplusplus */
+	void vold_killProcessesWithOpenFiles(const char *path, int action);
+#ifdef __cplusplus
+}
+#endif
 
 #endif
