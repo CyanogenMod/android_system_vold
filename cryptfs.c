@@ -40,6 +40,7 @@
 #include <ext4.h>
 #include <linux/kdev_t.h>
 #include <fs_mgr.h>
+#include <time.h>
 #include "cryptfs.h"
 #define LOG_TAG "Cryptfs"
 #include "cutils/log.h"
@@ -2127,21 +2128,26 @@ static void update_progress(struct encryptGroupsData* data, int is_used)
     }
 
     if (data->cur_pct >= 5) {
-        double elapsed_time = difftime(time(NULL), data->time_started);
-        off64_t remaining_blocks = data->tot_used_blocks
-                                   - data->used_blocks_already_done;
-        int remaining_time = (int)(elapsed_time * remaining_blocks
-                                   / data->used_blocks_already_done);
+        struct timespec time_now;
+        if (clock_gettime(CLOCK_MONOTONIC, &time_now)) {
+            SLOGW("Error getting time");
+        } else {
+            double elapsed_time = difftime(time_now.tv_sec, data->time_started);
+            off64_t remaining_blocks = data->tot_used_blocks
+                                       - data->used_blocks_already_done;
+            int remaining_time = (int)(elapsed_time * remaining_blocks
+                                       / data->used_blocks_already_done);
 
-        // Change time only if not yet set, lower, or a lot higher for
-        // best user experience
-        if (data->remaining_time == -1
-            || remaining_time < data->remaining_time
-            || remaining_time > data->remaining_time + 60) {
-            char buf[8];
-            snprintf(buf, sizeof(buf), "%d", remaining_time);
-            property_set("vold.encrypt_time_remaining", buf);
-            data->remaining_time = remaining_time;
+            // Change time only if not yet set, lower, or a lot higher for
+            // best user experience
+            if (data->remaining_time == -1
+                || remaining_time < data->remaining_time
+                || remaining_time > data->remaining_time + 60) {
+                char buf[8];
+                snprintf(buf, sizeof(buf), "%d", remaining_time);
+                property_set("vold.encrypt_time_remaining", buf);
+                data->remaining_time = remaining_time;
+            }
         }
     }
 }
@@ -2349,7 +2355,13 @@ static int cryptfs_enable_inplace_ext4(char *crypto_blkdev,
 
     data.one_pct = data.tot_used_blocks / 100;
     data.cur_pct = 0;
-    data.time_started = time(NULL);
+
+    struct timespec time_started = {0};
+    if (clock_gettime(CLOCK_MONOTONIC, &time_started)) {
+        SLOGW("Error getting time at start");
+        // Note - continue anyway - we'll run with 0
+    }
+    data.time_started = time_started.tv_sec;
     data.remaining_time = -1;
 
     rc = encrypt_groups(&data);
