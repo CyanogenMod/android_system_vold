@@ -48,6 +48,7 @@
 #include "Fat.h"
 #include "Process.h"
 #include "cryptfs.h"
+#include "sehandle.h"
 
 extern "C" void dos_partition_dec(void const *pp, struct dos_partition *d);
 extern "C" void dos_partition_enc(void *pp, struct dos_partition *d);
@@ -219,12 +220,29 @@ void Volume::setState(int state) {
 }
 
 int Volume::createDeviceNode(const char *path, int major, int minor) {
+    char *secontext = NULL;
     mode_t mode = 0660 | S_IFBLK;
     dev_t dev = (major << 8) | minor;
+    int rc;
+    if (sehandle) {
+        rc = selabel_lookup(sehandle, &secontext, path, S_IFBLK);
+        if (rc == 0)
+            setfscreatecon(secontext);
+    }
     if (mknod(path, mode, dev) < 0) {
         if (errno != EEXIST) {
+            int sverrno = errno;
+            if (secontext) {
+                freecon(secontext);
+                setfscreatecon(NULL);
+            }
+            errno = sverrno;
             return -1;
         }
+    }
+    if (secontext) {
+        setfscreatecon(NULL);
+        freecon(secontext);
     }
     return 0;
 }
