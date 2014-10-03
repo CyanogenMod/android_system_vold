@@ -1427,26 +1427,38 @@ static int create_encrypted_random_key(char *passwd, unsigned char *master_key, 
     return encrypt_master_key(passwd, salt, key_buf, master_key, crypt_ftr);
 }
 
-static int wait_and_unmount(char *mountpoint)
+static int wait_and_unmount(char *mountpoint, bool kill)
 {
     int i, err, rc;
 #define WAIT_UNMOUNT_COUNT 20
 
     /*  Now umount the tmpfs filesystem */
     for (i=0; i<WAIT_UNMOUNT_COUNT; i++) {
-        if (umount(mountpoint)) {
-            if (errno == EINVAL) {
-                /* EINVAL is returned if the directory is not a mountpoint,
-                 * i.e. there is no filesystem mounted there.  So just get out.
-                 */
-                break;
-            }
-            err = errno;
-            sleep(1);
-            i++;
-        } else {
-          break;
+        if (umount(mountpoint) == 0) {
+            break;
         }
+
+        if (errno == EINVAL) {
+            /* EINVAL is returned if the directory is not a mountpoint,
+             * i.e. there is no filesystem mounted there.  So just get out.
+             */
+            break;
+        }
+
+        err = errno;
+
+        /* If allowed, be increasingly aggressive before the last two retries */
+        if (kill) {
+            if (i == (WAIT_UNMOUNT_COUNT - 3)) {
+                SLOGW("sending SIGHUP to processes with open files\n");
+                vold_killProcessesWithOpenFiles(mountpoint, 1);
+            } else if (i == (WAIT_UNMOUNT_COUNT - 2)) {
+                SLOGW("sending SIGKILL to processes with open files\n");
+                vold_killProcessesWithOpenFiles(mountpoint, 2);
+            }
+        }
+
+        sleep(1);
     }
 
     if (i < WAIT_UNMOUNT_COUNT) {
@@ -1588,7 +1600,7 @@ static int cryptfs_restart_internal(int restart_main)
         return -1;
     }
 
-    if (! (rc = wait_and_unmount(DATA_MNT_POINT)) ) {
+    if (! (rc = wait_and_unmount(DATA_MNT_POINT, true)) ) {
         /* If ro.crypto.readonly is set to 1, mount the decrypted
          * filesystem readonly.  This is used when /data is mounted by
          * recovery mode.
@@ -2886,13 +2898,13 @@ int cryptfs_enable_internal(char *howarg, int crypt_type, char *passwd,
          * above, so just unmount it now.  We must do this _AFTER_ killing the framework,
          * unlike the case for vold managed devices above.
          */
-        if (wait_and_unmount(sd_mnt_point)) {
+        if (wait_and_unmount(sd_mnt_point, false)) {
             goto error_shutting_down;
         }
     }
 
     /* Now unmount the /data partition. */
-    if (wait_and_unmount(DATA_MNT_POINT)) {
+    if (wait_and_unmount(DATA_MNT_POINT, false)) {
         if (allow_reboot) {
             goto error_shutting_down;
         } else {
