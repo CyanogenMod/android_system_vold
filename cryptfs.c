@@ -1799,6 +1799,9 @@ static int test_mount_encrypted_fs(struct crypt_mnt_ftr* crypt_ftr,
 
   if (rc == 0) {
     crypt_ftr->failed_decrypt_count = 0;
+    if (orig_failed_decrypt_count != 0) {
+      put_crypt_ftr_and_key(crypt_ftr);
+    }
 
     /* Save the name of the crypto block device
      * so we can mount it when restarting the framework. */
