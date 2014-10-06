@@ -1929,6 +1929,68 @@ int check_unmounted_and_get_ftr(struct crypt_mnt_ftr* crypt_ftr)
     return 0;
 }
 
+/*
+ * TODO - transition patterns to new format in calling code
+ *        and remove this vile hack, and the use of hex in
+ *        the password passing code.
+ *
+ * Patterns are passed in zero based (i.e. the top left dot
+ * is represented by zero, the top middle one etc), but we want
+ * to store them '1' based.
+ * This is to allow us to migrate the calling code to use this
+ * convention. It also solves a nasty problem whereby scrypt ignores
+ * trailing zeros, so patterns ending at the top left could be
+ * truncated, and similarly, you could add the top left to any
+ * pattern and still match.
+ * adjust_passwd is a hack function that returns the alternate representation
+ * if the password appears to be a pattern (hex numbers all less than 09)
+ * If it succeeds we need to try both, and in particular try the alternate
+ * first. If the original matches, then we need to update the footer
+ * with the alternate.
+ * All code that accepts passwords must adjust them first. Since
+ * cryptfs_check_passwd is always the first function called after a migration
+ * (and indeed on any boot) we only need to do the double try in this
+ * function.
+ */
+char* adjust_passwd(const char* passwd)
+{
+    size_t index, length;
+
+    if (!passwd) {
+        return 0;
+    }
+
+    // Check even length. Hex encoded passwords are always
+    // an even length, since each character encodes to two characters.
+    length = strlen(passwd);
+    if (length % 2) {
+        SLOGW("Password not correctly hex encoded.");
+        return 0;
+    }
+
+    // Check password is old-style pattern - a collection of hex
+    // encoded bytes less than 9 (00 through 08)
+    for (index = 0; index < length; index +=2) {
+        if (passwd[index] != '0'
+            || passwd[index + 1] < '0' || passwd[index + 1] > '8') {
+            return 0;
+        }
+    }
+
+    // Allocate room for adjusted passwd and null terminate
+    char* adjusted = malloc(length + 1);
+    adjusted[length] = 0;
+
+    // Add 0x31 ('1') to each character
+    for (index = 0; index < length; index += 2) {
+        // output is 31 through 39 so set first byte to three, second to src + 1
+        adjusted[index] = '3';
+        adjusted[index + 1] = passwd[index + 1] + 1;
+    }
+
+    return adjusted;
+}
+
 int cryptfs_check_passwd(char *passwd)
 {
     struct crypt_mnt_ftr crypt_ftr;
@@ -1938,8 +2000,31 @@ int cryptfs_check_passwd(char *passwd)
     if (rc)
         return rc;
 
-    rc = test_mount_encrypted_fs(&crypt_ftr, passwd,
-                                 DATA_MNT_POINT, "userdata");
+    char* adjusted_passwd = adjust_passwd(passwd);
+    if (adjusted_passwd) {
+        int failed_decrypt_count = crypt_ftr.failed_decrypt_count;
+        rc = test_mount_encrypted_fs(&crypt_ftr, adjusted_passwd,
+                                     DATA_MNT_POINT, "userdata");
+
+        // Maybe the original one still works?
+        if (rc) {
+            // Don't double count this failure
+            crypt_ftr.failed_decrypt_count = failed_decrypt_count;
+            rc = test_mount_encrypted_fs(&crypt_ftr, passwd,
+                                         DATA_MNT_POINT, "userdata");
+            if (!rc) {
+                // cryptfs_changepw also adjusts so pass original
+                // Note that adjust_passwd only recognises patterns
+                // so we can safely use CRYPT_TYPE_PATTERN
+                SLOGI("Updating pattern to new format");
+                cryptfs_changepw(CRYPT_TYPE_PATTERN, passwd);
+            }
+        }
+        free(adjusted_passwd);
+    } else {
+        rc = test_mount_encrypted_fs(&crypt_ftr, passwd,
+                                     DATA_MNT_POINT, "userdata");
+    }
 
     if (rc == 0 && crypt_ftr.crypt_type != CRYPT_TYPE_DEFAULT) {
         cryptfs_clear_password();
@@ -1985,6 +2070,11 @@ int cryptfs_verify_passwd(char *passwd)
         /* If the device has no password, then just say the password is valid */
         rc = 0;
     } else {
+        char* adjusted_passwd = adjust_passwd(passwd);
+        if (adjusted_passwd) {
+            passwd = adjusted_passwd;
+        }
+
         decrypt_master_key(passwd, decrypted_master_key, &crypt_ftr, 0, 0);
         if (!memcmp(decrypted_master_key, saved_master_key, crypt_ftr.keysize)) {
             /* They match, the password is correct */
@@ -1994,6 +2084,8 @@ int cryptfs_verify_passwd(char *passwd)
             sleep(1);
             rc = 1;
         }
+
+        free(adjusted_passwd);
     }
 
     return rc;
@@ -3126,7 +3218,15 @@ error_shutting_down:
 
 int cryptfs_enable(char *howarg, int type, char *passwd, int allow_reboot)
 {
-    return cryptfs_enable_internal(howarg, type, passwd, allow_reboot);
+    char* adjusted_passwd = adjust_passwd(passwd);
+    if (adjusted_passwd) {
+        passwd = adjusted_passwd;
+    }
+
+    int rc = cryptfs_enable_internal(howarg, type, passwd, allow_reboot);
+
+    free(adjusted_passwd);
+    return rc;
 }
 
 int cryptfs_enable_default(char *howarg, int allow_reboot)
@@ -3159,6 +3259,11 @@ int cryptfs_changepw(int crypt_type, const char *newpw)
 
     crypt_ftr.crypt_type = crypt_type;
 
+    char* adjusted_passwd = adjust_passwd(newpw);
+    if (adjusted_passwd) {
+        newpw = adjusted_passwd;
+    }
+
     encrypt_master_key(crypt_type == CRYPT_TYPE_DEFAULT ? DEFAULT_PASSWORD
                                                         : newpw,
                        crypt_ftr.salt,
@@ -3169,6 +3274,7 @@ int cryptfs_changepw(int crypt_type, const char *newpw)
     /* save the key */
     put_crypt_ftr_and_key(&crypt_ftr);
 
+    free(adjusted_passwd);
     return 0;
 }
 
