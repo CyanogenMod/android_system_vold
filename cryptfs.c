@@ -998,7 +998,7 @@ static int load_crypto_mapping_table(struct crypt_mnt_ftr *crypt_ftr, unsigned c
           master_key_ascii, real_blk_name, extra_params);
 
   SLOGI("%s: target_type = %s\n", __func__, tgt->target_type);
-  SLOGI("%s: crypt_params = %s\n", __func__, crypt_params);
+  SLOGI("%s: real_blk_name = %s, extra_params = %s\n", __func__, real_blk_name, extra_params);
 
   crypt_params += strlen(crypt_params) + 1;
   crypt_params = (char *) (((unsigned long)crypt_params + 7) & ~8); /* Align to an 8 byte boundary */
