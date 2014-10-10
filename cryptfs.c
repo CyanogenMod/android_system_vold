@@ -3377,7 +3377,7 @@ int cryptfs_pfe_activate(void)
     }
 
     /* Now unmount the /data partition. */
-    if (wait_and_unmount(DATA_MNT_POINT)) {
+    if (wait_and_unmount(DATA_MNT_POINT, false)) {
         SLOGE("%s: Unmount /data failed", __func__);
         goto unmount_error;
     }
