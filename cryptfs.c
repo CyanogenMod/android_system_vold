@@ -2424,15 +2424,15 @@ static int cryptfs_enable_inplace_ext4(char *crypto_blkdev,
     data.crypto_blkdev = crypto_blkdev;
 
     if ( (data.realfd = open(real_blkdev, O_RDWR)) < 0) {
-        SLOGE("Error opening real_blkdev %s for inplace encrypt\n",
-              real_blkdev);
+        SLOGE("Error opening real_blkdev %s for inplace encrypt. err=%d(%s)\n",
+              real_blkdev, errno, strerror(errno));
         rc = -1;
         goto errout;
     }
 
     if ( (data.cryptofd = open(crypto_blkdev, O_WRONLY)) < 0) {
-        SLOGE("Error opening crypto_blkdev %s for inplace encrypt\n",
-              crypto_blkdev);
+        SLOGE("Error opening crypto_blkdev %s for inplace encrypt. err=%d(%s)\n",
+              crypto_blkdev, errno, strerror(errno));
         rc = -1;
         goto errout;
     }
@@ -2561,8 +2561,8 @@ static int cryptfs_enable_inplace_f2fs(char *crypto_blkdev,
         goto errout;
     }
     if ( (data.cryptofd = open64(crypto_blkdev, O_WRONLY)) < 0) {
-        SLOGE("Error opening crypto_blkdev %s for inplace encrypt\n",
-              crypto_blkdev);
+        SLOGE("Error opening crypto_blkdev %s for inplace encrypt. err=%d(%s)\n",
+              crypto_blkdev, errno, strerror(errno));
         goto errout;
     }
 
@@ -2631,7 +2631,8 @@ static int cryptfs_enable_inplace_full(char *crypto_blkdev, char *real_blkdev,
     }
 
     if ( (cryptofd = open(crypto_blkdev, O_WRONLY)) < 0) { 
-        SLOGE("Error opening crypto_blkdev %s for inplace encrypt\n", crypto_blkdev);
+        SLOGE("Error opening crypto_blkdev %s for inplace encrypt. err=%d(%s)\n",
+              crypto_blkdev, errno, strerror(errno));
         close(realfd);
         return -1;
     }
