@@ -196,6 +196,11 @@ struct volume_info {
 #define CRYPTO_COMPLETE_INCONSISTENT  -3
 #define CRYPTO_COMPLETE_CORRUPT       -4
 
+/* Return values for cryptfs_enable_inplace*() */
+#define ENABLE_INPLACE_OK 0
+#define ENABLE_INPLACE_ERR_OTHER -1
+#define ENABLE_INPLACE_ERR_DEV -2  /* crypto_blkdev issue */
+
 #ifdef __cplusplus
 extern "C" {
 #endif
