@@ -2433,20 +2433,20 @@ static int cryptfs_enable_inplace_ext4(char *crypto_blkdev,
     }
 
     if ( (data.cryptofd = open(crypto_blkdev, O_WRONLY)) < 0) {
-        SLOGE("Error opening crypto_blkdev %s for inplace encrypt. err=%d(%s)\n",
+        SLOGE("Error opening crypto_blkdev %s for ext4 inplace encrypt. err=%d(%s)\n",
               crypto_blkdev, errno, strerror(errno));
-        rc = -1;
+        rc = ENABLE_INPLACE_ERR_DEV;
         goto errout;
     }
 
     if (setjmp(setjmp_env)) {
-        SLOGE("Reading extent caused an exception");
+        SLOGE("Reading ext4 extent caused an exception\n");
         rc = -1;
         goto errout;
     }
 
     if (read_ext(data.realfd, 0) != 0) {
-        SLOGE("Failed to read extent");
+        SLOGE("Failed to read ext4 extent\n");
         rc = -1;
         goto errout;
     }
@@ -2455,7 +2455,7 @@ static int cryptfs_enable_inplace_ext4(char *crypto_blkdev,
     data.tot_numblocks = tot_size / CRYPT_SECTORS_PER_BUFSIZE;
     data.blocks_already_done = *size_already_done / CRYPT_SECTORS_PER_BUFSIZE;
 
-    SLOGI("Encrypting filesystem in place...");
+    SLOGI("Encrypting ext4 filesystem in place...");
 
     data.tot_used_blocks = data.numblocks;
     for (i = 0; i < aux_info.groups; ++i) {
@@ -2523,12 +2523,12 @@ static int encrypt_one_block_f2fs(u64 pos, void *data)
     off64_t offset = pos * CRYPT_INPLACE_BUFSIZE;
 
     if (pread64(priv_dat->realfd, priv_dat->buffer, CRYPT_INPLACE_BUFSIZE, offset) <= 0) {
-        SLOGE("Error reading real_blkdev %s for inplace encrypt", priv_dat->crypto_blkdev);
+        SLOGE("Error reading real_blkdev %s for f2fs inplace encrypt", priv_dat->crypto_blkdev);
         return -1;
     }
 
     if (pwrite64(priv_dat->cryptofd, priv_dat->buffer, CRYPT_INPLACE_BUFSIZE, offset) <= 0) {
-        SLOGE("Error writing crypto_blkdev %s for inplace encrypt", priv_dat->crypto_blkdev);
+        SLOGE("Error writing crypto_blkdev %s for f2fs inplace encrypt", priv_dat->crypto_blkdev);
         return -1;
     } else {
         log_progress_f2fs(pos, false);
@@ -2547,10 +2547,10 @@ static int cryptfs_enable_inplace_f2fs(char *crypto_blkdev,
     u32 i;
     struct encryptGroupsData data;
     struct f2fs_info *f2fs_info = NULL;
-    int rc = -1;
+    int rc = ENABLE_INPLACE_ERR_OTHER;
     if (previously_encrypted_upto > *size_already_done) {
         SLOGD("Not fast encrypting since resuming part way through");
-        return -1;
+        return ENABLE_INPLACE_ERR_OTHER;
     }
     memset(&data, 0, sizeof(data));
     data.real_blkdev = real_blkdev;
@@ -2558,13 +2558,14 @@ static int cryptfs_enable_inplace_f2fs(char *crypto_blkdev,
     data.realfd = -1;
     data.cryptofd = -1;
     if ( (data.realfd = open64(real_blkdev, O_RDWR)) < 0) {
-        SLOGE("Error opening real_blkdev %s for inplace encrypt\n",
+        SLOGE("Error opening real_blkdev %s for f2fs inplace encrypt\n",
               real_blkdev);
         goto errout;
     }
     if ( (data.cryptofd = open64(crypto_blkdev, O_WRONLY)) < 0) {
-        SLOGE("Error opening crypto_blkdev %s for inplace encrypt. err=%d(%s)\n",
+        SLOGE("Error opening crypto_blkdev %s for f2fs inplace encrypt. err=%d(%s)\n",
               crypto_blkdev, errno, strerror(errno));
+        rc = ENABLE_INPLACE_ERR_DEV;
         goto errout;
     }
 
@@ -2595,7 +2596,8 @@ static int cryptfs_enable_inplace_f2fs(char *crypto_blkdev,
     rc = run_on_used_blocks(data.blocks_already_done, f2fs_info, &encrypt_one_block_f2fs, &data);
 
     if (rc) {
-        SLOGE("Error in running over blocks");
+        SLOGE("Error in running over f2fs blocks");
+        rc = ENABLE_INPLACE_ERR_OTHER;
         goto errout;
     }
 
@@ -2622,21 +2624,21 @@ static int cryptfs_enable_inplace_full(char *crypto_blkdev, char *real_blkdev,
 {
     int realfd, cryptofd;
     char *buf[CRYPT_INPLACE_BUFSIZE];
-    int rc = -1;
+    int rc = ENABLE_INPLACE_ERR_OTHER;
     off64_t numblocks, i, remainder;
     off64_t one_pct, cur_pct, new_pct;
     off64_t blocks_already_done, tot_numblocks;
 
     if ( (realfd = open(real_blkdev, O_RDONLY)) < 0) { 
         SLOGE("Error opening real_blkdev %s for inplace encrypt\n", real_blkdev);
-        return -1;
+        return ENABLE_INPLACE_ERR_OTHER;
     }
 
     if ( (cryptofd = open(crypto_blkdev, O_WRONLY)) < 0) { 
         SLOGE("Error opening crypto_blkdev %s for inplace encrypt. err=%d(%s)\n",
               crypto_blkdev, errno, strerror(errno));
         close(realfd);
-        return -1;
+        return ENABLE_INPLACE_ERR_DEV;
     }
 
     /* This is pretty much a simple loop of reading 4K, and writing 4K.
@@ -2735,11 +2737,13 @@ errout:
     return rc;
 }
 
+/* returns on of the ENABLE_INPLACE_* return codes */
 static int cryptfs_enable_inplace(char *crypto_blkdev, char *real_blkdev,
                                   off64_t size, off64_t *size_already_done,
                                   off64_t tot_size,
                                   off64_t previously_encrypted_upto)
 {
+    int rc_ext4, rc_f2fs, rc_full;
     if (previously_encrypted_upto) {
         SLOGD("Continuing encryption from %" PRId64, previously_encrypted_upto);
     }
@@ -2753,21 +2757,32 @@ static int cryptfs_enable_inplace(char *crypto_blkdev, char *real_blkdev,
      * As is, cryptfs_enable_inplace_ext4 will fail on an f2fs partition, and
      * then we will drop down to cryptfs_enable_inplace_f2fs.
      * */
-    if (cryptfs_enable_inplace_ext4(crypto_blkdev, real_blkdev,
+    if ((rc_ext4 = cryptfs_enable_inplace_ext4(crypto_blkdev, real_blkdev,
                                 size, size_already_done,
-                                tot_size, previously_encrypted_upto) == 0) {
+                                tot_size, previously_encrypted_upto)) == 0) {
       return 0;
     }
+    SLOGD("cryptfs_enable_inplace_ext4()=%d\n", rc_ext4);
 
-    if (cryptfs_enable_inplace_f2fs(crypto_blkdev, real_blkdev,
+    if ((rc_f2fs = cryptfs_enable_inplace_f2fs(crypto_blkdev, real_blkdev,
                                 size, size_already_done,
-                                tot_size, previously_encrypted_upto) == 0) {
+                                tot_size, previously_encrypted_upto)) == 0) {
       return 0;
     }
+    SLOGD("cryptfs_enable_inplace_f2fs()=%d\n", rc_f2fs);
 
-    return cryptfs_enable_inplace_full(crypto_blkdev, real_blkdev,
+    rc_full = cryptfs_enable_inplace_full(crypto_blkdev, real_blkdev,
                                        size, size_already_done, tot_size,
                                        previously_encrypted_upto);
+    SLOGD("cryptfs_enable_inplace_full()=%d\n", rc_full);
+
+    /* Hack for b/17898962, the following is the symptom... */
+    if (rc_ext4 == ENABLE_INPLACE_ERR_DEV
+        && rc_f2fs == ENABLE_INPLACE_ERR_DEV
+        && rc_full == ENABLE_INPLACE_ERR_DEV) {
+            return ENABLE_INPLACE_ERR_DEV;
+    }
+    return rc_full;
 }
 
 #define CRYPTO_ENABLE_WIPE 1
@@ -2846,6 +2861,12 @@ static int cryptfs_enable_all_volumes(struct crypt_mnt_ftr *crypt_ftr, int how,
                                     crypt_ftr->fs_size, &cur_encryption_done,
                                     tot_encryption_size,
                                     previously_encrypted_upto);
+
+        if (rc == ENABLE_INPLACE_ERR_DEV) {
+            /* Hack for b/17898962 */
+            SLOGE("cryptfs_enable: crypto block dev failure. Must reboot...\n");
+            cryptfs_reboot(reboot);
+        }
 
         if (!rc) {
             crypt_ftr->encrypted_upto = cur_encryption_done;
