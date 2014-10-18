@@ -35,6 +35,7 @@
 #include <sysutils/SocketClient.h>
 #include "Loop.h"
 #include "Asec.h"
+#include "sehandle.h"
 
 int Loop::dumpState(SocketClient *c) {
     int i;
@@ -132,6 +133,7 @@ int Loop::create(const char *id, const char *loopFile, char *loopDeviceBuffer, s
     for (i = 0; i < LOOP_MAX; i++) {
         struct loop_info64 li;
         int rc;
+        char *secontext = NULL;
 
         sprintf(filename, "/dev/block/loop%d", i);
 
@@ -141,11 +143,28 @@ int Loop::create(const char *id, const char *loopFile, char *loopDeviceBuffer, s
          */
         mode_t mode = 0660 | S_IFBLK;
         unsigned int dev = (0xff & i) | ((i << 12) & 0xfff00000) | (7 << 8);
+
+        if (sehandle) {
+            rc = selabel_lookup(sehandle, &secontext, filename, S_IFBLK);
+            if (rc == 0)
+                setfscreatecon(secontext);
+        }
+
         if (mknod(filename, mode, dev) < 0) {
             if (errno != EEXIST) {
+                int sverrno = errno;
                 SLOGE("Error creating loop device node (%s)", strerror(errno));
+                if (secontext) {
+                    freecon(secontext);
+                    setfscreatecon(NULL);
+                }
+                errno = sverrno;
                 return -1;
             }
+        }
+        if (secontext) {
+            freecon(secontext);
+            setfscreatecon(NULL);
         }
 
         if ((fd = open(filename, O_RDWR)) < 0) {
