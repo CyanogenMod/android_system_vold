@@ -36,12 +36,15 @@
 #include "NetlinkManager.h"
 #include "DirectVolume.h"
 #include "cryptfs.h"
+#include "sehandle.h"
 
 static int process_config(VolumeManager *vm);
 static void coldboot(const char *path);
 
 #define FSTAB_PREFIX "/fstab."
 struct fstab *fstab;
+
+struct selabel_handle *sehandle;
 
 int main() {
 
@@ -50,6 +53,10 @@ int main() {
     NetlinkManager *nm;
 
     SLOGI("Vold 2.1 (the revenge) firing up");
+
+    sehandle = selinux_android_file_context_handle();
+    if (sehandle)
+        selinux_android_set_sehandle(sehandle);
 
     mkdir("/dev/block/vold", 0755);
 
