@@ -138,7 +138,8 @@ static int keymaster_check_compatibility()
         goto out;
     }
 
-    if (keymaster_dev->flags & KEYMASTER_BLOBS_ARE_STANDALONE) {
+    if (!(keymaster_dev->flags & KEYMASTER_SOFTWARE_ONLY) &&
+        (keymaster_dev->flags & KEYMASTER_BLOBS_ARE_STANDALONE)) {
         rc = 1;
     }
 
