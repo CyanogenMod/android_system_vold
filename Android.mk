@@ -62,7 +62,7 @@ LOCAL_SHARED_LIBRARIES := $(common_shared_libraries)
 LOCAL_STATIC_LIBRARIES := $(common_static_libraries)
 LOCAL_MODULE_TAGS := eng tests
 
-include external/stlport/libstlport.mk
+LOCAL_CXX_STL := libc++
 include $(BUILD_STATIC_LIBRARY)
 
 include $(CLEAR_VARS)
@@ -79,7 +79,7 @@ LOCAL_CFLAGS := -Werror=format
 LOCAL_SHARED_LIBRARIES := $(common_shared_libraries)
 LOCAL_STATIC_LIBRARIES := $(common_static_libraries)
 
-include external/stlport/libstlport.mk
+LOCAL_CXX_STL := libc++
 include $(BUILD_EXECUTABLE)
 
 include $(CLEAR_VARS)
