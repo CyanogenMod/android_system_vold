@@ -59,6 +59,10 @@ common_static_libraries := \
 
 include $(CLEAR_VARS)
 
+ifneq ($(BOARD_VOLD_MAX_PARTITIONS),)
+LOCAL_CFLAGS += -DVOLD_MAX_PARTITIONS=$(BOARD_VOLD_MAX_PARTITIONS)
+endif
+
 LOCAL_MODULE := libvold
 
 LOCAL_SRC_FILES := $(common_src_files)
@@ -89,6 +93,10 @@ ifeq ($(TARGET_HW_DISK_ENCRYPTION),true)
 LOCAL_C_INCLUDES += device/qcom/common/cryptfs_hw
 common_shared_libraries += libcryptfs_hw
 LOCAL_CFLAGS += -DCONFIG_HW_DISK_ENCRYPTION
+endif
+
+ifneq ($(BOARD_VOLD_MAX_PARTITIONS),)
+LOCAL_CFLAGS += -DVOLD_MAX_PARTITIONS=$(BOARD_VOLD_MAX_PARTITIONS)
 endif
 
 LOCAL_SHARED_LIBRARIES := $(common_shared_libraries)
