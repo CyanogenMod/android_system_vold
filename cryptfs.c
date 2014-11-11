@@ -3739,7 +3739,7 @@ int cryptfs_get_password_type(void)
 char* cryptfs_get_password()
 {
     struct timespec now;
-    clock_gettime(CLOCK_MONOTONIC, &now);
+    clock_gettime(CLOCK_BOOTTIME, &now);
     if (now.tv_sec < password_expiry_time) {
         return password;
     } else {
