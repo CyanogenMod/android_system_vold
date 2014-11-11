@@ -36,7 +36,7 @@ static void usage(char *progname);
 static int do_monitor(int sock, int stop_after_cmd);
 static int do_cmd(int sock, int argc, char **argv);
 
-int main(int argc, char **argv) {
+int vdc_main(int argc, char **argv) {
     int sock;
     int wait_for_socket;
     char *progname;
@@ -168,3 +168,8 @@ static void usage(char *progname) {
             "Usage: %s [--wait] <monitor>|<cmd> [arg1] [arg2...]\n", progname);
  }
 
+#ifndef MINIVOLD
+int main(int argc, char **argv) {
+    return vdc_main(argc, argv);
+}
+#endif

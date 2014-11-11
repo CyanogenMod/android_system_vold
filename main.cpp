@@ -43,7 +43,7 @@ static void coldboot(const char *path);
 #define FSTAB_PREFIX "/fstab."
 struct fstab *fstab;
 
-int main() {
+extern "C" int vold_main() {
 
     VolumeManager *vm;
     CommandListener *cl;
