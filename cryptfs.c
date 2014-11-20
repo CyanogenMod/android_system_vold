@@ -2461,6 +2461,37 @@ errout:
     return rc;
 }
 
+#define RETRY_OPEN_CRYPTO_BLK 10
+
+enum InplaceType {
+    INPLACE_EXT4,
+    INPLACE_F2FS,
+    INPLACE_FULL
+};
+
+static int cryptfs_open_crypto_blkdev(char *crypto_blkdev, enum InplaceType type) {
+    int fd, retry_count = 1;
+    while (1) {
+        if (type == INPLACE_EXT4 || type == INPLACE_FULL) {
+            fd = open(crypto_blkdev, O_WRONLY);
+        } else {//type == INPLACE_F2FS
+            fd = open64(crypto_blkdev, O_WRONLY);
+        }
+        if (fd < 0) {
+            if (retry_count == RETRY_OPEN_CRYPTO_BLK) {
+                return -1;
+            }
+            SLOGE("Error opening crypto_blkdev %s. Retried %d times, err=%d(%s)\n",
+                  crypto_blkdev, retry_count, errno, strerror(errno));
+            retry_count++;
+            usleep(2000);
+            continue;
+        }
+        break;
+    }
+    return fd;
+}
+
 static int cryptfs_enable_inplace_ext4(char *crypto_blkdev,
                                        char *real_blkdev,
                                        off64_t size,
@@ -2488,7 +2519,8 @@ static int cryptfs_enable_inplace_ext4(char *crypto_blkdev,
         goto errout;
     }
 
-    if ( (data.cryptofd = open(crypto_blkdev, O_WRONLY)) < 0) {
+    SLOGI("Opening crypto_blkdev %s for ext4 inplace encrypt.", crypto_blkdev);
+    if ( (data.cryptofd = cryptfs_open_crypto_blkdev(crypto_blkdev, INPLACE_EXT4)) < 0) {
         SLOGE("Error opening crypto_blkdev %s for ext4 inplace encrypt. err=%d(%s)\n",
               crypto_blkdev, errno, strerror(errno));
         rc = ENABLE_INPLACE_ERR_DEV;
@@ -2618,7 +2650,9 @@ static int cryptfs_enable_inplace_f2fs(char *crypto_blkdev,
               real_blkdev);
         goto errout;
     }
-    if ( (data.cryptofd = open64(crypto_blkdev, O_WRONLY)) < 0) {
+
+    SLOGI("Opening crypto_blkdev %s for f2fs inplace encrypt.", crypto_blkdev);
+    if ( (data.cryptofd = cryptfs_open_crypto_blkdev(crypto_blkdev, INPLACE_F2FS)) < 0) {
         SLOGE("Error opening crypto_blkdev %s for f2fs inplace encrypt. err=%d(%s)\n",
               crypto_blkdev, errno, strerror(errno));
         rc = ENABLE_INPLACE_ERR_DEV;
@@ -2690,7 +2724,9 @@ static int cryptfs_enable_inplace_full(char *crypto_blkdev, char *real_blkdev,
         return ENABLE_INPLACE_ERR_OTHER;
     }
 
-    if ( (cryptofd = open(crypto_blkdev, O_WRONLY)) < 0) { 
+
+    SLOGI("Opening crypto_blkdev %s for inplace encrypt.", crypto_blkdev);
+    if ( (cryptofd = cryptfs_open_crypto_blkdev(crypto_blkdev, INPLACE_FULL)) < 0) {
         SLOGE("Error opening crypto_blkdev %s for inplace encrypt. err=%d(%s)\n",
               crypto_blkdev, errno, strerror(errno));
         close(realfd);
