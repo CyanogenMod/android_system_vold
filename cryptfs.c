@@ -997,7 +997,12 @@ static int load_crypto_mapping_table(struct crypt_mnt_ftr *crypt_ftr, unsigned c
   tgt->sector_start = 0;
   tgt->length = crypt_ftr->fs_size;
 #ifdef CONFIG_HW_DISK_ENCRYPTION
-  strlcpy(tgt->target_type, "req-crypt", DM_MAX_TYPE_NAME);
+  if (!strcmp((char *)crypt_ftr->crypto_type_name, "aes-xts")) {
+    strlcpy(tgt->target_type, "req-crypt", DM_MAX_TYPE_NAME);
+  }
+  else {
+    strlcpy(tgt->target_type, "crypt", DM_MAX_TYPE_NAME);
+  }
 #else
   strlcpy(tgt->target_type, "crypt", DM_MAX_TYPE_NAME);
 #endif
@@ -1047,7 +1052,7 @@ static int get_dm_crypt_version(int fd, const char *name,  int *version)
     v = (struct dm_target_versions *) &buffer[sizeof(struct dm_ioctl)];
     while (v->next) {
 #ifdef CONFIG_HW_DISK_ENCRYPTION
-        if(!strcmp(v->name, "crypt") || !strcmp(v->name, "req-crypt")) {
+        if (! strcmp(v->name, "crypt") || ! strcmp(v->name, "req-crypt")) {
 #else
         if (! strcmp(v->name, "crypt")) {
 #endif
@@ -1766,8 +1771,10 @@ static int test_mount_encrypted_fs(struct crypt_mnt_ftr* crypt_ftr,
   fs_mgr_get_crypt_info(fstab, 0, real_blkdev, sizeof(real_blkdev));
 
 #ifdef CONFIG_HW_DISK_ENCRYPTION
-  if(!set_hw_device_encryption_key(passwd, (char*) crypt_ftr->crypto_type_name)) {
-    SLOGE("Hardware encryption key does not match");
+  if (!strcmp((char *)crypt_ftr->crypto_type_name, "aes-xts")) {
+    if(!set_hw_device_encryption_key(passwd, (char*) crypt_ftr->crypto_type_name)) {
+      SLOGE("Hardware encryption key does not match");
+    }
   }
 #endif
 
@@ -3108,7 +3115,7 @@ int cryptfs_enable_internal(char *howarg, int crypt_type, char *passwd,
 #else
         strlcpy((char *)crypt_ftr.crypto_type_name, "aes-xts", MAX_CRYPTO_TYPE_NAME_LEN);
 
-	rc = clear_hw_device_encryption_key();
+        rc = clear_hw_device_encryption_key();
         if (!rc) {
           SLOGE("Error clearing device encryption hardware key. rc = %d", rc);
         }
@@ -3344,16 +3351,18 @@ int cryptfs_changepw(int crypt_type, const char *newpw)
     free(adjusted_passwd);
 
 #ifdef CONFIG_HW_DISK_ENCRYPTION
-    if (crypt_type == CRYPT_TYPE_DEFAULT) {
-        int rc = update_hw_device_encryption_key(DEFAULT_PASSWORD, (char*) crypt_ftr.crypto_type_name);
-        SLOGD("Update hardware encryption key to default for crypt_type: %d. rc = %d", crypt_type, rc);
-        if (!rc)
-            return -1;
-    } else {
-        int rc = update_hw_device_encryption_key(newpw, (char*) crypt_ftr.crypto_type_name);
-        SLOGD("Update hardware encryption key for crypt_type: %d. rc = %d", crypt_type, rc);
-        if (!rc)
-            return -1;
+    if (!strcmp((char *)crypt_ftr.crypto_type_name, "aes-xts")) {
+        if (crypt_type == CRYPT_TYPE_DEFAULT) {
+            int rc = update_hw_device_encryption_key(DEFAULT_PASSWORD, (char*) crypt_ftr.crypto_type_name);
+            SLOGD("Update hardware encryption key to default for crypt_type: %d. rc = %d", crypt_type, rc);
+            if (!rc)
+                return -1;
+        } else {
+            int rc = update_hw_device_encryption_key(newpw, (char*) crypt_ftr.crypto_type_name);
+            SLOGD("Update hardware encryption key for crypt_type: %d. rc = %d", crypt_type, rc);
+            if (!rc)
+                return -1;
+        }
     }
 #endif
     return 0;
