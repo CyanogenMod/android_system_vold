@@ -710,8 +710,14 @@ int CommandListener::CryptfsCmd::runCommand(SocketClient *cli,
         dumpArgs(argc, argv, -1);
         char* password = cryptfs_get_password();
         if (password) {
-            cli->sendMsg(ResponseCode::CommandOkay, password, false);
-            return 0;
+            char* message = 0;
+            int size = asprintf(&message, "{{sensitive}} %s", password);
+            if (size != -1) {
+                cli->sendMsg(ResponseCode::CommandOkay, message, false);
+                memset(message, 0, size);
+                free (message);
+                return 0;
+            }
         }
         rc = -1;
     } else if (!strcmp(argv[1], "clearpw")) {
