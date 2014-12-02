@@ -3188,7 +3188,8 @@ int cryptfs_enable_internal(char *howarg, int crypt_type, char *passwd,
     }
 
     /* Calculate checksum if we are not finished */
-    if (!rc && crypt_ftr.encrypted_upto != crypt_ftr.fs_size) {
+    if (!rc && how == CRYPTO_ENABLE_INPLACE
+            && crypt_ftr.encrypted_upto != crypt_ftr.fs_size) {
         rc = cryptfs_SHA256_fileblock(crypto_blkdev,
                                       crypt_ftr.hash_first_block);
         if (rc) {
@@ -3206,7 +3207,8 @@ int cryptfs_enable_internal(char *howarg, int crypt_type, char *passwd,
         /* Success */
         crypt_ftr.flags &= ~CRYPT_INCONSISTENT_STATE;
 
-        if (crypt_ftr.encrypted_upto != crypt_ftr.fs_size) {
+        if (how == CRYPTO_ENABLE_INPLACE
+              && crypt_ftr.encrypted_upto != crypt_ftr.fs_size) {
             SLOGD("Encrypted up to sector %lld - will continue after reboot",
                   crypt_ftr.encrypted_upto);
             crypt_ftr.flags |= CRYPT_ENCRYPTION_IN_PROGRESS;
@@ -3214,7 +3216,8 @@ int cryptfs_enable_internal(char *howarg, int crypt_type, char *passwd,
 
         put_crypt_ftr_and_key(&crypt_ftr);
 
-        if (crypt_ftr.encrypted_upto == crypt_ftr.fs_size) {
+        if (how == CRYPTO_ENABLE_WIPE
+              || crypt_ftr.encrypted_upto == crypt_ftr.fs_size) {
           char value[PROPERTY_VALUE_MAX];
           property_get("ro.crypto.state", value, "");
           if (!strcmp(value, "")) {
