@@ -148,20 +148,25 @@ int CommandListener::VolumeCmd::runCommand(SocketClient *cli,
     } else if (!strcmp(argv[1], "unmount")) {
         if (argc < 3 || argc > 4 ||
            ((argc == 4 && strcmp(argv[3], "force")) &&
-            (argc == 4 && strcmp(argv[3], "force_and_revert")))) {
-            cli->sendMsg(ResponseCode::CommandSyntaxError, "Usage: volume unmount <path> [force|force_and_revert]", false);
+            (argc == 4 && strcmp(argv[3], "force_and_revert")) &&
+            (argc == 4 && strcmp(argv[3], "detach")))) {
+            cli->sendMsg(ResponseCode::CommandSyntaxError, "Usage: volume unmount <path> [force|force_and_revert|detach]", false);
             return 0;
         }
 
         bool force = false;
         bool revert = false;
+        bool detach = false;
         if (argc >= 4 && !strcmp(argv[3], "force")) {
             force = true;
         } else if (argc >= 4 && !strcmp(argv[3], "force_and_revert")) {
             force = true;
             revert = true;
         }
-        rc = vm->unmountVolume(argv[2], force, revert);
+        else if (argc >= 4 && !strcmp(argv[3], "detach")) {
+            detach = true;
+        }
+        rc = vm->unmountVolume(argv[2], force, revert, detach);
     } else if (!strcmp(argv[1], "format")) {
         if (argc < 3 || argc > 4 ||
             (argc == 4 && strcmp(argv[3], "wipe"))) {

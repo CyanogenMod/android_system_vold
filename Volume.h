@@ -69,7 +69,7 @@ public:
     virtual ~Volume();
 
     int mountVol();
-    int unmountVol(bool force, bool revert);
+    int unmountVol(bool force, bool revert, bool detach=false);
     int formatVol(bool wipe);
 
     const char* getLabel() { return mLabel; }
@@ -111,7 +111,7 @@ private:
     int initializeMbr(const char *deviceNode);
     bool isMountpointMounted(const char *path);
     int mountAsecExternal();
-    int doUnmount(const char *path, bool force);
+    int doUnmount(const char *path, bool force, bool detach);
     int extractMetadata(const char* devicePath);
 };
 
