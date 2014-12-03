@@ -632,11 +632,20 @@ int Volume::mountAsecExternal() {
     return 0;
 }
 
-int Volume::doUnmount(const char *path, bool force) {
+int Volume::doUnmount(const char *path, bool force, bool detach) {
     int retries = 10;
 
     if (mDebug) {
         SLOGD("Unmounting {%s}, force = %d", path, force);
+    }
+
+    if (detach) {
+        if (!umount2(path, MNT_DETACH) || errno == EINVAL || errno == ENOENT) {
+            SLOGI("%s sucessfully unmounted/detached", path);
+            return 0;
+        }
+        SLOGE("Failed to unmount/detach %s (%s)", path, strerror(errno));
+        return -1;
     }
 
     while (retries--) {
@@ -666,7 +675,7 @@ int Volume::doUnmount(const char *path, bool force) {
     return -1;
 }
 
-int Volume::unmountVol(bool force, bool revert) {
+int Volume::unmountVol(bool force, bool revert, bool detach) {
     int i, rc;
 
     int flags = getFlags();
@@ -689,19 +698,19 @@ int Volume::unmountVol(bool force, bool revert) {
 
     // TODO: determine failure mode if FUSE times out
 
-    if (providesAsec && doUnmount(Volume::SEC_ASECDIR_EXT, force) != 0) {
+    if (providesAsec && doUnmount(Volume::SEC_ASECDIR_EXT, force, detach) != 0) {
         SLOGE("Failed to unmount secure area on %s (%s)", getMountpoint(), strerror(errno));
         goto out_mounted;
     }
 
     /* Now that the fuse daemon is dead, unmount it */
-    if (doUnmount(getFuseMountpoint(), force) != 0) {
+    if (doUnmount(getFuseMountpoint(), force, detach) != 0) {
         SLOGE("Failed to unmount %s (%s)", getFuseMountpoint(), strerror(errno));
         goto fail_remount_secure;
     }
 
     /* Unmount the real sd card */
-    if (doUnmount(getMountpoint(), force) != 0) {
+    if (doUnmount(getMountpoint(), force, detach) != 0) {
         SLOGE("Failed to unmount %s (%s)", getMountpoint(), strerror(errno));
         goto fail_remount_secure;
     }
