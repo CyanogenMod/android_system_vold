@@ -380,7 +380,7 @@ void DirectVolume::handleDiskRemoved(const char * /*devpath*/,
             SLOGE("Failed to cleanup ASEC - unmount will probably fail!");
         }
 
-        if (Volume::unmountVol(true, false)) {
+        if (Volume::unmountVol(true, false, false)) {
             SLOGE("Failed to unmount volume on bad removal (%s)",
                  strerror(errno));
             // XXX: At this point we're screwed for now
@@ -427,7 +427,7 @@ void DirectVolume::handlePartitionRemoved(const char * /*devpath*/,
         mVm->getBroadcaster()->sendBroadcast(ResponseCode::VolumeBadRemoval,
                                              msg, false);
 
-        if (Volume::unmountVol(true, false)) {
+        if (Volume::unmountVol(true, false, false)) {
             SLOGE("Failed to unmount volume on bad removal (%s)", 
                  strerror(errno));
             // XXX: At this point we're screwed for now
