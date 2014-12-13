@@ -68,7 +68,7 @@ int Ext4::doMount(const char *fsPath, const char *mountPoint, bool ro, bool remo
         // Mount external volumes with forced context
         if (data[0])
             strlcat(data, ",", sizeof(data));
-        strlcat(data, "context=u:object_r:sdcard_external:s0", sizeof(data));
+        strlcat(data, "context=u:object_r:sdcard_posix:s0", sizeof(data));
     }
 
     rc = mount(fsPath, mountPoint, "ext4", flags, data);
