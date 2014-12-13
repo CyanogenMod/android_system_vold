@@ -55,7 +55,7 @@ include $(CLEAR_VARS)
 
 LOCAL_ADDITIONAL_DEPENDENCIES := $(LOCAL_PATH)/Android.mk
 LOCAL_MODULE := libvold
-LOCAL_CLANG := true
+LOCAL_CLANG := false
 LOCAL_SRC_FILES := $(common_src_files)
 LOCAL_C_INCLUDES := $(common_c_includes)
 LOCAL_SHARED_LIBRARIES := $(common_shared_libraries)
@@ -69,7 +69,7 @@ include $(CLEAR_VARS)
 
 LOCAL_ADDITIONAL_DEPENDENCIES := $(LOCAL_PATH)/Android.mk
 LOCAL_MODULE:= vold
-LOCAL_CLANG := true
+LOCAL_CLANG := false
 LOCAL_SRC_FILES := \
 	main.cpp \
 	$(common_src_files)
@@ -85,7 +85,7 @@ include $(BUILD_EXECUTABLE)
 include $(CLEAR_VARS)
 
 LOCAL_ADDITIONAL_DEPENDENCIES := $(LOCAL_PATH)/Android.mk
-LOCAL_CLANG := true
+LOCAL_CLANG := false
 LOCAL_SRC_FILES:= vdc.c
 LOCAL_MODULE:= vdc
 LOCAL_SHARED_LIBRARIES := libcutils
