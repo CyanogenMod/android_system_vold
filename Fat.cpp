@@ -50,7 +50,6 @@ static char MKDOSFS_PATH[] = "/system/bin/newfs_msdos";
 extern "C" int mount(const char *, const char *, const char *, unsigned long, const void *);
 
 int Fat::check(const char *fsPath) {
-    bool rw = true;
     if (access(FSCK_MSDOS_PATH, X_OK)) {
         SLOGW("Skipping fs checks\n");
         return 0;
@@ -170,7 +169,6 @@ int Fat::doMount(const char *fsPath, const char *mountPoint,
 }
 
 int Fat::format(const char *fsPath, unsigned int numSectors, bool wipe) {
-    int fd;
     const char *args[11];
     int rc;
     int status;

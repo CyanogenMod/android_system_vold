@@ -61,6 +61,7 @@ LOCAL_C_INCLUDES := $(common_c_includes)
 LOCAL_SHARED_LIBRARIES := $(common_shared_libraries)
 LOCAL_STATIC_LIBRARIES := $(common_static_libraries)
 LOCAL_MODULE_TAGS := eng tests
+LOCAL_CFLAGS := -Werror -Wall -Wno-missing-field-initializers
 
 LOCAL_CXX_STL := libc++
 include $(BUILD_STATIC_LIBRARY)
@@ -75,7 +76,7 @@ LOCAL_SRC_FILES := \
 	$(common_src_files)
 
 LOCAL_C_INCLUDES := $(common_c_includes)
-LOCAL_CFLAGS := -Werror=format
+LOCAL_CFLAGS := -Werror -Wall -Wno-missing-field-initializers
 LOCAL_SHARED_LIBRARIES := $(common_shared_libraries)
 LOCAL_STATIC_LIBRARIES := $(common_static_libraries)
 
@@ -89,5 +90,6 @@ LOCAL_CLANG := false
 LOCAL_SRC_FILES:= vdc.c
 LOCAL_MODULE:= vdc
 LOCAL_SHARED_LIBRARIES := libcutils
+LOCAL_CFLAGS := -Werror -Wall -Wno-missing-field-initializers
 
 include $(BUILD_EXECUTABLE)
