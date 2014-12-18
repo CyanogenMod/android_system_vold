@@ -112,7 +112,6 @@ int Ext4::resize(const char *fspath, unsigned int numSectors) {
 }
 
 int Ext4::format(const char *fsPath, unsigned int numSectors, const char *mountpoint) {
-    int fd;
     const char *args[7];
     int rc;
     int status;

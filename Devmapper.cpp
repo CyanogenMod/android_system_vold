@@ -296,7 +296,7 @@ int Devmapper::destroy(const char *name) {
 
 void *Devmapper::_align(void *ptr, unsigned int a)
 {
-        register unsigned long agn = --a;
+        unsigned long agn = --a;
 
         return (void *) (((unsigned long) ptr + agn) & ~agn);
 }

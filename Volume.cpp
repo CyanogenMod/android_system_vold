@@ -332,7 +332,7 @@ bool Volume::isMountpointMounted(const char *path) {
 
 int Volume::mountVol() {
     dev_t deviceNodes[4];
-    int n, i, rc = 0;
+    int n, i;
     char errmsg[255];
 
     int flags = getFlags();
@@ -454,7 +454,6 @@ int Volume::mountVol() {
         }
 
         errno = 0;
-        int gid;
 
         if (Fat::doMount(devicePath, getMountpoint(), false, false, false,
                 AID_MEDIA_RW, AID_MEDIA_RW, 0007, true)) {
@@ -549,8 +548,6 @@ int Volume::doUnmount(const char *path, bool force) {
 }
 
 int Volume::unmountVol(bool force, bool revert) {
-    int i, rc;
-
     int flags = getFlags();
     bool providesAsec = (flags & VOL_PROVIDES_ASEC) != 0;
 
