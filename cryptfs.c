@@ -972,7 +972,7 @@ static int load_crypto_mapping_table(struct crypt_mnt_ftr *crypt_ftr, unsigned c
                                      char *real_blk_name, const char *name, int fd,
                                      char *extra_params)
 {
-  char buffer[DM_CRYPT_BUF_SIZE];
+  _Alignas(struct dm_ioctl) char buffer[DM_CRYPT_BUF_SIZE];
   struct dm_ioctl *io;
   struct dm_target_spec *tgt;
   char *crypt_params;

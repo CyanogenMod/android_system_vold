@@ -51,45 +51,49 @@ common_static_libraries := \
 	libmincrypt \
 	libbatteryservice
 
+vold_conlyflags := -std=c11
+vold_cflags := -Werror -Wall -Wno-missing-field-initializers
+
 include $(CLEAR_VARS)
 
 LOCAL_ADDITIONAL_DEPENDENCIES := $(LOCAL_PATH)/Android.mk
 LOCAL_MODULE := libvold
-LOCAL_CLANG := false
+LOCAL_CLANG := true
 LOCAL_SRC_FILES := $(common_src_files)
 LOCAL_C_INCLUDES := $(common_c_includes)
 LOCAL_SHARED_LIBRARIES := $(common_shared_libraries)
 LOCAL_STATIC_LIBRARIES := $(common_static_libraries)
 LOCAL_MODULE_TAGS := eng tests
-LOCAL_CFLAGS := -Werror -Wall -Wno-missing-field-initializers
+LOCAL_CFLAGS := $(vold_cflags)
+LOCAL_CONLYFLAGS := $(vold_conlyflags)
 
-LOCAL_CXX_STL := libc++
 include $(BUILD_STATIC_LIBRARY)
 
 include $(CLEAR_VARS)
 
 LOCAL_ADDITIONAL_DEPENDENCIES := $(LOCAL_PATH)/Android.mk
 LOCAL_MODULE:= vold
-LOCAL_CLANG := false
+LOCAL_CLANG := true
 LOCAL_SRC_FILES := \
 	main.cpp \
 	$(common_src_files)
 
 LOCAL_C_INCLUDES := $(common_c_includes)
-LOCAL_CFLAGS := -Werror -Wall -Wno-missing-field-initializers
+LOCAL_CFLAGS := $(vold_cflags)
+LOCAL_CONLYFLAGS := $(vold_conlyflags)
 LOCAL_SHARED_LIBRARIES := $(common_shared_libraries)
 LOCAL_STATIC_LIBRARIES := $(common_static_libraries)
 
-LOCAL_CXX_STL := libc++
 include $(BUILD_EXECUTABLE)
 
 include $(CLEAR_VARS)
 
 LOCAL_ADDITIONAL_DEPENDENCIES := $(LOCAL_PATH)/Android.mk
-LOCAL_CLANG := false
+LOCAL_CLANG := true
 LOCAL_SRC_FILES:= vdc.c
 LOCAL_MODULE:= vdc
 LOCAL_SHARED_LIBRARIES := libcutils
-LOCAL_CFLAGS := -Werror -Wall -Wno-missing-field-initializers
+LOCAL_CFLAGS := $(vold_cflags)
+LOCAL_CONLYFLAGS := $(vold_conlyflags)
 
 include $(BUILD_EXECUTABLE)
