@@ -3436,7 +3436,6 @@ static int persist_set_key(const char *fieldname, const char *value, int encrypt
  * sequence and its index is greater than or equal to index. Return 0 otherwise.
  */
 static int match_multi_entry(const char *key, const char *field, unsigned index) {
-    unsigned int i;
     unsigned int field_len;
     unsigned int key_index;
     field_len = strlen(field);
