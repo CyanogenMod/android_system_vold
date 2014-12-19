@@ -67,6 +67,18 @@ common_static_libraries := \
 	libext2_blkid \
 	libext2_uuid_static
 
+ifneq ($(BOARD_VOLD_MAX_PARTITIONS),)
+common_cflags += -DVOLD_MAX_PARTITIONS=$(BOARD_VOLD_MAX_PARTITIONS)
+endif
+
+ifeq ($(BOARD_VOLD_EMMC_SHARES_DEV_MAJOR), true)
+common_cflags += -DVOLD_EMMC_SHARES_DEV_MAJOR
+endif
+
+ifeq ($(BOARD_VOLD_DISC_HAS_MULTIPLE_MAJORS), true)
+common_cflags += -DVOLD_DISC_HAS_MULTIPLE_MAJORS
+endif
+
 include $(CLEAR_VARS)
 
 LOCAL_MODULE := libvold
@@ -80,18 +92,6 @@ LOCAL_CFLAGS := $(common_cflags)
 LOCAL_SHARED_LIBRARIES := $(common_shared_libraries)
 
 LOCAL_STATIC_LIBRARIES := $(common_static_libraries)
-
-ifneq ($(BOARD_VOLD_MAX_PARTITIONS),)
-LOCAL_CFLAGS += -DVOLD_MAX_PARTITIONS=$(BOARD_VOLD_MAX_PARTITIONS)
-endif
-
-ifeq ($(BOARD_VOLD_EMMC_SHARES_DEV_MAJOR), true)
-LOCAL_CFLAGS += -DVOLD_EMMC_SHARES_DEV_MAJOR
-endif
-
-ifeq ($(BOARD_VOLD_DISC_HAS_MULTIPLE_MAJORS), true)
-LOCAL_CFLAGS += -DVOLD_DISC_HAS_MULTIPLE_MAJORS
-endif
 
 ifeq ($(TARGET_HW_DISK_ENCRYPTION),true)
 LOCAL_C_INCLUDES += device/qcom/common/cryptfs_hw
