@@ -19,6 +19,7 @@
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <mntent.h>
 
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -306,28 +307,22 @@ err:
 }
 
 bool Volume::isMountpointMounted(const char *path) {
-    char device[256];
-    char mount_path[256];
-    char rest[256];
-    FILE *fp;
-    char line[1024];
-
-    if (!(fp = fopen("/proc/mounts", "r"))) {
+    FILE *fp = setmntent("/proc/mounts", "r");
+    if (fp == NULL) {
         SLOGE("Error opening /proc/mounts (%s)", strerror(errno));
         return false;
     }
 
-    while(fgets(line, sizeof(line), fp)) {
-        line[strlen(line)-1] = '\0';
-        sscanf(line, "%255s %255s %255s\n", device, mount_path, rest);
-        if (!strcmp(mount_path, path)) {
-            fclose(fp);
-            return true;
+    bool found_path = false;
+    mntent* mentry;
+    while ((mentry = getmntent(fp)) != NULL) {
+        if (strcmp(mentry->mnt_dir, path) == 0) {
+            found_path = true;
+            break;
         }
     }
-
-    fclose(fp);
-    return false;
+    endmntent(fp);
+    return found_path;
 }
 
 int Volume::mountVol() {
