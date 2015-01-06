@@ -23,6 +23,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <fs_mgr.h>
+#include <stdio.h>
 #include <string.h>
 
 #define LOG_TAG "VoldCmdListener"
