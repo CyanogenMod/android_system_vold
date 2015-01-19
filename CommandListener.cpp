@@ -15,7 +15,9 @@
  */
 
 #include <stdlib.h>
+#include <sys/param.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
 #include <sys/types.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
@@ -322,8 +324,35 @@ void CommandListener::AsecCmd::listAsecsInDirectory(SocketClient *cli, const cha
     while (!readdir_r(d, dent, &result) && result != NULL) {
         if (dent->d_name[0] == '.')
             continue;
-        if (dent->d_type != DT_REG)
-            continue;
+
+        if (dent->d_type != DT_UNKNOWN) {
+            if (dent->d_type != DT_REG)
+                continue;
+        } else {
+            // d_type is not guaranteed to be populated (e.g. ExFAT)
+            char path[MAXPATHLEN];
+            struct stat sb;
+
+            if (strlen(directory) + strlen(dent->d_name) + 2 > MAXPATHLEN) {
+                ALOGW("asec list: combined path length too long");
+                continue;
+            }
+
+            strcpy(path, directory);
+            strcat(path, "/");
+            strcat(path, dent->d_name);
+
+            if (lstat(path, &sb) < 0) {
+                ALOGW("asec list: error lstat on %s", path);
+                continue;
+            }
+
+            if (!S_ISREG(sb.st_mode)) {
+                // Not a regular file
+                continue;
+            }
+        }
+
         size_t name_len = strlen(dent->d_name);
         if (name_len > 5 && name_len < 260 &&
                 !strcmp(&dent->d_name[name_len - 5], ".asec")) {
