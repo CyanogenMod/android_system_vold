@@ -36,6 +36,7 @@
 #include <string.h>
 #include <sys/mount.h>
 #include <openssl/evp.h>
+#include <openssl/sha.h>
 #include <errno.h>
 #include <ext4.h>
 #include <linux/kdev_t.h>

@@ -27,7 +27,6 @@
  */
 
 #include <cutils/properties.h>
-#include <openssl/sha.h>
 
 /* The current cryptfs version */
 #define CURRENT_MAJOR_VERSION 1
@@ -83,6 +82,10 @@
 
 /* __le32 and __le16 defined in system/extras/ext4_utils/ext4_utils.h */
 #define __le8  unsigned char
+
+#if !defined(SHA256_DIGEST_LENGTH)
+#define SHA256_DIGEST_LENGTH 32
+#endif
 
 struct crypt_mnt_ftr {
   __le32 magic;         /* See above */

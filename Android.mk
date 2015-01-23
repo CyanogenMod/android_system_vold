@@ -22,7 +22,6 @@ common_src_files := \
 common_c_includes := \
 	system/extras/ext4_utils \
 	system/extras/f2fs_utils \
-	external/openssl/include \
 	external/scrypt/lib/crypto \
 	frameworks/native/include \
 	system/security/keystore \
