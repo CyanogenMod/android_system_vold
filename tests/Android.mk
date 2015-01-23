@@ -5,8 +5,7 @@ include $(CLEAR_VARS)
 LOCAL_ADDITIONAL_DEPENDENCIES := $(LOCAL_PATH)/Android.mk
 
 LOCAL_C_INCLUDES := \
-    system/core/fs_mgr/include \
-    external/openssl/include \
+    system/core/fs_mgr/include
 
 LOCAL_SHARED_LIBRARIES := \
     liblog \
