@@ -2512,11 +2512,19 @@ static int cryptfs_enable_inplace_ext4(char *crypto_blkdev,
         goto errout;
     }
 
-    if ( (data.cryptofd = open(crypto_blkdev, O_WRONLY)) < 0) {
-        SLOGE("Error opening crypto_blkdev %s for ext4 inplace encrypt. err=%d(%s)\n",
-              crypto_blkdev, errno, strerror(errno));
-        rc = ENABLE_INPLACE_ERR_DEV;
-        goto errout;
+    // Wait until the block device appears.  Re-use the mount retry values since it is reasonable.
+    int retries = RETRY_MOUNT_ATTEMPTS;
+    while ((data.cryptofd = open(crypto_blkdev, O_WRONLY)) < 0) {
+        if (--retries) {
+            SLOGE("Error opening crypto_blkdev %s for ext4 inplace encrypt. err=%d(%s), retrying\n",
+                  crypto_blkdev, errno, strerror(errno));
+            sleep(RETRY_MOUNT_DELAY_SECONDS);
+        } else {
+            SLOGE("Error opening crypto_blkdev %s for ext4 inplace encrypt. err=%d(%s)\n",
+                  crypto_blkdev, errno, strerror(errno));
+            rc = ENABLE_INPLACE_ERR_DEV;
+            goto errout;
+        }
     }
 
     if (setjmp(setjmp_env)) {
