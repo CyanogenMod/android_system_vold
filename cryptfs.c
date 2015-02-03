@@ -235,20 +235,6 @@ static int keymaster_sign_object(struct crypt_mnt_ftr *ftr,
     //    necessary, but is necessary to ensure consistency in
     //    implementations.
     switch (ftr->kdf_type) {
-        case KDF_SCRYPT_KEYMASTER_UNPADDED:
-            // This is broken: It produces a message which is shorter than
-            // the public modulus, failing criterion 2.
-            memcpy(to_sign, object, object_size);
-            to_sign_size = object_size;
-            SLOGI("Signing unpadded object");
-            break;
-        case KDF_SCRYPT_KEYMASTER_BADLY_PADDED:
-            // This is broken: Since the value of object is uniformly
-            // distributed, it produces a message that is larger than the
-            // public modulus with probability 0.25.
-            memcpy(to_sign, object, min(RSA_KEY_SIZE_BYTES, object_size));
-            SLOGI("Signing end-padded object");
-            break;
         case KDF_SCRYPT_KEYMASTER:
             // This ensures the most significant byte of the signed message
             // is zero.  We could have zero-padded to the left instead, but
@@ -1270,8 +1256,6 @@ static int encrypt_master_key(const char *passwd, const unsigned char *salt,
     get_device_scrypt_params(crypt_ftr);
 
     switch (crypt_ftr->kdf_type) {
-    case KDF_SCRYPT_KEYMASTER_UNPADDED:
-    case KDF_SCRYPT_KEYMASTER_BADLY_PADDED:
     case KDF_SCRYPT_KEYMASTER:
         if (keymaster_create_key(crypt_ftr)) {
             SLOGE("keymaster_create_key failed");
@@ -1392,9 +1376,7 @@ static int decrypt_master_key_aux(char *passwd, unsigned char *salt,
 
 static void get_kdf_func(struct crypt_mnt_ftr *ftr, kdf_func *kdf, void** kdf_params)
 {
-    if (ftr->kdf_type == KDF_SCRYPT_KEYMASTER_UNPADDED ||
-        ftr->kdf_type == KDF_SCRYPT_KEYMASTER_BADLY_PADDED ||
-        ftr->kdf_type == KDF_SCRYPT_KEYMASTER) {
+    if (ftr->kdf_type == KDF_SCRYPT_KEYMASTER) {
         *kdf = scrypt_keymaster;
         *kdf_params = ftr;
     } else if (ftr->kdf_type == KDF_SCRYPT) {
