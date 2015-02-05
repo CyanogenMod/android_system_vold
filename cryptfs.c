@@ -567,6 +567,7 @@ static void upgrade_crypt_ftr(int fd, struct crypt_mnt_ftr *crypt_ftr, off64_t o
         /* Need to initialize the persistent data area */
         if (lseek64(fd, pdata_offset, SEEK_SET) == -1) {
             SLOGE("Cannot seek to persisent data offset\n");
+            free(pdata);
             return;
         }
         /* Write all zeros to the first copy, making it invalid */
@@ -581,6 +582,7 @@ static void upgrade_crypt_ftr(int fd, struct crypt_mnt_ftr *crypt_ftr, off64_t o
         crypt_ftr->persist_data_offset[0] = pdata_offset;
         crypt_ftr->persist_data_offset[1] = pdata_offset + CRYPT_PERSIST_DATA_SIZE;
         crypt_ftr->minor_version = 1;
+        free(pdata);
     }
 
     if ((crypt_ftr->major_version == 1) && (crypt_ftr->minor_version == 1)) {
