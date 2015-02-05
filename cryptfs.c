@@ -876,13 +876,13 @@ static int save_persistent_data(void)
     }
 
     /* Write the new copy first, if successful, then erase the old copy */
-    if (lseek(fd, write_offset, SEEK_SET) < 0) {
+    if (lseek64(fd, write_offset, SEEK_SET) < 0) {
         SLOGE("Cannot seek to write persistent data");
         goto err2;
     }
     if (unix_write(fd, persist_data, crypt_ftr.persist_data_size) ==
         (int) crypt_ftr.persist_data_size) {
-        if (lseek(fd, erase_offset, SEEK_SET) < 0) {
+        if (lseek64(fd, erase_offset, SEEK_SET) < 0) {
             SLOGE("Cannot seek to erase previous persistent data");
             goto err2;
         }
