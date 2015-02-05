@@ -326,7 +326,7 @@ static void ioctl_init(struct dm_ioctl *io, size_t dataSize, const char *name, u
     io->version[2] = 0;
     io->flags = flags;
     if (name) {
-        strncpy(io->name, name, sizeof(io->name));
+        strlcpy(io->name, name, sizeof(io->name));
     }
 }
 
