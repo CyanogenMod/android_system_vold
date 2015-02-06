@@ -1203,14 +1203,12 @@ bool VolumeManager::isAsecInDirectory(const char *dir, const char *asecName) con
     int dirfd = open(dir, O_DIRECTORY);
     if (dirfd < 0) {
         SLOGE("Couldn't open internal ASEC dir (%s)", strerror(errno));
-        return -1;
+        return false;
     }
 
-    bool ret = false;
-
-    if (!faccessat(dirfd, asecName, F_OK, AT_SYMLINK_NOFOLLOW)) {
-        ret = true;
-    }
+    struct stat sb;
+    bool ret = (fstatat(dirfd, asecName, &sb, AT_SYMLINK_NOFOLLOW) == 0)
+        && S_ISREG(sb.st_mode);
 
     close(dirfd);
 
