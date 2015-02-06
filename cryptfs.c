@@ -3310,49 +3310,6 @@ int cryptfs_enable_default(char *howarg, int allow_reboot)
                           DEFAULT_PASSWORD, allow_reboot);
 }
 
-static int device_is_force_encrypted() {
-    int ret = -1;
-    char value[PROP_VALUE_MAX];
-    ret = __system_property_get("ro.vold.forceencryption", value);
-    if (ret < 0)
-        return 0;
-    return strcmp(value, "1") ? 0 : 1;
-}
-
-int cryptfs_maybe_enable_default_crypto()
-{
-    // Enable default crypt if /forceencrypt or /encryptable and
-    // ro.vold.forceencrypt=1, else mount data and continue unencrypted
-    struct fstab_rec *fstab_rec = 0;
-    fstab_rec = fs_mgr_get_entry_for_mount_point(fstab, DATA_MNT_POINT);
-    if (!fstab_rec) {
-        SLOGE("Error getting fstab record");
-        return -1;
-    }
-
-    // See if we should encrypt?
-    if (      !fs_mgr_is_encryptable(fstab_rec)
-           || (!fs_mgr_is_force_encrypted(fstab_rec)
-               && !device_is_force_encrypted())) {
-        int rc = 0;
-
-        rc = fs_mgr_do_mount(fstab, DATA_MNT_POINT, fstab_rec->blk_device, 0);
-        property_set("vold.decrypt", "trigger_load_persist_props");
-
-        /* Create necessary paths on /data */
-        if (prep_data_fs()) {
-            return -1;
-        }
-
-        property_set("ro.crypto.state", "unencrypted");
-        property_set("vold.decrypt", "trigger_restart_framework");
-        SLOGD("Unencrypted - restart_framework\n");
-        return rc;
-    }
-
-    return cryptfs_enable_default("inplace", 0);
-}
-
 int cryptfs_changepw(int crypt_type, const char *newpw)
 {
     struct crypt_mnt_ftr crypt_ftr;
