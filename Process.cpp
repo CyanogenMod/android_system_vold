@@ -110,7 +110,7 @@ int Process::checkFileDescriptorSymLinks(int pid, const char *mountPoint, char *
         if (readSymLink(path, link, sizeof(link)) && pathMatchesMountPoint(link, mountPoint)) {
             if (openFilename) {
                 memset(openFilename, 0, max);
-                strncpy(openFilename, link, max-1);
+                strlcpy(openFilename, link, max);
             }
             closedir(dir);
             return 1;
@@ -140,7 +140,7 @@ int Process::checkFileMaps(int pid, const char *mountPoint, char *openFilename, 
         if (path && pathMatchesMountPoint(path, mountPoint)) {
             if (openFilename) {
                 memset(openFilename, 0, max);
-                strncpy(openFilename, path, max-1);
+                strlcpy(openFilename, path, max);
             }
             fclose(file);
             return 1;

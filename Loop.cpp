@@ -121,7 +121,7 @@ int Loop::lookupActive(const char *id, char *buffer, size_t len) {
         errno = ENOENT;
         return -1;
     }
-    strncpy(buffer, filename, len -1);
+    strlcpy(buffer, filename, len);
     return 0;
 }
 
@@ -191,7 +191,7 @@ int Loop::create(const char *id, const char *loopFile, char *loopDeviceBuffer, s
         return -1;
     }
 
-    strncpy(loopDeviceBuffer, filename, len -1);
+    strlcpy(loopDeviceBuffer, filename, len);
 
     int file_fd;
 

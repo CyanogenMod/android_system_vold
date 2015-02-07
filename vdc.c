@@ -145,8 +145,7 @@ static int do_monitor(int sock, int stop_after_cmd) {
                     int code;
                     char tmp[4];
 
-                    strncpy(tmp, buffer + offset, 3);
-                    tmp[3] = '\0';
+                    strlcpy(tmp, buffer + offset, sizeof(tmp));
                     code = atoi(tmp);
 
                     printf("%s\n", buffer + offset);
