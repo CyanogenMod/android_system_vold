@@ -235,7 +235,6 @@ extern "C" {
   int cryptfs_enable(char *flag, int type, char *passwd, int allow_reboot);
   int cryptfs_changepw(int type, const char *newpw);
   int cryptfs_enable_default(char *flag, int allow_reboot);
-  int cryptfs_maybe_enable_default_crypto();
   int cryptfs_setup_volume(const char *label, int major, int minor,
                            char *crypto_dev_path, unsigned int max_pathlen,
                            int *new_major, int *new_minor);
