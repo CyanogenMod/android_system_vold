@@ -3145,6 +3145,7 @@ int cryptfs_enable_internal(char *howarg, int crypt_type, char *passwd,
         strlcpy((char *)crypt_ftr.crypto_type_name, "aes-cbc-essiv:sha256", MAX_CRYPTO_TYPE_NAME_LEN);
 #else
         strlcpy((char *)crypt_ftr.crypto_type_name, "aes-xts", MAX_CRYPTO_TYPE_NAME_LEN);
+        wipe_hw_device_encryption_key((char*)crypt_ftr.crypto_type_name);
         key_index = set_hw_device_encryption_key(passwd, (char*)crypt_ftr.crypto_type_name);
         if (key_index < 0)
           goto error_shutting_down;
