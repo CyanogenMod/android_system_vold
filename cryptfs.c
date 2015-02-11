@@ -3285,6 +3285,7 @@ int cryptfs_enable_default(char *howarg, int allow_reboot)
 int cryptfs_changepw(int crypt_type, const char *newpw)
 {
     struct crypt_mnt_ftr crypt_ftr;
+    int rc;
 
     /* This is only allowed after we've successfully decrypted the master key */
     if (!master_key_saved) {
@@ -3310,17 +3311,19 @@ int cryptfs_changepw(int crypt_type, const char *newpw)
         newpw = adjusted_passwd;
     }
 
-    encrypt_master_key(crypt_type == CRYPT_TYPE_DEFAULT ? DEFAULT_PASSWORD
+    rc = encrypt_master_key(crypt_type == CRYPT_TYPE_DEFAULT ? DEFAULT_PASSWORD
                                                         : newpw,
                        crypt_ftr.salt,
                        saved_master_key,
                        crypt_ftr.master_key,
                        &crypt_ftr);
-
+    free(adjusted_passwd);
+    if (rc) {
+        SLOGE("Encrypt master key failed: %d", rc);
+        return -1;
+    }
     /* save the key */
     put_crypt_ftr_and_key(&crypt_ftr);
-
-    free(adjusted_passwd);
 
 #ifdef CONFIG_HW_DISK_ENCRYPTION
     if (!strcmp((char *)crypt_ftr.crypto_type_name, "aes-xts")) {
