@@ -385,6 +385,9 @@ void DirectVolume::handleDiskRemoved(const char * /*devpath*/,
         }
     }
 
+    for (int i = 0; i < MAX_PARTITIONS; i++)
+        mPartMinors[i] = -1;
+
     setState(Volume::State_NoMedia);
 }
 
