@@ -73,6 +73,12 @@ int Ext4::doMount(const char *fsPath, const char *mountPoint, bool ro, bool remo
 
     rc = mount(fsPath, mountPoint, "ext4", flags, data);
 
+    if (sdcard && rc == 0) {
+        // Write access workaround
+        chown(mountPoint, AID_MEDIA_RW, AID_MEDIA_RW);
+        chmod(mountPoint, 0755);
+    }
+
     if (rc && errno == EROFS) {
         SLOGE("%s appears to be a read only filesystem - retrying mount RO", fsPath);
         flags |= MS_RDONLY;
