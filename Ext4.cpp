@@ -40,6 +40,8 @@
 
 #include <logwrap/logwrap.h>
 
+#include <private/android_filesystem_config.h>
+
 #include "Ext4.h"
 #include "VoldUtil.h"
 
