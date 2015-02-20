@@ -3685,15 +3685,21 @@ int cryptfs_changepw(int crypt_type, const char *newpw)
         newpw = adjusted_passwd;
     }
 
-    encrypt_master_key(crypt_type == CRYPT_TYPE_DEFAULT ? DEFAULT_PASSWORD
-                                                        : newpw,
+    if (encrypt_master_key(crypt_type == CRYPT_TYPE_DEFAULT ? DEFAULT_PASSWORD
+                                                            : newpw,
                        crypt_ftr.salt,
                        saved_master_key,
                        crypt_ftr.master_key,
-                       &crypt_ftr);
+                       &crypt_ftr)) {
+        SLOGE("Error encrypting master key");
+        return -1;
+    }
 
     /* save the key */
-    put_crypt_ftr_and_key(&crypt_ftr);
+    if (put_crypt_ftr_and_key(&crypt_ftr)) {
+        SLOGE("Failed to save key");
+        return -1;
+    }
 
     free(adjusted_passwd);
 
