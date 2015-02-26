@@ -58,7 +58,7 @@
 #include "CheckBattery.h"
 #include "Process.h"
 
-#include <hardware/keymaster.h>
+#include <hardware/keymaster0.h>
 
 #define UNUSED __attribute__((unused))
 
@@ -98,7 +98,7 @@ static char *saved_mount_point;
 static int  master_key_saved = 0;
 static struct crypt_persist_data *persist_data = NULL;
 
-static int keymaster_init(keymaster_device_t **keymaster_dev)
+static int keymaster_init(keymaster0_device_t **keymaster_dev)
 {
     int rc;
 
@@ -109,7 +109,7 @@ static int keymaster_init(keymaster_device_t **keymaster_dev)
         goto out;
     }
 
-    rc = keymaster_open(mod, keymaster_dev);
+    rc = keymaster0_open(mod, keymaster_dev);
     if (rc) {
         ALOGE("could not open keymaster device in %s (%s)",
             KEYSTORE_HARDWARE_MODULE_ID, strerror(-rc));
@@ -126,7 +126,7 @@ out:
 /* Should we use keymaster? */
 static int keymaster_check_compatibility()
 {
-    keymaster_device_t *keymaster_dev = 0;
+    keymaster0_device_t *keymaster_dev = 0;
     int rc = 0;
 
     if (keymaster_init(&keymaster_dev)) {
@@ -149,7 +149,7 @@ static int keymaster_check_compatibility()
     }
 
 out:
-    keymaster_close(keymaster_dev);
+    keymaster0_close(keymaster_dev);
     return rc;
 }
 
@@ -157,7 +157,7 @@ out:
 static int keymaster_create_key(struct crypt_mnt_ftr *ftr)
 {
     uint8_t* key = 0;
-    keymaster_device_t *keymaster_dev = 0;
+    keymaster0_device_t *keymaster_dev = 0;
 
     if (keymaster_init(&keymaster_dev)) {
         SLOGE("Failed to init keymaster");
@@ -189,7 +189,7 @@ static int keymaster_create_key(struct crypt_mnt_ftr *ftr)
     ftr->keymaster_blob_size = key_size;
 
 out:
-    keymaster_close(keymaster_dev);
+    keymaster0_close(keymaster_dev);
     free(key);
     return rc;
 }
@@ -202,7 +202,7 @@ static int keymaster_sign_object(struct crypt_mnt_ftr *ftr,
                                  size_t *signature_size)
 {
     int rc = 0;
-    keymaster_device_t *keymaster_dev = 0;
+    keymaster0_device_t *keymaster_dev = 0;
     if (keymaster_init(&keymaster_dev)) {
         SLOGE("Failed to init keymaster");
         return -1;
@@ -276,7 +276,7 @@ static int keymaster_sign_object(struct crypt_mnt_ftr *ftr,
                                   signature,
                                   signature_size);
 
-    keymaster_close(keymaster_dev);
+    keymaster0_close(keymaster_dev);
     return rc;
 }
 
