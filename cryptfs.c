@@ -2278,6 +2278,11 @@ static int cryptfs_enable_wipe(char *crypto_blkdev, off64_t size, int type)
  */
 #define BLOCKS_AT_A_TIME 8
 
+/* Number of blocks to write before an explicit flush
+   to reduce disk buffer usage during inplace encryption
+ */
+#define BLOCKS_BEFORE_FLUSH 128
+
 struct encryptGroupsData
 {
     int realfd;
@@ -2369,6 +2374,8 @@ static void log_progress(struct encryptGroupsData const* data, bool completed)
 
 static int flush_outstanding_data(struct encryptGroupsData* data)
 {
+    static int64_t blocks_bufferred = 0;
+
     if (data->count == 0) {
         return 0;
     }
@@ -2391,6 +2398,12 @@ static int flush_outstanding_data(struct encryptGroupsData* data)
         return -1;
     } else {
       log_progress(data, false);
+    }
+
+    blocks_bufferred += data->count;
+    if (blocks_bufferred >= BLOCKS_BEFORE_FLUSH) {
+        fdatasync(data->cryptofd);
+        blocks_bufferred = 0;
     }
 
     data->count = 0;
