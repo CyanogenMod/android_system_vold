@@ -17,7 +17,12 @@ common_src_files := \
 	CheckBattery.cpp \
 	VoldUtil.c \
 	fstrim.c \
-	cryptfs.c
+	cryptfs.c \
+	Disk.cpp \
+	VolumeBase.cpp \
+	PublicVolume.cpp \
+	EmulatedVolume.cpp \
+	Utils.cpp \
 
 common_c_includes := \
 	system/extras/ext4_utils \
@@ -51,7 +56,7 @@ common_static_libraries := \
 	libbatteryservice
 
 vold_conlyflags := -std=c11
-vold_cflags := -Werror -Wall -Wno-missing-field-initializers
+vold_cflags := -Werror -Wall -Wno-missing-field-initializers -Wno-unused-variable -Wno-unused-parameter
 
 include $(CLEAR_VARS)
 
