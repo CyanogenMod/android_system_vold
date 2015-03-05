@@ -62,7 +62,6 @@ static void *do_fstrim_filesystems(void *thread_arg)
     int fd;
     int ret = 0;
     struct fstrim_range range = { 0 };
-    struct stat sb;
     extern struct fstab *fstab;
     int deep_trim = !!thread_arg;
 
@@ -90,18 +89,7 @@ static void *do_fstrim_filesystems(void *thread_arg)
             continue; /* Should we trim fat32 filesystems? */
         }
 
-        if (stat(fstab->recs[i].mount_point, &sb) == -1) {
-            SLOGE("Cannot stat mount point %s\n", fstab->recs[i].mount_point);
-            ret = -1;
-            continue;
-        }
-        if (!S_ISDIR(sb.st_mode)) {
-            SLOGE("%s is not a directory\n", fstab->recs[i].mount_point);
-            ret = -1;
-            continue;
-        }
-
-        fd = open(fstab->recs[i].mount_point, O_RDONLY);
+        fd = open(fstab->recs[i].mount_point, O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW);
         if (fd < 0) {
             SLOGE("Cannot open %s for FITRIM\n", fstab->recs[i].mount_point);
             ret = -1;
