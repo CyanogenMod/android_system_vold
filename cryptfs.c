@@ -1804,8 +1804,10 @@ int cryptfs_enable(char *howarg, char *passwd)
     strlcpy((char *)crypt_ftr.crypto_type_name, "aes-cbc-essiv:sha256", MAX_CRYPTO_TYPE_NAME_LEN);
 #else
     strlcpy((char *)crypt_ftr.crypto_type_name, "aes-xts", MAX_CRYPTO_TYPE_NAME_LEN);
-    if(!set_hw_device_encryption_key(passwd, (char*)crypt_ftr.crypto_type_name))
+    if(!set_hw_device_encryption_key(passwd, (char*)crypt_ftr.crypto_type_name)) {
+        SLOGE("error setting hw device encryption key");
         goto error_shutting_down;
+    }
 #endif
 
     /* Do extra work for a better UX when doing the long inplace encryption */
@@ -1851,7 +1853,10 @@ int cryptfs_enable(char *howarg, char *passwd)
     }
 
     /* Write the key to the end of the partition */
-    put_crypt_ftr_and_key(&crypt_ftr);
+    if (put_crypt_ftr_and_key(&crypt_ftr)) {
+        SLOGE("Failed to write the key to the end of the partition\n");
+        goto error_unencrypted;
+    }
 
     /* If any persistent data has been remembered, save it.
      * If none, create a valid empty table and save that.
@@ -1867,7 +1872,10 @@ int cryptfs_enable(char *howarg, char *passwd)
         save_persistent_data();
     }
 
-    decrypt_master_key(passwd, decrypted_master_key, &crypt_ftr);
+    if (decrypt_master_key(passwd, decrypted_master_key, &crypt_ftr)) {
+        SLOGE("failed to decrypt master key\n");
+        goto error_unencrypted;
+    }
     create_crypto_blk_dev(&crypt_ftr, decrypted_master_key, real_blkdev, crypto_blkdev,
                           "userdata");
 
