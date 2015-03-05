@@ -3184,7 +3184,10 @@ int cryptfs_enable_internal(char *howarg, int crypt_type, char *passwd,
         }
 
         /* Write the key to the end of the partition */
-        put_crypt_ftr_and_key(&crypt_ftr);
+        if (put_crypt_ftr_and_key(&crypt_ftr)) {
+            SLOGE("Error writing the key to the end of the partition\n");
+            goto error_shutting_down;
+        }
 
         /* If any persistent data has been remembered, save it.
          * If none, create a valid empty table and save that.
