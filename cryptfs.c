@@ -53,6 +53,7 @@
 #include "VolumeManager.h"
 #include "VoldUtil.h"
 #include "crypto_scrypt.h"
+#include "ext4_crypt.h"
 #include "ext4_utils.h"
 #include "f2fs_sparseblock.h"
 #include "CheckBattery.h"
@@ -1656,11 +1657,37 @@ static int cryptfs_restart_internal(int restart_main)
 
 int cryptfs_restart(void)
 {
+    SLOGI("cryptfs_restart");
+    if (e4crypt_crypto_complete(DATA_MNT_POINT) == 0) {
+        struct fstab_rec* rec;
+        int rc;
+
+        if (e4crypt_restart(DATA_MNT_POINT)) {
+            SLOGE("Can't unmount e4crypt temp volume\n");
+            return -1;
+        }
+
+        rec = fs_mgr_get_entry_for_mount_point(fstab, DATA_MNT_POINT);
+        if (!rec) {
+            SLOGE("Can't get fstab record for %s\n", DATA_MNT_POINT);
+            return -1;
+        }
+
+        rc = fs_mgr_do_mount(fstab, DATA_MNT_POINT, rec->blk_device, 0);
+        if (rc) {
+            SLOGE("Can't mount %s\n", DATA_MNT_POINT);
+            return rc;
+        }
+
+        property_set("vold.decrypt", "trigger_restart_framework");
+        return 0;
+    }
+
     /* Call internal implementation forcing a restart of main service group */
     return cryptfs_restart_internal(1);
 }
 
-static int do_crypto_complete(char *mount_point UNUSED)
+static int do_crypto_complete(char *mount_point)
 {
   struct crypt_mnt_ftr crypt_ftr;
   char encrypted_state[PROPERTY_VALUE_MAX];
@@ -1670,6 +1697,10 @@ static int do_crypto_complete(char *mount_point UNUSED)
   if (strcmp(encrypted_state, "encrypted") ) {
     SLOGE("not running with encryption, aborting");
     return CRYPTO_COMPLETE_NOT_ENCRYPTED;
+  }
+
+  if (e4crypt_crypto_complete(mount_point) == 0) {
+    return CRYPTO_COMPLETE_ENCRYPTED;
   }
 
   if (get_crypt_ftr_and_key(&crypt_ftr)) {
@@ -1994,6 +2025,11 @@ char* adjust_passwd(const char* passwd)
 
 int cryptfs_check_passwd(char *passwd)
 {
+    SLOGI("cryptfs_check_passwd");
+    if (e4crypt_crypto_complete(DATA_MNT_POINT) == 0) {
+        return e4crypt_check_passwd(DATA_MNT_POINT, passwd);
+    }
+
     struct crypt_mnt_ftr crypt_ftr;
     int rc;
 
@@ -3284,6 +3320,10 @@ int cryptfs_enable_default(char *howarg, int allow_reboot)
 
 int cryptfs_changepw(int crypt_type, const char *newpw)
 {
+    if (e4crypt_crypto_complete(DATA_MNT_POINT) == 0) {
+        return e4crypt_change_password(DATA_MNT_POINT, crypt_type, newpw);
+    }
+
     struct crypt_mnt_ftr crypt_ftr;
     int rc;
 
@@ -3694,6 +3734,10 @@ int cryptfs_mount_default_encrypted(void)
  */
 int cryptfs_get_password_type(void)
 {
+    if (e4crypt_crypto_complete(DATA_MNT_POINT) == 0) {
+        return e4crypt_get_password_type(DATA_MNT_POINT);
+    }
+
     struct crypt_mnt_ftr crypt_ftr;
 
     if (get_crypt_ftr_and_key(&crypt_ftr)) {
@@ -3708,8 +3752,12 @@ int cryptfs_get_password_type(void)
     return crypt_ftr.crypt_type;
 }
 
-char* cryptfs_get_password()
+const char* cryptfs_get_password()
 {
+    if (e4crypt_crypto_complete(DATA_MNT_POINT) == 0) {
+        return e4crypt_get_password(DATA_MNT_POINT);
+    }
+
     struct timespec now;
     clock_gettime(CLOCK_BOOTTIME, &now);
     if (now.tv_sec < password_expiry_time) {

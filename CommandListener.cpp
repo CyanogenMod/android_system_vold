@@ -708,7 +708,7 @@ int CommandListener::CryptfsCmd::runCommand(SocketClient *cli,
     } else if (!strcmp(argv[1], "getpw")) {
         SLOGD("cryptfs getpw");
         dumpArgs(argc, argv, -1);
-        char* password = cryptfs_get_password();
+        const char* password = cryptfs_get_password();
         if (password) {
             char* message = 0;
             int size = asprintf(&message, "{{sensitive}} %s", password);
