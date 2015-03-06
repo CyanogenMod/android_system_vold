@@ -88,6 +88,9 @@ static void *do_fstrim_filesystems(void *thread_arg)
         if (fs_mgr_is_voldmanaged(&fstab->recs[i])) {
             continue; /* Should we trim fat32 filesystems? */
         }
+        if (fs_mgr_is_notrim(&fstab->recs[i])) {
+            continue;
+        }
 
         fd = open(fstab->recs[i].mount_point, O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW);
         if (fd < 0) {
