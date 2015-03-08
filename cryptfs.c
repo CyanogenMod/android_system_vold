@@ -2151,6 +2151,7 @@ int cryptfs_verify_passwd(char *passwd)
         char* adjusted_passwd = adjust_passwd(passwd);
         if (adjusted_passwd) {
             passwd = adjusted_passwd;
+            free(adjusted_passwd);
         }
 
         decrypt_master_key(passwd, decrypted_master_key, &crypt_ftr, 0, 0);
@@ -2162,8 +2163,6 @@ int cryptfs_verify_passwd(char *passwd)
             sleep(1);
             rc = 1;
         }
-
-        free(adjusted_passwd);
     }
 
     return rc;
@@ -3617,12 +3616,10 @@ int cryptfs_enable(char *howarg, int type, char *passwd, int allow_reboot)
     char* adjusted_passwd = adjust_passwd(passwd);
     if (adjusted_passwd) {
         passwd = adjusted_passwd;
+        free(adjusted_passwd);
     }
 
-    int rc = cryptfs_enable_internal(howarg, type, passwd, allow_reboot);
-
-    free(adjusted_passwd);
-    return rc;
+    return cryptfs_enable_internal(howarg, type, passwd, allow_reboot);
 }
 
 int cryptfs_enable_default(char *howarg, int allow_reboot)
@@ -3658,6 +3655,7 @@ int cryptfs_changepw(int crypt_type, const char *newpw)
     char* adjusted_passwd = adjust_passwd(newpw);
     if (adjusted_passwd) {
         newpw = adjusted_passwd;
+        free(adjusted_passwd);
     }
 
     if (encrypt_master_key(crypt_type == CRYPT_TYPE_DEFAULT ? DEFAULT_PASSWORD
