@@ -3667,6 +3667,7 @@ int cryptfs_changepw(int crypt_type, const char *newpw)
                        crypt_ftr.master_key,
                        &crypt_ftr)) {
         SLOGE("Error encrypting master key");
+        free(adjusted_passwd);
         return -1;
     }
 
@@ -3681,6 +3682,7 @@ int cryptfs_changepw(int crypt_type, const char *newpw)
         update_hw_device_encryption_key(crypt_type == CRYPT_TYPE_DEFAULT ?
                                     DEFAULT_PASSWORD : newpw,
                                     (char*)crypt_ftr.crypto_type_name);
+    free(adjusted_passwd);
 #endif
     return 0;
 }
