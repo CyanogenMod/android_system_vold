@@ -3594,7 +3594,7 @@ int cryptfs_pfe_boot(void)
     }
 
     if (!(crypt_ftr.flags & CRYPT_PFE_ACTIVATED) ) {
-        SLOGE("PFE not activated");
+        SLOGI("PFE not activated");
         goto exit_err;
     }
 
