@@ -203,6 +203,23 @@ struct volume_info {
 #define ENABLE_INPLACE_ERR_OTHER -1
 #define ENABLE_INPLACE_ERR_DEV -2  /* crypto_blkdev issue */
 
+/* Return values for cryptfs_getfield */
+#define CRYPTO_GETFIELD_OK                   0
+#define CRYPTO_GETFIELD_ERROR_NO_FIELD      -1
+#define CRYPTO_GETFIELD_ERROR_OTHER         -2
+#define CRYPTO_GETFIELD_ERROR_BUF_TOO_SMALL -3
+
+/* Return values for cryptfs_setfield */
+#define CRYPTO_SETFIELD_OK                    0
+#define CRYPTO_SETFIELD_ERROR_OTHER          -1
+#define CRYPTO_SETFIELD_ERROR_FIELD_TOO_LONG -2
+#define CRYPTO_SETFIELD_ERROR_VALUE_TOO_LONG -3
+
+/* Return values for persist_del_key */
+#define PERSIST_DEL_KEY_OK                 0
+#define PERSIST_DEL_KEY_ERROR_OTHER       -1
+#define PERSIST_DEL_KEY_ERROR_NO_FIELD    -2
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -224,8 +241,8 @@ extern "C" {
                            char *crypto_dev_path, unsigned int max_pathlen,
                            int *new_major, int *new_minor);
   int cryptfs_revert_volume(const char *label);
-  int cryptfs_getfield(char *fieldname, char *value, int len);
-  int cryptfs_setfield(char *fieldname, char *value);
+  int cryptfs_getfield(const char *fieldname, char *value, int len);
+  int cryptfs_setfield(const char *fieldname, const char *value);
   int cryptfs_mount_default_encrypted(void);
   int cryptfs_get_password_type(void);
   char* cryptfs_get_password(void);
