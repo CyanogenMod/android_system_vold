@@ -656,17 +656,33 @@ int CommandListener::CryptfsCmd::runCommand(SocketClient *cli,
         SLOGD("cryptfs verifypw {}");
         rc = cryptfs_verify_passwd(argv[2]);
     } else if (!strcmp(argv[1], "getfield")) {
-        char valbuf[PROPERTY_VALUE_MAX];
+        char *valbuf;
+        int valbuf_len = PROPERTY_VALUE_MAX;
 
         if (argc != 3) {
             cli->sendMsg(ResponseCode::CommandSyntaxError, "Usage: cryptfs getfield <fieldname>", false);
             return 0;
         }
         dumpArgs(argc, argv, -1);
-        rc = cryptfs_getfield(argv[2], valbuf, sizeof(valbuf));
-        if (rc == 0) {
+
+        // Increase the buffer size until it is big enough for the field value stored.
+        while (1) {
+            valbuf = (char*)malloc(valbuf_len);
+            if (valbuf == NULL) {
+                cli->sendMsg(ResponseCode::OperationFailed, "Failed to allocate memory", false);
+                return 0;
+            }
+            rc = cryptfs_getfield(argv[2], valbuf, valbuf_len);
+            if (rc != CRYPTO_GETFIELD_ERROR_BUF_TOO_SMALL) {
+                break;
+            }
+            free(valbuf);
+            valbuf_len *= 2;
+        }
+        if (rc == CRYPTO_GETFIELD_OK) {
             cli->sendMsg(ResponseCode::CryptfsGetfieldResult, valbuf, false);
         }
+        free(valbuf);
     } else if (!strcmp(argv[1], "setfield")) {
         if (argc != 4) {
             cli->sendMsg(ResponseCode::CommandSyntaxError, "Usage: cryptfs setfield <fieldname> <value>", false);
@@ -704,8 +720,14 @@ int CommandListener::CryptfsCmd::runCommand(SocketClient *cli,
         dumpArgs(argc, argv, -1);
         char* password = cryptfs_get_password();
         if (password) {
-            cli->sendMsg(ResponseCode::CommandOkay, password, false);
-            return 0;
+            char* message = 0;
+            int size = asprintf(&message, "{{sensitive}} %s", password);
+            if (size != -1) {
+                cli->sendMsg(ResponseCode::CommandOkay, message, false);
+                memset(message, 0, size);
+                free (message);
+                return 0;
+            }
         }
         rc = -1;
     } else if (!strcmp(argv[1], "clearpw")) {
