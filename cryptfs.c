@@ -41,6 +41,7 @@
 #include <linux/kdev_t.h>
 #include <fs_mgr.h>
 #include <time.h>
+#include <math.h>
 #include "cryptfs.h"
 #define LOG_TAG "Cryptfs"
 #include "cutils/log.h"
@@ -151,7 +152,8 @@ static int keymaster_check_compatibility()
         goto out;
     }
 
-    if (keymaster_dev->flags & KEYMASTER_BLOBS_ARE_STANDALONE) {
+    if (!(keymaster_dev->flags & KEYMASTER_SOFTWARE_ONLY) &&
+        (keymaster_dev->flags & KEYMASTER_BLOBS_ARE_STANDALONE)) {
         rc = 1;
     }
 
@@ -1974,7 +1976,10 @@ int cryptfs_setup_volume(const char *label, int major, int minor,
     create_crypto_blk_dev(&sd_crypt_ftr, saved_master_key, real_blkdev, 
                           crypto_blkdev, label);
 
-    stat(crypto_blkdev, &statbuf);
+    if (stat(crypto_blkdev, &statbuf) < 0) {
+        SLOGE("Error get stat for crypto_blkdev %s. err=%d(%s)\n",
+              crypto_blkdev, errno, strerror(errno));
+    }
     *new_major = MAJOR(statbuf.st_rdev);
     *new_minor = MINOR(statbuf.st_rdev);
 
@@ -2274,7 +2279,11 @@ static int cryptfs_enable_wipe(char *crypto_blkdev, off64_t size, int type)
 /* aligned 32K writes tends to make flash happy.
  * SD card association recommends it.
  */
+#ifndef CONFIG_HW_DISK_ENCRYPTION
 #define BLOCKS_AT_A_TIME 8
+#else
+#define BLOCKS_AT_A_TIME 1024
+#endif
 
 struct encryptGroupsData
 {
@@ -3264,7 +3273,8 @@ int cryptfs_enable_internal(char *howarg, int crypt_type, char *passwd,
     }
 
     /* Calculate checksum if we are not finished */
-    if (!rc && crypt_ftr.encrypted_upto != crypt_ftr.fs_size) {
+    if (!rc && how == CRYPTO_ENABLE_INPLACE
+            && crypt_ftr.encrypted_upto != crypt_ftr.fs_size) {
         rc = cryptfs_SHA256_fileblock(crypto_blkdev,
                                       crypt_ftr.hash_first_block);
         if (rc) {
@@ -3282,7 +3292,8 @@ int cryptfs_enable_internal(char *howarg, int crypt_type, char *passwd,
         /* Success */
         crypt_ftr.flags &= ~CRYPT_INCONSISTENT_STATE;
 
-        if (crypt_ftr.encrypted_upto != crypt_ftr.fs_size) {
+        if (how == CRYPTO_ENABLE_INPLACE
+              && crypt_ftr.encrypted_upto != crypt_ftr.fs_size) {
             SLOGD("Encrypted up to sector %lld - will continue after reboot",
                   crypt_ftr.encrypted_upto);
             crypt_ftr.flags |= CRYPT_ENCRYPTION_IN_PROGRESS;
@@ -3292,7 +3303,8 @@ int cryptfs_enable_internal(char *howarg, int crypt_type, char *passwd,
             crypt_ftr.flags |= CRYPT_FDE_COMPLETED;
         put_crypt_ftr_and_key(&crypt_ftr);
 
-        if (crypt_ftr.encrypted_upto == crypt_ftr.fs_size) {
+        if (how == CRYPTO_ENABLE_WIPE
+              || crypt_ftr.encrypted_upto == crypt_ftr.fs_size) {
           char value[PROPERTY_VALUE_MAX];
           property_get("ro.crypto.state", value, "");
           if (!strcmp(value, "")) {
@@ -3676,16 +3688,51 @@ int cryptfs_changepw(int crypt_type, const char *newpw)
         return -1;
     }
 
+    free(adjusted_passwd);
+
 #ifdef CONFIG_HW_DISK_ENCRYPTION
-    if (is_hw_fde_enabled())
-        update_hw_device_encryption_key(crypt_type == CRYPT_TYPE_DEFAULT ?
-                                    DEFAULT_PASSWORD : newpw,
-                                    (char*)crypt_ftr.crypto_type_name);
+   if (is_hw_fde_enabled())
+    if (!strcmp((char *)crypt_ftr.crypto_type_name, "aes-xts")) {
+        if (crypt_type == CRYPT_TYPE_DEFAULT) {
+            int rc = update_hw_device_encryption_key(DEFAULT_PASSWORD, (char*) crypt_ftr.crypto_type_name);
+            SLOGD("Update hardware encryption key to default for crypt_type: %d. rc = %d", crypt_type, rc);
+            if (!rc)
+                return -1;
+        } else {
+            int rc = update_hw_device_encryption_key(newpw, (char*) crypt_ftr.crypto_type_name);
+            SLOGD("Update hardware encryption key for crypt_type: %d. rc = %d", crypt_type, rc);
+            if (!rc)
+                return -1;
+        }
+    }
 #endif
     return 0;
 }
 
-static int persist_get_key(char *fieldname, char *value)
+static unsigned int persist_get_max_entries(int encrypted) {
+    struct crypt_mnt_ftr crypt_ftr;
+    unsigned int dsize;
+    unsigned int max_persistent_entries;
+
+    /* If encrypted, use the values from the crypt_ftr, otherwise
+     * use the values for the current spec.
+     */
+    if (encrypted) {
+        if (get_crypt_ftr_and_key(&crypt_ftr)) {
+            return -1;
+        }
+        dsize = crypt_ftr.persist_data_size;
+    } else {
+        dsize = CRYPT_PERSIST_DATA_SIZE;
+    }
+
+    max_persistent_entries = (dsize - sizeof(struct crypt_persist_data)) /
+        sizeof(struct crypt_persist_entry);
+
+    return max_persistent_entries;
+}
+
+static int persist_get_key(const char *fieldname, char *value)
 {
     unsigned int i;
 
@@ -3703,31 +3750,17 @@ static int persist_get_key(char *fieldname, char *value)
     return -1;
 }
 
-static int persist_set_key(char *fieldname, char *value, int encrypted)
+static int persist_set_key(const char *fieldname, const char *value, int encrypted)
 {
     unsigned int i;
     unsigned int num;
-    struct crypt_mnt_ftr crypt_ftr;
     unsigned int max_persistent_entries;
-    unsigned int dsize;
 
     if (persist_data == NULL) {
         return -1;
     }
 
-    /* If encrypted, use the values from the crypt_ftr, otherwise
-     * use the values for the current spec.
-     */
-    if (encrypted) {
-        if(get_crypt_ftr_and_key(&crypt_ftr)) {
-            return -1;
-        }
-        dsize = crypt_ftr.persist_data_size;
-    } else {
-        dsize = CRYPT_PERSIST_DATA_SIZE;
-    }
-    max_persistent_entries = (dsize - sizeof(struct crypt_persist_data)) /
-                             sizeof(struct crypt_persist_entry);
+    max_persistent_entries = persist_get_max_entries(encrypted);
 
     num = persist_data->persist_valid_entries;
 
@@ -3752,15 +3785,109 @@ static int persist_set_key(char *fieldname, char *value, int encrypted)
     return -1;
 }
 
+/**
+ * Test if key is part of the multi-entry (field, index) sequence. Return non-zero if key is in the
+ * sequence and its index is greater than or equal to index. Return 0 otherwise.
+ */
+static int match_multi_entry(const char *key, const char *field, unsigned index) {
+    unsigned int i;
+    unsigned int field_len;
+    unsigned int key_index;
+    field_len = strlen(field);
+
+    if (index == 0) {
+        // The first key in a multi-entry field is just the filedname itself.
+        if (!strcmp(key, field)) {
+            return 1;
+        }
+    }
+    // Match key against "%s_%d" % (field, index)
+    if (strlen(key) < field_len + 1 + 1) {
+        // Need at least a '_' and a digit.
+        return 0;
+    }
+    if (strncmp(key, field, field_len)) {
+        // If the key does not begin with field, it's not a match.
+        return 0;
+    }
+    if (1 != sscanf(&key[field_len],"_%d", &key_index)) {
+        return 0;
+    }
+    return key_index >= index;
+}
+
+/*
+ * Delete entry/entries from persist_data. If the entries are part of a multi-segment field, all
+ * remaining entries starting from index will be deleted.
+ * returns PERSIST_DEL_KEY_OK if deletion succeeds,
+ * PERSIST_DEL_KEY_ERROR_NO_FIELD if the field does not exist,
+ * and PERSIST_DEL_KEY_ERROR_OTHER if error occurs.
+ *
+ */
+static int persist_del_keys(const char *fieldname, unsigned index)
+{
+    unsigned int i;
+    unsigned int j;
+    unsigned int num;
+
+    if (persist_data == NULL) {
+        return PERSIST_DEL_KEY_ERROR_OTHER;
+    }
+
+    num = persist_data->persist_valid_entries;
+
+    j = 0; // points to the end of non-deleted entries.
+    // Filter out to-be-deleted entries in place.
+    for (i = 0; i < num; i++) {
+        if (!match_multi_entry(persist_data->persist_entry[i].key, fieldname, index)) {
+            persist_data->persist_entry[j] = persist_data->persist_entry[i];
+            j++;
+        }
+    }
+
+    if (j < num) {
+        persist_data->persist_valid_entries = j;
+        // Zeroise the remaining entries
+        memset(&persist_data->persist_entry[j], 0, (num - j) * sizeof(struct crypt_persist_entry));
+        return PERSIST_DEL_KEY_OK;
+    } else {
+        // Did not find an entry matching the given fieldname
+        return PERSIST_DEL_KEY_ERROR_NO_FIELD;
+    }
+}
+
+static int persist_count_keys(const char *fieldname)
+{
+    unsigned int i;
+    unsigned int count;
+
+    if (persist_data == NULL) {
+        return -1;
+    }
+
+    count = 0;
+    for (i = 0; i < persist_data->persist_valid_entries; i++) {
+        if (match_multi_entry(persist_data->persist_entry[i].key, fieldname, 0)) {
+            count++;
+        }
+    }
+
+    return count;
+}
+
 /* Return the value of the specified field. */
-int cryptfs_getfield(char *fieldname, char *value, int len)
+int cryptfs_getfield(const char *fieldname, char *value, int len)
 {
     char temp_value[PROPERTY_VALUE_MAX];
     char real_blkdev[MAXPATHLEN];
-    /* 0 is success, 1 is not encrypted,
-     * -1 is value not set, -2 is any other error
+    /* CRYPTO_GETFIELD_OK is success,
+     * CRYPTO_GETFIELD_ERROR_NO_FIELD is value not set,
+     * CRYPTO_GETFIELD_ERROR_BUF_TOO_SMALL is buffer (as given by len) too small,
+     * CRYPTO_GETFIELD_ERROR_OTHER is any other error
      */
-    int rc = -2;
+    int rc = CRYPTO_GETFIELD_ERROR_OTHER;
+    int i;
+    char temp_field[PROPERTY_KEY_MAX];
 
     if (persist_data == NULL) {
         load_persistent_data();
@@ -3770,13 +3897,40 @@ int cryptfs_getfield(char *fieldname, char *value, int len)
         }
     }
 
+    // Read value from persistent entries. If the original value is split into multiple entries,
+    // stitch them back together.
     if (!persist_get_key(fieldname, temp_value)) {
-        /* We found it, copy it to the caller's buffer and return */
-        strlcpy(value, temp_value, len);
-        rc = 0;
+        // We found it, copy it to the caller's buffer and keep going until all entries are read.
+        if (strlcpy(value, temp_value, len) >= (unsigned) len) {
+            // value too small
+            rc = CRYPTO_GETFIELD_ERROR_BUF_TOO_SMALL;
+            goto out;
+        }
+        rc = CRYPTO_GETFIELD_OK;
+
+        for (i = 1; /* break explicitly */; i++) {
+            if (snprintf(temp_field, sizeof(temp_field), "%s_%d", fieldname, i) >=
+                    (int) sizeof(temp_field)) {
+                // If the fieldname is very long, we stop as soon as it begins to overflow the
+                // maximum field length. At this point we have in fact fully read out the original
+                // value because cryptfs_setfield would not allow fields with longer names to be
+                // written in the first place.
+                break;
+            }
+            if (!persist_get_key(temp_field, temp_value)) {
+                  if (strlcat(value, temp_value, len) >= (unsigned)len) {
+                      // value too small.
+                      rc = CRYPTO_GETFIELD_ERROR_BUF_TOO_SMALL;
+                      goto out;
+                  }
+            } else {
+                // Exhaust all entries.
+                break;
+            }
+        }
     } else {
         /* Sadness, it's not there.  Return the error */
-        rc = -1;
+        rc = CRYPTO_GETFIELD_ERROR_NO_FIELD;
     }
 
 out:
@@ -3784,15 +3938,19 @@ out:
 }
 
 /* Set the value of the specified field. */
-int cryptfs_setfield(char *fieldname, char *value)
+int cryptfs_setfield(const char *fieldname, const char *value)
 {
     struct crypt_persist_data stored_pdata;
     struct crypt_persist_data *pdata_p;
     struct crypt_mnt_ftr crypt_ftr;
     char encrypted_state[PROPERTY_VALUE_MAX];
-    /* 0 is success, -1 is an error */
-    int rc = -1;
+    /* 0 is success, negative values are error */
+    int rc = CRYPTO_SETFIELD_ERROR_OTHER;
     int encrypted = 0;
+    unsigned int field_id;
+    char temp_field[PROPERTY_KEY_MAX];
+    unsigned int num_entries;
+    unsigned int max_keylen;
 
     if (persist_data == NULL) {
         load_persistent_data();
@@ -3807,8 +3965,50 @@ int cryptfs_setfield(char *fieldname, char *value)
         encrypted = 1;
     }
 
-    if (persist_set_key(fieldname, value, encrypted)) {
+    // Compute the number of entries required to store value, each entry can store up to
+    // (PROPERTY_VALUE_MAX - 1) chars
+    if (strlen(value) == 0) {
+        // Empty value also needs one entry to store.
+        num_entries = 1;
+    } else {
+        num_entries = (strlen(value) + (PROPERTY_VALUE_MAX - 1) - 1) / (PROPERTY_VALUE_MAX - 1);
+    }
+
+    max_keylen = strlen(fieldname);
+    if (num_entries > 1) {
+        // Need an extra "_%d" suffix.
+        max_keylen += 1 + log10(num_entries);
+    }
+    if (max_keylen > PROPERTY_KEY_MAX - 1) {
+        rc = CRYPTO_SETFIELD_ERROR_FIELD_TOO_LONG;
         goto out;
+    }
+
+    // Make sure we have enough space to write the new value
+    if (persist_data->persist_valid_entries + num_entries - persist_count_keys(fieldname) >
+        persist_get_max_entries(encrypted)) {
+        rc = CRYPTO_SETFIELD_ERROR_VALUE_TOO_LONG;
+        goto out;
+    }
+
+    // Now that we know persist_data has enough space for value, let's delete the old field first
+    // to make up space.
+    persist_del_keys(fieldname, 0);
+
+    if (persist_set_key(fieldname, value, encrypted)) {
+        // fail to set key, should not happen as we have already checked the available space
+        SLOGE("persist_set_key() error during setfield()");
+        goto out;
+    }
+
+    for (field_id = 1; field_id < num_entries; field_id++) {
+        snprintf(temp_field, sizeof(temp_field), "%s_%d", fieldname, field_id);
+
+        if (persist_set_key(temp_field, value + field_id * (PROPERTY_VALUE_MAX - 1), encrypted)) {
+            // fail to set key, should not happen as we have already checked the available space.
+            SLOGE("persist_set_key() error during setfield()");
+            goto out;
+        }
     }
 
     /* If we are running encrypted, save the persistent data now */
@@ -3819,7 +4019,7 @@ int cryptfs_setfield(char *fieldname, char *value)
         }
     }
 
-    rc = 0;
+    rc = CRYPTO_SETFIELD_OK;
 
 out:
     return rc;
@@ -3882,7 +4082,7 @@ int cryptfs_get_password_type(void)
 char* cryptfs_get_password()
 {
     struct timespec now;
-    clock_gettime(CLOCK_MONOTONIC, &now);
+    clock_gettime(CLOCK_BOOTTIME, &now);
     if (now.tv_sec < password_expiry_time) {
         return password;
     } else {
