@@ -136,10 +136,10 @@ int DirectVolume::handleBlockEvent(NetlinkEvent *evt) {
     for (it = mPaths->begin(); it != mPaths->end(); ++it) {
         if ((*it)->match(dp)) {
             /* We can handle this disk */
-            int action = evt->getAction();
+            NetlinkEvent::Action action = evt->getAction();
             const char *devtype = evt->findParam("DEVTYPE");
 
-            if (action == NetlinkEvent::NlActionAdd) {
+            if (action == NetlinkEvent::Action::kAdd) {
                 int major = atoi(evt->findParam("MAJOR"));
                 int minor = atoi(evt->findParam("MINOR"));
                 char nodepath[255];
@@ -166,13 +166,13 @@ int DirectVolume::handleBlockEvent(NetlinkEvent *evt) {
                     mVm->getBroadcaster()->sendBroadcast(ResponseCode::VolumeDiskInserted,
                                                          msg, false);
                 }
-            } else if (action == NetlinkEvent::NlActionRemove) {
+            } else if (action == NetlinkEvent::Action::kRemove) {
                 if (!strcmp(devtype, "disk")) {
                     handleDiskRemoved(dp, evt);
                 } else {
                     handlePartitionRemoved(dp, evt);
                 }
-            } else if (action == NetlinkEvent::NlActionChange) {
+            } else if (action == NetlinkEvent::Action::kChange) {
                 if (!strcmp(devtype, "disk")) {
                     handleDiskChanged(dp, evt);
                 } else {
