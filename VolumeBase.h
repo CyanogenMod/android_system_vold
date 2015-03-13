@@ -19,6 +19,7 @@
 
 #include "Utils.h"
 
+#include <cutils/multiuser.h>
 #include <utils/Errors.h>
 
 #include <sys/types.h>
@@ -27,37 +28,6 @@
 
 namespace android {
 namespace vold {
-
-enum class VolumeState {
-    kUnmounted,
-    kMounting,
-    kMounted,
-    kCorrupt,
-    kFormatting,
-    kUnmounting,
-};
-
-enum class VolumeType {
-    kPublic,
-    kPrivate,
-    kEmulated,
-    kAsec,
-    kObb,
-};
-
-// events:
-// volume_created private:127:4
-// volume_state private:127:4 mounted
-// volume_meta private:127:4 [fsGuid] [label]
-// volume_destroyed public:127:4
-
-// commands:
-// volume mount public:127:4 [primary]
-// volume unmount public:127:4
-// volume bind_user public:127:4 [userId]
-// volume unbind_user public:127:4 [userId]
-// volume bind_package private:4:1 [userId] [package]
-// volume unbind_package private:4:1 [userId] [package]
 
 /*
  * Representation of a mounted volume ready for presentation.
@@ -77,43 +47,81 @@ class VolumeBase {
 public:
     virtual ~VolumeBase();
 
-    VolumeType getType() { return mType; }
-    const std::string& getId() { return mId; }
-    VolumeState getState() { return mState; }
+    enum class Type {
+        kPublic = 0,
+        kPrivate,
+        kEmulated,
+        kAsec,
+        kObb,
+    };
 
-    void stackVolume(const std::shared_ptr<VolumeBase>& volume);
-    void unstackVolume(const std::shared_ptr<VolumeBase>& volume);
+    enum Flags {
+        /* Flag that volume is primary external storage */
+        kPrimary = 1 << 0,
+        /* Flag that volume is visible to normal apps */
+        kVisible = 1 << 1,
+    };
+
+    enum class State {
+        kUnmounted = 0,
+        kMounting,
+        kMounted,
+        kFormatting,
+        kUnmounting,
+    };
+
+    const std::string& getId() { return mId; }
+    Type getType() { return mType; }
+    int getFlags() { return mFlags; }
+    userid_t getUser() { return mUser; }
+    State getState() { return mState; }
+    const std::string& getPath() { return mPath; }
+
+    status_t setFlags(int flags);
+    status_t setUser(userid_t user);
+
+    void addVolume(const std::shared_ptr<VolumeBase>& volume);
+    void removeVolume(const std::shared_ptr<VolumeBase>& volume);
+
+    std::shared_ptr<VolumeBase> findVolume(const std::string& id);
+
+    status_t create();
+    status_t destroy();
 
     status_t mount();
     status_t unmount();
     status_t format();
 
 protected:
-    explicit VolumeBase(VolumeType type);
-
-    /* ID that uniquely references this disk */
-    std::string mId;
-
-    /* Manage bind mounts for this volume */
-    status_t mountBind(const std::string& source, const std::string& target);
-    status_t unmountBind(const std::string& target);
+    explicit VolumeBase(Type type);
 
     virtual status_t doMount() = 0;
     virtual status_t doUnmount() = 0;
     virtual status_t doFormat();
 
+    status_t setId(const std::string& id);
+    status_t setPath(const std::string& path);
+
 private:
+    /* ID that uniquely references volume while alive */
+    std::string mId;
     /* Volume type */
-    VolumeType mType;
+    Type mType;
+    /* Flags applicable to volume */
+    int mFlags;
+    /* User that owns this volume, otherwise -1 */
+    userid_t mUser;
+    /* Flag indicating object is created */
+    bool mCreated;
     /* Current state of volume */
-    VolumeState mState;
+    State mState;
+    /* Path to mounted volume */
+    std::string mPath;
 
     /* Volumes stacked on top of this volume */
-    std::list<std::shared_ptr<VolumeBase>> mStacked;
-    /* Currently active bind mounts */
-    std::list<std::string> mBindTargets;
+    std::list<std::shared_ptr<VolumeBase>> mVolumes;
 
-    void setState(VolumeState state);
+    void setState(State state);
 
     DISALLOW_COPY_AND_ASSIGN(VolumeBase);
 };

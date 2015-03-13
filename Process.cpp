@@ -170,18 +170,14 @@ int Process::getPid(const char *s) {
     return result;
 }
 
-extern "C" void vold_killProcessesWithOpenFiles(const char *path, int action) {
-	Process::killProcessesWithOpenFiles(path, action);
+extern "C" void vold_killProcessesWithOpenFiles(const char *path, int signal) {
+	Process::killProcessesWithOpenFiles(path, signal);
 }
 
 /*
  * Hunt down processes that have files open at the given mount point.
- * action = 0 to just warn,
- * action = 1 to SIGHUP,
- * action = 2 to SIGKILL
  */
-// hunt down and kill processes that have files open on the given mount point
-void Process::killProcessesWithOpenFiles(const char *path, int action) {
+void Process::killProcessesWithOpenFiles(const char *path, int signal) {
     DIR*    dir;
     struct dirent* de;
 
@@ -213,12 +209,10 @@ void Process::killProcessesWithOpenFiles(const char *path, int action) {
         } else {
             continue;
         }
-        if (action == 1) {
-            SLOGW("Sending SIGHUP to process %d", pid);
-            kill(pid, SIGTERM);
-        } else if (action == 2) {
-            SLOGE("Sending SIGKILL to process %d", pid);
-            kill(pid, SIGKILL);
+
+        if (signal != 0) {
+            SLOGW("Sending %s to process %d", strsignal(signal), pid);
+            kill(pid, signal);
         }
     }
     closedir(dir);

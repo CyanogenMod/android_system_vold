@@ -14,16 +14,16 @@
  * limitations under the License.
  */
 
-#define LOG_TAG "Vold"
-
 #include "Disk.h"
 #include "PublicVolume.h"
 #include "Utils.h"
 #include "VolumeBase.h"
+#include "VolumeManager.h"
+#include "ResponseCode.h"
 
 #include <base/file.h>
 #include <base/stringprintf.h>
-#include <cutils/log.h>
+#include <base/logging.h>
 #include <diskconfig/diskconfig.h>
 
 #include <fcntl.h>
@@ -57,40 +57,84 @@ enum class Table {
     kGpt,
 };
 
-Disk::Disk(const std::string& eventPath, dev_t device) :
-        mDevice(device), mSize(-1) {
-    mId = StringPrintf("disk:%ud:%ud", major(device), minor(device));
+Disk::Disk(const std::string& eventPath, dev_t device, const std::string& nickname, int flags) :
+        mDevice(device), mSize(-1), mNickname(nickname), mFlags(flags), mCreated(false) {
+    mId = StringPrintf("disk:%u,%u", major(device), minor(device));
+    mEventPath = eventPath;
     mSysPath = StringPrintf("/sys/%s", eventPath.c_str());
-    mDevPath = StringPrintf("/dev/block/vold/%ud:%ud", major(device), minor(device));
-
+    mDevPath = StringPrintf("/dev/block/vold/%s", mId.c_str());
     CreateDeviceNode(mDevPath, mDevice);
 }
 
 Disk::~Disk() {
+    CHECK(!mCreated);
     DestroyDeviceNode(mDevPath);
 }
 
 std::shared_ptr<VolumeBase> Disk::findVolume(const std::string& id) {
-    for (std::shared_ptr<VolumeBase>& v : mParts) {
-        if (!id.compare(v->getId())) {
-            return v;
+    for (auto vol : mVolumes) {
+        if (vol->getId() == id) {
+            return vol;
+        }
+        auto stackedVol = vol->findVolume(id);
+        if (stackedVol != nullptr) {
+            return stackedVol;
         }
     }
     return nullptr;
 }
 
+status_t Disk::create() {
+    CHECK(!mCreated);
+    mCreated = true;
+    VolumeManager::Instance()->getBroadcaster()->sendBroadcast(
+            ResponseCode::DiskCreated,
+            StringPrintf("%s %d", getId().c_str(), mFlags).c_str(), false);
+    readMetadata();
+    readPartitions();
+    return OK;
+}
+
+status_t Disk::destroy() {
+    CHECK(mCreated);
+    destroyAllVolumes();
+    mCreated = false;
+    VolumeManager::Instance()->getBroadcaster()->sendBroadcast(
+            ResponseCode::DiskDestroyed, getId().c_str(), false);
+    return OK;
+}
+
+void Disk::createPublicVolume(dev_t device) {
+    auto vol = new PublicVolume(device);
+    vol->create();
+
+    mVolumes.push_back(std::shared_ptr<VolumeBase>(vol));
+    VolumeManager::Instance()->getBroadcaster()->sendBroadcast(
+            ResponseCode::DiskVolumeCreated,
+            StringPrintf("%s %s", getId().c_str(), vol->getId().c_str()).c_str(), false);
+}
+
+void Disk::createPrivateVolume(dev_t device) {
+    // TODO: create and add
+}
+
+void Disk::destroyAllVolumes() {
+    for (auto vol : mVolumes) {
+        vol->destroy();
+    }
+    mVolumes.clear();
+}
+
 status_t Disk::readMetadata() {
     mSize = -1;
-    mLabel = "";
+    mLabel.clear();
 
-    {
-        std::string path(mSysPath + "/size");
-        std::string tmp;
-        if (!ReadFileToString(path, &tmp)) {
-            ALOGW("Failed to read size from %s: %s", path.c_str(), strerror(errno));
-            return -errno;
+    int fd = open(mDevPath.c_str(), O_RDONLY);
+    if (fd != -1) {
+        if (ioctl(fd, BLKGETSIZE64, &mSize)) {
+            mSize = -1;
         }
-        mSize = strtoll(tmp.c_str(), nullptr, 10);
+        close(fd);
     }
 
     switch (major(mDevice)) {
@@ -98,7 +142,7 @@ status_t Disk::readMetadata() {
         std::string path(mSysPath + "/device/vendor");
         std::string tmp;
         if (!ReadFileToString(path, &tmp)) {
-            ALOGW("Failed to read vendor from %s: %s", path.c_str(), strerror(errno));
+            PLOG(WARNING) << "Failed to read vendor from " << path;
             return -errno;
         }
         mLabel = tmp;
@@ -108,7 +152,7 @@ status_t Disk::readMetadata() {
         std::string path(mSysPath + "/device/manfid");
         std::string tmp;
         if (!ReadFileToString(path, &tmp)) {
-            ALOGW("Failed to read manufacturer from %s: %s", path.c_str(), strerror(errno));
+            PLOG(WARNING) << "Failed to read manufacturer from " << path;
             return -errno;
         }
         uint64_t manfid = strtoll(tmp.c_str(), nullptr, 16);
@@ -124,10 +168,17 @@ status_t Disk::readMetadata() {
         break;
     }
     default: {
-        ALOGW("Unsupported block major type %d", major(mDevice));
+        LOG(WARNING) << "Unsupported block major type" << major(mDevice);
         return -ENOTSUP;
     }
     }
+
+    VolumeManager::Instance()->getBroadcaster()->sendBroadcast(
+            ResponseCode::DiskSizeChanged,
+            StringPrintf("%s %lld", getId().c_str(), mSize).c_str(), false);
+    VolumeManager::Instance()->getBroadcaster()->sendBroadcast(
+            ResponseCode::DiskLabelChanged,
+            StringPrintf("%s %s", getId().c_str(), mLabel.c_str()).c_str(), false);
 
     return OK;
 }
@@ -138,7 +189,7 @@ status_t Disk::readPartitions() {
         return -ENOTSUP;
     }
 
-    mParts.clear();
+    destroyAllVolumes();
 
     // Parse partition table
     std::string path(kSgdiskPath);
@@ -146,68 +197,64 @@ status_t Disk::readPartitions() {
     path += mDevPath;
     FILE* fp = popen(path.c_str(), "r");
     if (!fp) {
-        ALOGE("Failed to run %s: %s", path.c_str(), strerror(errno));
+        PLOG(ERROR) << "Failed to run " << path;
         return -errno;
     }
 
     char line[1024];
     Table table = Table::kUnknown;
+    bool foundParts = false;
     while (fgets(line, sizeof(line), fp) != nullptr) {
+        LOG(DEBUG) << "sgdisk: " << line;
+
         char* token = strtok(line, kSgdiskToken);
+        if (token == nullptr) continue;
+
         if (!strcmp(token, "DISK")) {
             const char* type = strtok(nullptr, kSgdiskToken);
-            ALOGD("%s: found %s partition table", mId.c_str(), type);
             if (!strcmp(type, "mbr")) {
                 table = Table::kMbr;
             } else if (!strcmp(type, "gpt")) {
                 table = Table::kGpt;
             }
         } else if (!strcmp(token, "PART")) {
+            foundParts = true;
             int i = strtol(strtok(nullptr, kSgdiskToken), nullptr, 10);
             if (i <= 0 || i > maxMinors) {
-                ALOGW("%s: ignoring partition %d beyond max supported devices",
-                        mId.c_str(), i);
+                LOG(WARNING) << mId << " is ignoring partition " << i
+                        << " beyond max supported devices";
                 continue;
             }
             dev_t partDevice = makedev(major(mDevice), minor(mDevice) + i);
 
-            VolumeBase* vol = nullptr;
             if (table == Table::kMbr) {
                 const char* type = strtok(nullptr, kSgdiskToken);
-                ALOGD("%s: MBR partition %d type %s", mId.c_str(), i, type);
 
                 switch (strtol(type, nullptr, 16)) {
                 case 0x06: // FAT16
                 case 0x0b: // W95 FAT32 (LBA)
                 case 0x0c: // W95 FAT32 (LBA)
                 case 0x0e: // W95 FAT16 (LBA)
-                    vol = new PublicVolume(partDevice);
+                    createPublicVolume(partDevice);
                     break;
                 }
             } else if (table == Table::kGpt) {
                 const char* typeGuid = strtok(nullptr, kSgdiskToken);
                 const char* partGuid = strtok(nullptr, kSgdiskToken);
-                ALOGD("%s: GPT partition %d type %s, GUID %s", mId.c_str(), i,
-                        typeGuid, partGuid);
 
                 if (!strcasecmp(typeGuid, kGptBasicData)) {
-                    vol = new PublicVolume(partDevice);
+                    createPublicVolume(partDevice);
                 } else if (!strcasecmp(typeGuid, kGptAndroidExt)) {
-                    //vol = new PrivateVolume();
+                    createPrivateVolume(partDevice);
                 }
-            }
-
-            if (vol != nullptr) {
-                mParts.push_back(std::shared_ptr<VolumeBase>(vol));
             }
         }
     }
 
     // Ugly last ditch effort, treat entire disk as partition
-    if (table == Table::kUnknown) {
-        ALOGD("%s: unknown partition table; trying entire device", mId.c_str());
-        VolumeBase* vol = new PublicVolume(mDevice);
-        mParts.push_back(std::shared_ptr<VolumeBase>(vol));
+    if (table == Table::kUnknown || !foundParts) {
+        LOG(WARNING) << mId << " has unknown partition table; trying entire device";
+        createPublicVolume(mDevice);
     }
 
     pclose(fp);
@@ -216,13 +263,13 @@ status_t Disk::readPartitions() {
 
 status_t Disk::partitionPublic() {
     // TODO: improve this code
+    destroyAllVolumes();
 
     struct disk_info dinfo;
     memset(&dinfo, 0, sizeof(dinfo));
 
     if (!(dinfo.part_lst = (struct part_info *) malloc(
             MAX_NUM_PARTS * sizeof(struct part_info)))) {
-        SLOGE("Failed to malloc prt_lst");
         return -1;
     }
 
@@ -243,7 +290,7 @@ status_t Disk::partitionPublic() {
 
     int rc = apply_disk_config(&dinfo, 0);
     if (rc) {
-        SLOGE("Failed to apply disk configuration (%d)", rc);
+        LOG(ERROR) << "Failed to apply disk configuration: " << rc;
         goto out;
     }
 
@@ -256,10 +303,12 @@ out:
 }
 
 status_t Disk::partitionPrivate() {
+    destroyAllVolumes();
     return -ENOTSUP;
 }
 
 status_t Disk::partitionMixed(int8_t ratio) {
+    destroyAllVolumes();
     return -ENOTSUP;
 }
 
@@ -274,14 +323,14 @@ int Disk::getMaxMinors() {
         // Per Documentation/devices.txt this is dynamic
         std::string tmp;
         if (!ReadFileToString(kSysfsMmcMaxMinors, &tmp)) {
-            ALOGW("Failed to read max minors");
+            LOG(ERROR) << "Failed to read max minors";
             return -errno;
         }
         return atoi(tmp.c_str());
     }
     }
 
-    ALOGW("Unsupported block major type %d", major(mDevice));
+    LOG(ERROR) << "Unsupported block major type " << major(mDevice);
     return -ENOTSUP;
 }
 

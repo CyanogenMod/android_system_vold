@@ -37,31 +37,20 @@ namespace vold {
  */
 class EmulatedVolume : public VolumeBase {
 public:
-    EmulatedVolume(const std::string& rawPath, const std::string& nickname);
+    EmulatedVolume(const std::string& rawPath, const std::string& fsUuid);
     virtual ~EmulatedVolume();
 
-    void setPrimary(bool primary);
-    bool getPrimary() { return mPrimary; }
-
-    status_t bindUser(userid_t user);
-    status_t unbindUser(userid_t user);
+protected:
+    status_t doMount() override;
+    status_t doUnmount() override;
 
 private:
     /* Mount point of raw storage */
     std::string mRawPath;
-    /* Mount point of FUSE wrapper */
+    /* Mount point of visible storage */
     std::string mFusePath;
     /* PID of FUSE wrapper */
     pid_t mFusePid;
-    /* Flag indicating this is primary storage */
-    bool mPrimary;
-
-protected:
-    status_t doMount();
-    status_t doUnmount();
-    status_t doFormat();
-
-    status_t bindUserInternal(userid_t user, bool bind);
 
     DISALLOW_COPY_AND_ASSIGN(EmulatedVolume);
 };

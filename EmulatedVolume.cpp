@@ -14,14 +14,12 @@
  * limitations under the License.
  */
 
-#define LOG_TAG "Vold"
-
 #include "EmulatedVolume.h"
 #include "Utils.h"
 
 #include <base/stringprintf.h>
+#include <base/logging.h>
 #include <cutils/fs.h>
-#include <cutils/log.h>
 #include <private/android_filesystem_config.h>
 
 #include <fcntl.h>
@@ -38,37 +36,46 @@ namespace vold {
 
 static const char* kFusePath = "/system/bin/sdcard";
 
-static const char* kUserMountPath = "/mnt/user";
+EmulatedVolume::EmulatedVolume(const std::string& rawPath,
+        const std::string& fsUuid) : VolumeBase(Type::kEmulated), mFusePid(0) {
+    if (fsUuid.empty()) {
+        setId("emulated");
+    } else {
+        setId(StringPrintf("emulated:%s", fsUuid.c_str()));
+    }
 
-EmulatedVolume::EmulatedVolume(const std::string& rawPath, const std::string& nickname) :
-        VolumeBase(VolumeType::kEmulated), mFusePid(0), mPrimary(false) {
     mRawPath = rawPath;
-    mFusePath = StringPrintf("/mnt/media_rw/emulated_fuse_%s", nickname.c_str());
+    mFusePath = StringPrintf("/storage/%s", getId().c_str());
 }
 
 EmulatedVolume::~EmulatedVolume() {
 }
 
 status_t EmulatedVolume::doMount() {
-    if (fs_prepare_dir(mFusePath.c_str(), 0770, AID_MEDIA_RW, AID_MEDIA_RW)) {
-        SLOGE("Failed to create mount point %s: %s", mFusePath.c_str(), strerror(errno));
+    if (fs_prepare_dir(mFusePath.c_str(), 0700, AID_ROOT, AID_ROOT)) {
+        PLOG(ERROR) << "Failed to create mount point " << mFusePath;
         return -errno;
     }
 
+    setPath(mFusePath);
+
     if (!(mFusePid = fork())) {
-        if (execl(kFusePath,
+        if (execl(kFusePath, kFusePath,
                 "-u", "1023", // AID_MEDIA_RW
                 "-g", "1023", // AID_MEDIA_RW
-                "-d",
+                "-l",
                 mRawPath.c_str(),
-                mFusePath.c_str())) {
-            SLOGE("Failed to exec: %s", strerror(errno));
+                mFusePath.c_str(),
+                NULL)) {
+            PLOG(ERROR) << "Failed to exec";
         }
+
+        PLOG(DEBUG) << "FUSE exiting";
         _exit(1);
     }
 
     if (mFusePid == -1) {
-        SLOGE("Failed to fork: %s", strerror(errno));
+        PLOG(ERROR) << "Failed to fork";
         return -errno;
     }
 
@@ -83,49 +90,14 @@ status_t EmulatedVolume::doUnmount() {
     }
 
     ForceUnmount(mFusePath);
+    ForceUnmount(mRawPath);
 
-    TEMP_FAILURE_RETRY(unlink(mFusePath.c_str()));
-
-    return OK;
-}
-
-status_t EmulatedVolume::doFormat() {
-    return -ENOTSUP;
-}
-
-status_t EmulatedVolume::bindUser(userid_t user) {
-    return bindUserInternal(user, true);
-}
-
-status_t EmulatedVolume::unbindUser(userid_t user) {
-    return bindUserInternal(user, false);
-}
-
-status_t EmulatedVolume::bindUserInternal(userid_t user, bool bind) {
-    if (!mPrimary) {
-        // Emulated volumes are only bound when primary
-        return OK;
-    }
-
-    std::string fromPath(StringPrintf("%s/%ud", mFusePath.c_str(), user));
-    std::string toPath(StringPrintf("%s/%ud/primary", kUserMountPath, user));
-
-    if (bind) {
-        mountBind(fromPath, toPath);
-    } else {
-        unmountBind(toPath);
+    if (TEMP_FAILURE_RETRY(rmdir(mFusePath.c_str()))) {
+        PLOG(ERROR) << "Failed to rmdir mount point " << mFusePath;
+        return -errno;
     }
 
     return OK;
-}
-
-void EmulatedVolume::setPrimary(bool primary) {
-    if (getState() != VolumeState::kUnmounted) {
-        SLOGE("Primary state change requires %s to be unmounted", getId().c_str());
-        return;
-    }
-
-    mPrimary = primary;
 }
 
 }  // namespace vold

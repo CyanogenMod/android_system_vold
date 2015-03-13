@@ -14,15 +14,15 @@
  * limitations under the License.
  */
 
-#define LOG_TAG "Vold"
-
 #include "Fat.h"
 #include "PublicVolume.h"
 #include "Utils.h"
+#include "VolumeManager.h"
+#include "ResponseCode.h"
 
 #include <base/stringprintf.h>
+#include <base/logging.h>
 #include <cutils/fs.h>
-#include <cutils/log.h>
 #include <private/android_filesystem_config.h>
 
 #include <fcntl.h>
@@ -40,16 +40,13 @@ namespace vold {
 static const char* kBlkidPath = "/system/bin/blkid";
 static const char* kFusePath = "/system/bin/sdcard";
 
-static const char* kUserMountPath = "/mnt/user";
+static const char* kAsecPath = "/mnt/secure/asec";
 
 PublicVolume::PublicVolume(dev_t device) :
-        VolumeBase(VolumeType::kPublic), mDevice(device), mFusePid(0), mPrimary(false) {
-    mId = StringPrintf("public:%ud:%ud", major(device), minor(device));
-    mDevPath = StringPrintf("/dev/block/vold/%ud:%ud", major(device), minor(device));
-    mRawPath = StringPrintf("/mnt/media_rw/public_raw_%ud:%ud", major(device), minor(device));
-    mFusePath = StringPrintf("/mnt/media_rw/public_fuse_%ud:%ud", major(device), minor(device));
-
-    CreateDeviceNode(mDevPath, device);
+        VolumeBase(Type::kPublic), mDevice(device), mFusePid(0) {
+    setId(StringPrintf("public:%u,%u", major(device), minor(device)));
+    mDevPath = StringPrintf("/dev/block/vold/%s", getId().c_str());
+    CreateDeviceNode(mDevPath, mDevice);
 }
 
 PublicVolume::~PublicVolume() {
@@ -57,22 +54,29 @@ PublicVolume::~PublicVolume() {
 }
 
 status_t PublicVolume::readMetadata() {
-    mFsUuid = "";
-    mFsLabel = "";
+    mFsType.clear();
+    mFsUuid.clear();
+    mFsLabel.clear();
 
     std::string path(StringPrintf("%s -c /dev/null %s", kBlkidPath, mDevPath.c_str()));
     FILE* fp = popen(path.c_str(), "r");
     if (!fp) {
-        ALOGE("Failed to run %s: %s", path.c_str(), strerror(errno));
+        PLOG(ERROR) << "Failed to run " << path;
         return -errno;
     }
 
+    status_t res = OK;
     char line[1024];
     char value[128];
     if (fgets(line, sizeof(line), fp) != nullptr) {
-        ALOGD("blkid identified as %s", line);
+        LOG(DEBUG) << "blkid identified as " << line;
 
-        char* start = strstr(line, "UUID=");
+        char* start = strstr(line, "TYPE=");
+        if (start != nullptr && sscanf(start + 5, "\"%127[^\"]\"", value) == 1) {
+            mFsType = value;
+        }
+
+        start = strstr(line, "UUID=");
         if (start != nullptr && sscanf(start + 5, "\"%127[^\"]\"", value) == 1) {
             mFsUuid = value;
         }
@@ -82,14 +86,23 @@ status_t PublicVolume::readMetadata() {
             mFsLabel = value;
         }
     } else {
-        ALOGW("blkid failed to identify %s", mDevPath.c_str());
-        return -ENODATA;
+        LOG(WARNING) << "blkid failed to identify " << mDevPath;
+        res = -ENODATA;
     }
 
     pclose(fp);
 
-    // TODO: broadcast ident to framework
-    return OK;
+    VolumeManager::Instance()->getBroadcaster()->sendBroadcast(
+            ResponseCode::VolumeFsTypeChanged,
+            StringPrintf("%s %s", getId().c_str(), mFsType.c_str()).c_str(), false);
+    VolumeManager::Instance()->getBroadcaster()->sendBroadcast(
+            ResponseCode::VolumeFsUuidChanged,
+            StringPrintf("%s %s", getId().c_str(), mFsUuid.c_str()).c_str(), false);
+    VolumeManager::Instance()->getBroadcaster()->sendBroadcast(
+            ResponseCode::VolumeFsLabelChanged,
+            StringPrintf("%s %s", getId().c_str(), mFsLabel.c_str()).c_str(), false);
+
+    return res;
 }
 
 status_t PublicVolume::initAsecStage() {
@@ -100,66 +113,96 @@ status_t PublicVolume::initAsecStage() {
     if (!access(legacyPath.c_str(), R_OK | X_OK)
             && access(securePath.c_str(), R_OK | X_OK)) {
         if (rename(legacyPath.c_str(), securePath.c_str())) {
-            SLOGE("Failed to rename legacy ASEC dir: %s", strerror(errno));
+            PLOG(WARNING) << "Failed to rename legacy ASEC dir";
         }
     }
 
-    if (fs_prepare_dir(securePath.c_str(), 0770, AID_MEDIA_RW, AID_MEDIA_RW) != 0) {
-        SLOGW("fs_prepare_dir failed: %s", strerror(errno));
-        return -errno;
+    if (TEMP_FAILURE_RETRY(mkdir(securePath.c_str(), 0700))) {
+        if (errno != EEXIST) {
+            PLOG(WARNING) << "Creating ASEC stage failed";
+            return -errno;
+        }
     }
+
+    BindMount(securePath, kAsecPath);
 
     return OK;
 }
 
 status_t PublicVolume::doMount() {
+    // TODO: expand to support mounting other filesystems
     if (Fat::check(mDevPath.c_str())) {
-        SLOGE("Failed filesystem check; not mounting");
+        LOG(ERROR) << "Failed filesystem check; not mounting";
         return -EIO;
     }
 
-    if (fs_prepare_dir(mRawPath.c_str(), 0770, AID_MEDIA_RW, AID_MEDIA_RW)) {
-        SLOGE("Failed to create mount point %s: %s", mRawPath.c_str(), strerror(errno));
+    readMetadata();
+
+    // Use UUID as stable name, if available
+    std::string stableName = getId();
+    if (!mFsUuid.empty()) {
+        stableName = "public:" + mFsUuid;
+    }
+
+    mRawPath = StringPrintf("/mnt/media_rw/%s", stableName.c_str());
+    mFusePath = StringPrintf("/storage/%s", stableName.c_str());
+    setPath(mFusePath);
+
+    if (fs_prepare_dir(mRawPath.c_str(), 0700, AID_ROOT, AID_ROOT)) {
+        PLOG(ERROR) << "Failed to create mount point " << mRawPath;
         return -errno;
     }
-    if (fs_prepare_dir(mFusePath.c_str(), 0770, AID_MEDIA_RW, AID_MEDIA_RW)) {
-        SLOGE("Failed to create mount point %s: %s", mFusePath.c_str(), strerror(errno));
+    if (fs_prepare_dir(mFusePath.c_str(), 0700, AID_ROOT, AID_ROOT)) {
+        PLOG(ERROR) << "Failed to create mount point " << mFusePath;
         return -errno;
     }
 
     if (Fat::doMount(mDevPath.c_str(), mRawPath.c_str(), false, false, false,
             AID_MEDIA_RW, AID_MEDIA_RW, 0007, true)) {
-        SLOGE("Failed to mount %s: %s", mDevPath.c_str(), strerror(errno));
+        PLOG(ERROR) << "Failed to mount " << mDevPath;
         return -EIO;
     }
 
+    if (getFlags() & Flags::kPrimary) {
+        initAsecStage();
+    }
+
+    // Only need to spin up FUSE when visible
+    if (!(getFlags() & Flags::kVisible)) {
+        return OK;
+    }
+
+    // TODO: teach FUSE daemon to protect itself with user-specific GID
     if (!(mFusePid = fork())) {
-        if (mPrimary) {
-            if (execl(kFusePath,
+        if (getFlags() & Flags::kPrimary) {
+            if (execl(kFusePath, kFusePath,
                     "-u", "1023", // AID_MEDIA_RW
                     "-g", "1023", // AID_MEDIA_RW
                     "-d",
                     mRawPath.c_str(),
-                    mFusePath.c_str())) {
-                SLOGE("Failed to exec: %s", strerror(errno));
+                    mFusePath.c_str(),
+                    NULL)) {
+                PLOG(ERROR) << "Failed to exec";
             }
         } else {
-            if (execl(kFusePath,
+            if (execl(kFusePath, kFusePath,
                     "-u", "1023", // AID_MEDIA_RW
                     "-g", "1023", // AID_MEDIA_RW
                     "-w", "1023", // AID_MEDIA_RW
                     "-d",
                     mRawPath.c_str(),
-                    mFusePath.c_str())) {
-                SLOGE("Failed to exec: %s", strerror(errno));
+                    mFusePath.c_str(),
+                    NULL)) {
+                PLOG(ERROR) << "Failed to exec";
             }
         }
 
+        PLOG(DEBUG) << "FUSE exiting";
         _exit(1);
     }
 
     if (mFusePid == -1) {
-        SLOGE("Failed to fork: %s", strerror(errno));
+        PLOG(ERROR) << "Failed to fork";
         return -errno;
     }
 
@@ -176,76 +219,25 @@ status_t PublicVolume::doUnmount() {
     ForceUnmount(mFusePath);
     ForceUnmount(mRawPath);
 
-    TEMP_FAILURE_RETRY(unlink(mRawPath.c_str()));
-    TEMP_FAILURE_RETRY(unlink(mFusePath.c_str()));
+    if (TEMP_FAILURE_RETRY(rmdir(mRawPath.c_str()))) {
+        PLOG(ERROR) << "Failed to rmdir mount point " << mRawPath;
+    }
+    if (TEMP_FAILURE_RETRY(rmdir(mFusePath.c_str()))) {
+        PLOG(ERROR) << "Failed to rmdir mount point " << mFusePath;
+    }
+
+    mFusePath.clear();
+    mRawPath.clear();
 
     return OK;
 }
 
 status_t PublicVolume::doFormat() {
     if (Fat::format(mDevPath.c_str(), 0, true)) {
-        SLOGE("Failed to format: %s", strerror(errno));
+        LOG(ERROR) << "Failed to format";
         return -errno;
     }
     return OK;
-}
-
-status_t PublicVolume::bindUser(userid_t user) {
-    return bindUserInternal(user, true);
-}
-
-status_t PublicVolume::unbindUser(userid_t user) {
-    return bindUserInternal(user, false);
-}
-
-status_t PublicVolume::bindUserInternal(userid_t user, bool bind) {
-    if (mPrimary) {
-        if (user == 0) {
-            std::string path(StringPrintf("%s/%ud/primary", kUserMountPath, user));
-            if (bind) {
-                mountBind(mFusePath, path);
-            } else {
-                unmountBind(path);
-            }
-        } else {
-            // Public volumes are only visible to owner when primary
-            // storage, so we don't mount for secondary users.
-        }
-    } else {
-        std::string path(StringPrintf("%s/%ud/public_%ud:%ud", kUserMountPath, user,
-                        major(mDevice), minor(mDevice)));
-        if (bind) {
-            mountBind(mFusePath, path);
-        } else {
-            unmountBind(path);
-        }
-
-        if (user != 0) {
-            // To prevent information leakage between users, only owner
-            // has access to the Android directory
-            path += "/Android";
-            if (bind) {
-                if (::mount("tmpfs", path.c_str(), "tmpfs", MS_NOSUID, "mode=0000")) {
-                    SLOGE("Failed to protect secondary path %s: %s",
-                            path.c_str(), strerror(errno));
-                    return -errno;
-                }
-            } else {
-                ForceUnmount(path);
-            }
-        }
-    }
-
-    return OK;
-}
-
-void PublicVolume::setPrimary(bool primary) {
-    if (getState() != VolumeState::kUnmounted) {
-        SLOGE("Primary state change requires %s to be unmounted", getId().c_str());
-        return;
-    }
-
-    mPrimary = primary;
 }
 
 }  // namespace vold

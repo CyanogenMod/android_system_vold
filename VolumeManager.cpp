@@ -34,6 +34,8 @@
 
 #include <openssl/md5.h>
 
+#include <base/logging.h>
+#include <base/stringprintf.h>
 #include <cutils/fs.h>
 #include <cutils/log.h>
 
@@ -43,22 +45,34 @@
 
 #include <private/android_filesystem_config.h>
 
+#include "EmulatedVolume.h"
 #include "VolumeManager.h"
+#include "NetlinkManager.h"
 #include "DirectVolume.h"
 #include "ResponseCode.h"
 #include "Loop.h"
 #include "Ext4.h"
 #include "Fat.h"
+#include "Utils.h"
 #include "Devmapper.h"
 #include "Process.h"
 #include "Asec.h"
 #include "VoldUtil.h"
 #include "cryptfs.h"
 
+#define DEBUG_NETLINK 0
+
 #define MASS_STORAGE_FILE_PATH  "/sys/class/android_usb/android0/f_mass_storage/lun/file"
 
 #define ROUND_UP_POWER_OF_2(number, po2) (((!!(number & ((1U << po2) - 1))) << po2)\
                                          + (number & (~((1U << po2) - 1))))
+
+using android::base::StringPrintf;
+
+static const char* kUserMountPath = "/mnt/user";
+
+static const unsigned int kMajorBlockScsi = 8;
+static const unsigned int kMajorBlockMmc = 179;
 
 /* writes superblock at end of file or device given by name */
 static int writeSuperBlock(const char* name, struct asec_superblock *sb, unsigned int numImgSectors) {
@@ -227,10 +241,45 @@ void VolumeManager::setDebug(bool enable) {
 }
 
 int VolumeManager::start() {
+    // Always start from a clean slate by unmounting everything in
+    // directories that we own, in case we crashed.
+    FILE* fp = setmntent("/proc/mounts", "r");
+    if (fp == NULL) {
+        SLOGE("Error opening /proc/mounts: %s", strerror(errno));
+        return -errno;
+    }
+
+    // Some volumes can be stacked on each other, so force unmount in
+    // reverse order to give us the best chance of success.
+    std::list<std::string> toUnmount;
+    mntent* mentry;
+    while ((mentry = getmntent(fp)) != NULL) {
+        if (strncmp(mentry->mnt_dir, "/mnt/", 5) == 0
+                || strncmp(mentry->mnt_dir, "/storage/", 9) == 0) {
+            toUnmount.push_front(std::string(mentry->mnt_dir));
+        }
+    }
+    endmntent(fp);
+
+    for (auto path : toUnmount) {
+        SLOGW("Tearing down stale mount %s", path.c_str());
+        android::vold::ForceUnmount(path);
+    }
+
+    // TODO: nuke all files under mnt and storage tmpfs too?
+
+    // Assume that we always have an emulated volume on internal
+    // storage; the framework will decide if it should be mounted.
+    mInternalEmulated = std::shared_ptr<android::vold::VolumeBase>(
+            new android::vold::EmulatedVolume("/data/media", ""));
+    mInternalEmulated->create();
+
     return 0;
 }
 
 int VolumeManager::stop() {
+    mInternalEmulated->destroy();
+    mInternalEmulated = nullptr;
     return 0;
 }
 
@@ -240,28 +289,162 @@ int VolumeManager::addVolume(Volume *v) {
 }
 
 void VolumeManager::handleBlockEvent(NetlinkEvent *evt) {
-#ifdef NETLINK_DEBUG
-    const char *devpath = evt->findParam("DEVPATH");
+#if DEBUG_NETLINK
+    LOG(VERBOSE) << "handleBlockEvent with action " << (int) evt->getAction();
+    evt->dump();
 #endif
 
-    /* Lookup a volume to handle this device */
-    VolumeCollection::iterator it;
-    bool hit = false;
-    for (it = mVolumes->begin(); it != mVolumes->end(); ++it) {
-        if (!(*it)->handleBlockEvent(evt)) {
-#ifdef NETLINK_DEBUG
-            SLOGD("Device '%s' event handled by volume %s\n", devpath, (*it)->getLabel());
-#endif
-            hit = true;
-            break;
+    std::string eventPath(evt->findParam("DEVPATH"));
+    std::string devType(evt->findParam("DEVTYPE"));
+
+    if (devType != "disk") return;
+
+    int major = atoi(evt->findParam("MAJOR"));
+    int minor = atoi(evt->findParam("MINOR"));
+    dev_t device = makedev(major, minor);
+
+    switch (evt->getAction()) {
+    case NetlinkEvent::Action::kAdd: {
+        for (auto source : mDiskSources) {
+            if (source->matches(eventPath)) {
+                // For now, assume that MMC devices are SD, and that
+                // everything else is USB
+                int flags = source->getFlags();
+                if (major == kMajorBlockMmc) {
+                    flags |= android::vold::Disk::Flags::kSd;
+                } else {
+                    flags |= android::vold::Disk::Flags::kUsb;
+                }
+
+                auto disk = new android::vold::Disk(eventPath, device,
+                        source->getNickname(), flags);
+                disk->create();
+                mDisks.push_back(std::shared_ptr<android::vold::Disk>(disk));
+                break;
+            }
+        }
+        break;
+    }
+    case NetlinkEvent::Action::kChange: {
+        for (auto disk : mDisks) {
+            if (disk->getDevice() == device) {
+                disk->readMetadata();
+                disk->readPartitions();
+            }
+        }
+        break;
+    }
+    case NetlinkEvent::Action::kRemove: {
+        auto i = mDisks.begin();
+        while (i != mDisks.end()) {
+            if ((*i)->getDevice() == device) {
+                (*i)->destroy();
+                i = mDisks.erase(i);
+            } else {
+                ++i;
+            }
+        }
+        break;
+    }
+    default: {
+        LOG(WARNING) << "Unexpected block event action " << (int) evt->getAction();
+        break;
+    }
+    }
+}
+
+void VolumeManager::addDiskSource(const std::shared_ptr<DiskSource>& diskSource) {
+    mDiskSources.push_back(diskSource);
+}
+
+std::shared_ptr<android::vold::Disk> VolumeManager::findDisk(const std::string& id) {
+    for (auto disk : mDisks) {
+        if (disk->getId() == id) {
+            return disk;
         }
     }
+    return nullptr;
+}
 
-    if (!hit) {
-#ifdef NETLINK_DEBUG
-        SLOGW("No volumes handled block event for '%s'", devpath);
-#endif
+std::shared_ptr<android::vold::VolumeBase> VolumeManager::findVolume(const std::string& id) {
+    if (mInternalEmulated->getId() == id) {
+        return mInternalEmulated;
     }
+    for (auto disk : mDisks) {
+        auto vol = disk->findVolume(id);
+        if (vol != nullptr) {
+            return vol;
+        }
+    }
+    return nullptr;
+}
+
+int VolumeManager::linkPrimary(userid_t userId) {
+    std::string source(mPrimary->getPath());
+    if (mPrimary->getType() == android::vold::VolumeBase::Type::kEmulated) {
+        source = StringPrintf("%s/%d", source.c_str(), userId);
+    }
+
+    std::string target(StringPrintf("/mnt/user/%d/primary", userId));
+    if (TEMP_FAILURE_RETRY(unlink(target.c_str()))) {
+        if (errno != ENOENT) {
+            SLOGW("Failed to unlink %s: %s", target.c_str(), strerror(errno));
+        }
+    }
+    if (TEMP_FAILURE_RETRY(symlink(source.c_str(), target.c_str()))) {
+        SLOGW("Failed to link %s to %s: %s", source.c_str(), target.c_str(),
+                strerror(errno));
+        return -errno;
+    }
+    return 0;
+}
+
+int VolumeManager::startUser(userid_t userId) {
+    // Note that sometimes the system will spin up processes from Zygote
+    // before actually starting the user, so we're okay if Zygote
+    // already created this directory.
+    std::string path(StringPrintf("%s/%d", kUserMountPath, userId));
+    fs_prepare_dir(path.c_str(), 0755, AID_ROOT, AID_ROOT);
+
+    mUsers.push_back(userId);
+    if (mPrimary) {
+        linkPrimary(userId);
+    }
+    return 0;
+}
+
+int VolumeManager::cleanupUser(userid_t userId) {
+    mUsers.remove(userId);
+    return 0;
+}
+
+int VolumeManager::setPrimary(const std::shared_ptr<android::vold::VolumeBase>& vol) {
+    mPrimary = vol;
+    for (userid_t userId : mUsers) {
+        linkPrimary(userId);
+    }
+    return 0;
+}
+
+int VolumeManager::reset() {
+    // Tear down all existing disks/volumes and start from a blank slate so
+    // newly connected framework hears all events.
+    mInternalEmulated->destroy();
+    mInternalEmulated->create();
+    for (auto disk : mDisks) {
+        disk->destroy();
+        disk->create();
+    }
+    mUsers.clear();
+    return 0;
+}
+
+int VolumeManager::shutdown() {
+    for (auto disk : mDisks) {
+        disk->destroy();
+    }
+    mDisks.clear();
+    return 0;
 }
 
 int VolumeManager::listVolumes(SocketClient *cli, bool broadcast) {
@@ -1060,16 +1243,16 @@ int VolumeManager::unmountLoopImage(const char *id, const char *idHash,
         SLOGW("%s unmount attempt %d failed (%s)",
               id, i, strerror(errno));
 
-        int action = 0; // default is to just complain
+        int signal = 0; // default is to just complain
 
         if (force) {
             if (i > (UNMOUNT_RETRIES - 2))
-                action = 2; // SIGKILL
+                signal = SIGKILL;
             else if (i > (UNMOUNT_RETRIES - 3))
-                action = 1; // SIGHUP
+                signal = SIGTERM;
         }
 
-        Process::killProcessesWithOpenFiles(mountPoint, action);
+        Process::killProcessesWithOpenFiles(mountPoint, signal);
         usleep(UNMOUNT_SLEEP_BETWEEN_RETRY_MS);
     }
 
@@ -1867,23 +2050,12 @@ int VolumeManager::cleanupAsec(Volume *v, bool force) {
 }
 
 int VolumeManager::mkdirs(char* path) {
-    // Require that path lives under a volume we manage and is mounted
-    const char* emulated_source = getenv("EMULATED_STORAGE_SOURCE");
-    const char* root = NULL;
-    if (emulated_source && !strncmp(path, emulated_source, strlen(emulated_source))) {
-        root = emulated_source;
+    // Only offer to create directories for paths managed by vold
+    if (strncmp(path, "/storage/", 9) == 0) {
+        // fs_mkdirs() does symlink checking and relative path enforcement
+        return fs_mkdirs(path, 0700);
     } else {
-        Volume* vol = getVolumeForFile(path);
-        if (vol && vol->getState() == Volume::State_Mounted) {
-            root = vol->getMountpoint();
-        }
-    }
-
-    if (!root) {
         SLOGE("Failed to find mounted volume for %s", path);
         return -EINVAL;
     }
-
-    /* fs_mkdirs() does symlink checking and relative path enforcement */
-    return fs_mkdirs(path, 0700);
 }

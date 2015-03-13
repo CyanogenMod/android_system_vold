@@ -14,14 +14,12 @@
  * limitations under the License.
  */
 
-#define LOG_TAG "Vold"
-
 #include "sehandle.h"
 #include "Utils.h"
 #include "Process.h"
 
+#include <base/logging.h>
 #include <cutils/fs.h>
-#include <cutils/log.h>
 #include <private/android_filesystem_config.h>
 
 #include <fcntl.h>
@@ -53,8 +51,8 @@ status_t CreateDeviceNode(const std::string& path, dev_t dev) {
     mode_t mode = 0660 | S_IFBLK;
     if (mknod(cpath, mode, dev) < 0) {
         if (errno != EEXIST) {
-            ALOGW("Failed to create device node for %ud:%ud at %s: %s",
-                    major(dev), minor(dev), cpath, strerror(errno));
+            PLOG(ERROR) << "Failed to create device node for " << major(dev)
+                    << ":" << minor(dev) << " at " << path;
             res = -errno;
         }
     }
@@ -81,22 +79,30 @@ status_t ForceUnmount(const std::string& path) {
     if (!umount2(cpath, UMOUNT_NOFOLLOW) || errno == EINVAL || errno == ENOENT) {
         return OK;
     }
-    ALOGW("Failed to unmount %s (%s), sending SIGTERM", cpath, strerror(errno));
+    PLOG(WARNING) << "Failed to unmount " << path << "; sending SIGTERM";
     Process::killProcessesWithOpenFiles(cpath, SIGTERM);
     sleep(1);
 
     if (!umount2(cpath, UMOUNT_NOFOLLOW) || errno == EINVAL || errno == ENOENT) {
         return OK;
     }
-    ALOGW("Failed to unmount %s (%s), sending SIGKILL", cpath, strerror(errno));
+    PLOG(WARNING) << "Failed to unmount " << path << "; sending SIGKILL";
     Process::killProcessesWithOpenFiles(cpath, SIGKILL);
     sleep(1);
 
     if (!umount2(cpath, UMOUNT_NOFOLLOW) || errno == EINVAL || errno == ENOENT) {
         return OK;
     }
-    ALOGW("Failed to unmount %s (%s)", cpath, strerror(errno));
+    PLOG(ERROR) << "Failed to unmount " << path << "; giving up";
     return -errno;
+}
+
+status_t BindMount(const std::string& source, const std::string& target) {
+    if (::mount(source.c_str(), target.c_str(), "", MS_BIND, NULL)) {
+        PLOG(ERROR) << "Failed to bind mount " << source << " to " << target;
+        return -errno;
+    }
+    return OK;
 }
 
 }  // namespace vold

@@ -27,10 +27,13 @@
 
 #define LOG_TAG "Vold"
 
+#include <base/logging.h>
+#include <base/stringprintf.h>
 #include "cutils/klog.h"
 #include "cutils/log.h"
 #include "cutils/properties.h"
 
+#include "Disk.h"
 #include "VolumeManager.h"
 #include "CommandListener.h"
 #include "NetlinkManager.h"
@@ -41,12 +44,17 @@
 static int process_config(VolumeManager *vm);
 static void coldboot(const char *path);
 
-#define FSTAB_PREFIX "/fstab."
+//#define DEBUG_FSTAB "/data/local/tmp/fstab.debug"
+
 struct fstab *fstab;
 
 struct selabel_handle *sehandle;
 
-int main() {
+using android::base::StringPrintf;
+
+int main(int argc, char* argv[]) {
+    setenv("ANDROID_LOG_TAGS", "*:v", 1);
+    android::base::InitLogging(argv);
 
     VolumeManager *vm;
     CommandListener *cl;
@@ -159,54 +167,47 @@ static void coldboot(const char *path)
 }
 
 static int process_config(VolumeManager *vm)
-{
-    char fstab_filename[PROPERTY_VALUE_MAX + sizeof(FSTAB_PREFIX)];
-    char propbuf[PROPERTY_VALUE_MAX];
-    int i;
-    int ret = -1;
-    int flags;
+ {
+    char hardware[PROPERTY_VALUE_MAX];
+    property_get("ro.hardware", hardware, "");
+    std::string fstab_filename(StringPrintf("/fstab.%s", hardware));
 
-    property_get("ro.hardware", propbuf, "");
-    snprintf(fstab_filename, sizeof(fstab_filename), FSTAB_PREFIX"%s", propbuf);
+#ifdef DEBUG_FSTAB
+    if (access(DEBUG_FSTAB, R_OK) == 0) {
+        LOG(DEBUG) << "Found debug fstab; switching!";
+        fstab_filename = DEBUG_FSTAB;
+    }
+#endif
 
-    fstab = fs_mgr_read_fstab(fstab_filename);
+    fstab = fs_mgr_read_fstab(fstab_filename.c_str());
     if (!fstab) {
-        SLOGE("failed to open %s\n", fstab_filename);
+        PLOG(ERROR) << "Failed to open " << fstab_filename;
         return -1;
     }
 
     /* Loop through entries looking for ones that vold manages */
-    for (i = 0; i < fstab->num_entries; i++) {
+    for (int i = 0; i < fstab->num_entries; i++) {
         if (fs_mgr_is_voldmanaged(&fstab->recs[i])) {
-            DirectVolume *dv = NULL;
-            flags = 0;
-
-            /* Set any flags that might be set for this volume */
             if (fs_mgr_is_nonremovable(&fstab->recs[i])) {
-                flags |= VOL_NONREMOVABLE;
+                LOG(WARNING) << "nonremovable no longer supported; ignoring volume";
+                continue;
             }
+
+            std::string sysPattern(fstab->recs[i].blk_device);
+            std::string nickname(fstab->recs[i].label);
+            int flags = 0;
+
             if (fs_mgr_is_encryptable(&fstab->recs[i])) {
-                flags |= VOL_ENCRYPTABLE;
+                flags |= android::vold::Disk::Flags::kAdoptable;
             }
-            /* Only set this flag if there is not an emulated sd card */
-            if (fs_mgr_is_noemulatedsd(&fstab->recs[i]) &&
-                !strcmp(fstab->recs[i].fs_type, "vfat")) {
-                flags |= VOL_PROVIDES_ASEC;
-            }
-            dv = new DirectVolume(vm, &(fstab->recs[i]), flags);
-
-            if (dv->addPath(fstab->recs[i].blk_device)) {
-                SLOGE("Failed to add devpath %s to volume %s",
-                      fstab->recs[i].blk_device, fstab->recs[i].label);
-                goto out_fail;
+            if (fs_mgr_is_noemulatedsd(&fstab->recs[i])) {
+                flags |= android::vold::Disk::Flags::kDefaultPrimary;
             }
 
-            vm->addVolume(dv);
+            vm->addDiskSource(std::shared_ptr<VolumeManager::DiskSource>(
+                    new VolumeManager::DiskSource(sysPattern, nickname, flags)));
         }
     }
 
-    ret = 0;
-
-out_fail:
-    return ret;
+    return 0;
 }

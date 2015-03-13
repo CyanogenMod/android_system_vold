@@ -34,6 +34,7 @@
 
 #include "CommandListener.h"
 #include "VolumeManager.h"
+#include "VolumeBase.h"
 #include "ResponseCode.h"
 #include "Process.h"
 #include "Loop.h"
@@ -86,6 +87,14 @@ void CommandListener::dumpArgs(int argc, char **argv, int argObscure) {
 void CommandListener::dumpArgs(int /*argc*/, char ** /*argv*/, int /*argObscure*/) { }
 #endif
 
+int CommandListener::sendGenericOkFail(SocketClient *cli, int cond) {
+    if (!cond) {
+        return cli->sendMsg(ResponseCode::CommandOkay, "Command succeeded", false);
+    } else {
+        return cli->sendMsg(ResponseCode::OperationFailed, "Command failed", false);
+    }
+}
+
 CommandListener::DumpCmd::DumpCmd() :
                  VoldCommand("dump") {
 }
@@ -129,99 +138,93 @@ int CommandListener::VolumeCmd::runCommand(SocketClient *cli,
     }
 
     VolumeManager *vm = VolumeManager::Instance();
-    int rc = 0;
 
-    if (!strcmp(argv[1], "list")) {
-        bool broadcast = argc >= 3 && !strcmp(argv[2], "broadcast");
-        return vm->listVolumes(cli, broadcast);
-    } else if (!strcmp(argv[1], "debug")) {
-        if (argc != 3 || (argc == 3 && (strcmp(argv[2], "off") && strcmp(argv[2], "on")))) {
-            cli->sendMsg(ResponseCode::CommandSyntaxError, "Usage: volume debug <off/on>", false);
-            return 0;
-        }
-        vm->setDebug(!strcmp(argv[2], "on") ? true : false);
-    } else if (!strcmp(argv[1], "mount")) {
-        if (argc != 3) {
-            cli->sendMsg(ResponseCode::CommandSyntaxError, "Usage: volume mount <path>", false);
-            return 0;
-        }
-        rc = vm->mountVolume(argv[2]);
-    } else if (!strcmp(argv[1], "unmount")) {
-        if (argc < 3 || argc > 4 ||
-           ((argc == 4 && strcmp(argv[3], "force")) &&
-            (argc == 4 && strcmp(argv[3], "force_and_revert")))) {
-            cli->sendMsg(ResponseCode::CommandSyntaxError, "Usage: volume unmount <path> [force|force_and_revert]", false);
-            return 0;
+    // TODO: tease out methods not directly related to volumes
+
+    std::string cmd(argv[1]);
+    if (cmd == "reset") {
+        return sendGenericOkFail(cli, vm->reset());
+
+    } else if (cmd == "shutdown") {
+        return sendGenericOkFail(cli, vm->shutdown());
+
+    } else if (cmd == "partition" && argc > 3) {
+        // partition [diskId] [public|private|mixed] [ratio]
+        std::string id(argv[2]);
+        auto disk = vm->findDisk(id);
+        if (disk == nullptr) {
+            return cli->sendMsg(ResponseCode::CommandSyntaxError, "Unknown disk", false);
         }
 
-        bool force = false;
-        bool revert = false;
-        if (argc >= 4 && !strcmp(argv[3], "force")) {
-            force = true;
-        } else if (argc >= 4 && !strcmp(argv[3], "force_and_revert")) {
-            force = true;
-            revert = true;
-        }
-        rc = vm->unmountVolume(argv[2], force, revert);
-    } else if (!strcmp(argv[1], "format")) {
-        if (argc < 3 || argc > 4 ||
-            (argc == 4 && strcmp(argv[3], "wipe"))) {
-            cli->sendMsg(ResponseCode::CommandSyntaxError, "Usage: volume format <path> [wipe]", false);
-            return 0;
-        }
-        bool wipe = false;
-        if (argc >= 4 && !strcmp(argv[3], "wipe")) {
-            wipe = true;
-        }
-        rc = vm->formatVolume(argv[2], wipe);
-    } else if (!strcmp(argv[1], "share")) {
-        if (argc != 4) {
-            cli->sendMsg(ResponseCode::CommandSyntaxError,
-                    "Usage: volume share <path> <method>", false);
-            return 0;
-        }
-        rc = vm->shareVolume(argv[2], argv[3]);
-    } else if (!strcmp(argv[1], "unshare")) {
-        if (argc != 4) {
-            cli->sendMsg(ResponseCode::CommandSyntaxError,
-                    "Usage: volume unshare <path> <method>", false);
-            return 0;
-        }
-        rc = vm->unshareVolume(argv[2], argv[3]);
-    } else if (!strcmp(argv[1], "shared")) {
-        bool enabled = false;
-        if (argc != 4) {
-            cli->sendMsg(ResponseCode::CommandSyntaxError,
-                    "Usage: volume shared <path> <method>", false);
-            return 0;
-        }
-
-        if (vm->shareEnabled(argv[2], argv[3], &enabled)) {
-            cli->sendMsg(
-                    ResponseCode::OperationFailed, "Failed to determine share enable state", true);
+        std::string type(argv[3]);
+        if (type == "public") {
+            return sendGenericOkFail(cli, disk->partitionPublic());
+        } else if (type == "private") {
+            return sendGenericOkFail(cli, disk->partitionPrivate());
+        } else if (type == "mixed") {
+            if (argc < 4) {
+                return cli->sendMsg(ResponseCode::CommandSyntaxError, nullptr, false);
+            }
+            int frac = atoi(argv[4]);
+            return sendGenericOkFail(cli, disk->partitionMixed(frac));
         } else {
-            cli->sendMsg(ResponseCode::ShareEnabledResult,
-                    (enabled ? "Share enabled" : "Share disabled"), false);
+            return cli->sendMsg(ResponseCode::CommandSyntaxError, nullptr, false);
         }
-        return 0;
-    } else if (!strcmp(argv[1], "mkdirs")) {
-        if (argc != 3) {
-            cli->sendMsg(ResponseCode::CommandSyntaxError, "Usage: volume mkdirs <path>", false);
-            return 0;
+
+    } else if (cmd == "mkdirs" && argc > 2) {
+        // mkdirs [path]
+        return sendGenericOkFail(cli, vm->mkdirs(argv[2]));
+
+    } else if (cmd == "start_user" && argc > 2) {
+        // start_user [user]
+        return sendGenericOkFail(cli, vm->startUser(atoi(argv[2])));
+
+    } else if (cmd == "cleanup_user" && argc > 2) {
+        // cleanup_user [user]
+        return sendGenericOkFail(cli, vm->cleanupUser(atoi(argv[2])));
+
+    } else if (cmd == "mount" && argc > 2) {
+        // mount [volId] [flags] [user]
+        std::string id(argv[2]);
+        auto vol = vm->findVolume(id);
+        if (vol == nullptr) {
+            return cli->sendMsg(ResponseCode::CommandSyntaxError, "Unknown volume", false);
         }
-        rc = vm->mkdirs(argv[2]);
-    } else {
-        cli->sendMsg(ResponseCode::CommandSyntaxError, "Unknown volume cmd", false);
+
+        int flags = (argc > 3) ? atoi(argv[3]) : 0;
+        userid_t user = (argc > 4) ? atoi(argv[4]) : -1;
+
+        if (flags & android::vold::VolumeBase::Flags::kPrimary) {
+            vm->setPrimary(vol);
+        }
+
+        vol->setFlags(flags);
+        vol->setUser(user);
+
+        return sendGenericOkFail(cli, vol->mount());
+
+    } else if (cmd == "unmount" && argc > 2) {
+        // unmount [volId]
+        std::string id(argv[2]);
+        auto vol = vm->findVolume(id);
+        if (vol == nullptr) {
+            return cli->sendMsg(ResponseCode::CommandSyntaxError, "Unknown volume", false);
+        }
+
+        return sendGenericOkFail(cli, vol->unmount());
+
+    } else if (cmd == "format" && argc > 2) {
+        // format [volId]
+        std::string id(argv[2]);
+        auto vol = vm->findVolume(id);
+        if (vol == nullptr) {
+            return cli->sendMsg(ResponseCode::CommandSyntaxError, "Unknown volume", false);
+        }
+
+        return sendGenericOkFail(cli, vol->format());
     }
 
-    if (!rc) {
-        cli->sendMsg(ResponseCode::CommandOkay, "volume operation succeeded", false);
-    } else {
-        rc = ResponseCode::convertFromErrno();
-        cli->sendMsg(rc, "volume operation failed", true);
-    }
-
-    return 0;
+    return cli->sendMsg(ResponseCode::CommandSyntaxError, nullptr, false);
 }
 
 CommandListener::StorageCmd::StorageCmd() :
@@ -616,7 +619,7 @@ int CommandListener::CryptfsCmd::runCommand(SocketClient *cli,
             if (rc == 0) {
                 break;
             } else if (tries == 0) {
-                Process::killProcessesWithOpenFiles(DATA_MNT_POINT, 2);
+                Process::killProcessesWithOpenFiles(DATA_MNT_POINT, SIGKILL);
             }
         }
     } else if (!strcmp(argv[1], "changepw")) {

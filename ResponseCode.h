@@ -66,6 +66,20 @@ public:
     static const int VolumeDiskRemoved             = 631;
     static const int VolumeBadRemoval              = 632;
 
+    static const int DiskCreated = 640;
+    static const int DiskSizeChanged = 641;
+    static const int DiskLabelChanged = 642;
+    static const int DiskVolumeCreated = 643;
+    static const int DiskDestroyed = 649;
+
+    static const int VolumeCreated = 650;
+    static const int VolumeStateChanged = 651;
+    static const int VolumeFsTypeChanged = 652;
+    static const int VolumeFsUuidChanged = 653;
+    static const int VolumeFsLabelChanged = 654;
+    static const int VolumePathChanged = 655;
+    static const int VolumeDestroyed = 659;
+
     static int convertFromErrno();
 };
 #endif

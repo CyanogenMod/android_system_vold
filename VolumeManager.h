@@ -14,16 +14,25 @@
  * limitations under the License.
  */
 
-#ifndef _VOLUMEMANAGER_H
-#define _VOLUMEMANAGER_H
+#ifndef ANDROID_VOLD_VOLUME_MANAGER_H
+#define ANDROID_VOLD_VOLUME_MANAGER_H
 
 #include <pthread.h>
+#include <fnmatch.h>
+#include <stdlib.h>
 
 #ifdef __cplusplus
+
+#include <string>
+#include <list>
+
+#include <cutils/multiuser.h>
 #include <utils/List.h>
 #include <sysutils/SocketListener.h>
 
+#include "Disk.h"
 #include "Volume.h"
+#include "VolumeBase.h"
 
 /* The length of an MD5 hash when encoded into ASCII hex characters */
 #define MD5_ASCII_LENGTH_PLUS_NULL ((MD5_DIGEST_LENGTH*2)+1)
@@ -54,7 +63,6 @@ class VolumeManager {
 private:
     static VolumeManager *sInstance;
 
-private:
     SocketListener        *mBroadcaster;
 
     VolumeCollection      *mVolumes;
@@ -76,6 +84,40 @@ public:
     void handleBlockEvent(NetlinkEvent *evt);
 
     int addVolume(Volume *v);
+
+    class DiskSource {
+    public:
+        DiskSource(const std::string& sysPattern, const std::string& nickname, int flags) :
+                mSysPattern(sysPattern), mNickname(nickname), mFlags(flags) {
+        }
+
+        bool matches(const std::string& sysPath) {
+            return !fnmatch(mSysPattern.c_str(), sysPath.c_str(), 0);
+        }
+
+        const std::string& getNickname() { return mNickname; }
+        int getFlags() { return mFlags; }
+
+    private:
+        std::string mSysPattern;
+        std::string mNickname;
+        int mFlags;
+    };
+
+    void addDiskSource(const std::shared_ptr<DiskSource>& diskSource);
+
+    std::shared_ptr<android::vold::Disk> findDisk(const std::string& id);
+    std::shared_ptr<android::vold::VolumeBase> findVolume(const std::string& id);
+
+    int startUser(userid_t userId);
+    int cleanupUser(userid_t userId);
+
+    int setPrimary(const std::shared_ptr<android::vold::VolumeBase>& vol);
+
+    /* Reset all internal state, typically during framework boot */
+    int reset();
+    /* Prepare for device shutdown, safely unmounting all devices */
+    int shutdown();
 
     int listVolumes(SocketClient *cli, bool broadcast);
     int mountVolume(const char *label);
@@ -156,6 +198,16 @@ private:
     bool isMountpointMounted(const char *mp);
     bool isAsecInDirectory(const char *dir, const char *asec) const;
     bool isLegalAsecId(const char *id) const;
+
+    int linkPrimary(userid_t userId);
+
+    std::list<std::shared_ptr<DiskSource>> mDiskSources;
+    std::list<std::shared_ptr<android::vold::Disk>> mDisks;
+
+    std::list<userid_t> mUsers;
+
+    std::shared_ptr<android::vold::VolumeBase> mInternalEmulated;
+    std::shared_ptr<android::vold::VolumeBase> mPrimary;
 };
 
 extern "C" {

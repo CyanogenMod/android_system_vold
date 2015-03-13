@@ -14,12 +14,13 @@
  * limitations under the License.
  */
 
-#define LOG_TAG "Vold"
-
 #include "Utils.h"
 #include "VolumeBase.h"
+#include "VolumeManager.h"
+#include "ResponseCode.h"
 
-#include <cutils/log.h>
+#include <base/stringprintf.h>
+#include <base/logging.h>
 
 #include <fcntl.h>
 #include <stdlib.h>
@@ -27,104 +28,163 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 
+using android::base::StringPrintf;
+
+#define DEBUG 1
+
 namespace android {
 namespace vold {
 
-VolumeBase::VolumeBase(VolumeType type) :
-        mType(type), mState(VolumeState::kUnmounted) {
+VolumeBase::VolumeBase(Type type) :
+        mType(type), mFlags(0), mUser(-1), mCreated(false), mState(State::kUnmounted) {
 }
 
 VolumeBase::~VolumeBase() {
+    CHECK(!mCreated);
 }
 
-void VolumeBase::setState(VolumeState state) {
+void VolumeBase::setState(State state) {
     mState = state;
 
-    // TODO: publish state up to framework
+    VolumeManager::Instance()->getBroadcaster()->sendBroadcast(
+            ResponseCode::VolumeStateChanged,
+            StringPrintf("%s %d", getId().c_str(), mState).c_str(), false);
 }
 
-void VolumeBase::stackVolume(const std::shared_ptr<VolumeBase>& volume) {
-    mStacked.push_back(volume);
-}
-
-void VolumeBase::unstackVolume(const std::shared_ptr<VolumeBase>& volume) {
-    mStacked.remove(volume);
-}
-
-status_t VolumeBase::mount() {
-    if (getState() != VolumeState::kUnmounted) {
-        SLOGE("Must be unmounted to mount %s", getId().c_str());
+status_t VolumeBase::setFlags(int flags) {
+    if (mState != State::kUnmounted) {
+        LOG(WARNING) << getId() << " flags change requires state unmounted";
         return -EBUSY;
     }
 
-    setState(VolumeState::kMounting);
+    mFlags = flags;
+    return OK;
+}
+
+status_t VolumeBase::setUser(userid_t user) {
+    if (mState != State::kUnmounted) {
+        LOG(WARNING) << getId() << " user change requires state unmounted";
+        return -EBUSY;
+    }
+
+    mUser = user;
+    return OK;
+}
+
+status_t VolumeBase::setId(const std::string& id) {
+    if (mCreated) {
+        LOG(WARNING) << getId() << " id change requires not created";
+        return -EBUSY;
+    }
+
+    mId = id;
+    return OK;
+}
+
+status_t VolumeBase::setPath(const std::string& path) {
+    if (mState != State::kMounting) {
+        LOG(WARNING) << getId() << " path change requires state mounting";
+        return -EBUSY;
+    }
+
+    mPath = path;
+    VolumeManager::Instance()->getBroadcaster()->sendBroadcast(
+            ResponseCode::VolumePathChanged,
+            StringPrintf("%s %s", getId().c_str(), mPath.c_str()).c_str(), false);
+    return OK;
+}
+
+void VolumeBase::addVolume(const std::shared_ptr<VolumeBase>& volume) {
+    mVolumes.push_back(volume);
+}
+
+void VolumeBase::removeVolume(const std::shared_ptr<VolumeBase>& volume) {
+    mVolumes.remove(volume);
+}
+
+std::shared_ptr<VolumeBase> VolumeBase::findVolume(const std::string& id) {
+    for (auto vol : mVolumes) {
+        if (vol->getId() == id) {
+            return vol;
+        }
+    }
+    return nullptr;
+}
+
+status_t VolumeBase::create() {
+    CHECK(!mCreated);
+    mCreated = true;
+    VolumeManager::Instance()->getBroadcaster()->sendBroadcast(
+            ResponseCode::VolumeCreated,
+            StringPrintf("%s %d", getId().c_str(), mType).c_str(), false);
+    return OK;
+}
+
+status_t VolumeBase::destroy() {
+    CHECK(mCreated);
+
+    if (mState == State::kMounted) {
+        unmount();
+    }
+
+    mCreated = false;
+    VolumeManager::Instance()->getBroadcaster()->sendBroadcast(
+            ResponseCode::VolumeDestroyed, getId().c_str(), false);
+    return OK;
+}
+
+status_t VolumeBase::mount() {
+    if (mState != State::kUnmounted) {
+        LOG(WARNING) << getId() << " mount requires state unmounted";
+        return -EBUSY;
+    }
+
+    setState(State::kMounting);
     status_t res = doMount();
-    if (!res) {
-        setState(VolumeState::kMounted);
+    if (res == OK) {
+        setState(State::kMounted);
     } else {
-        setState(VolumeState::kCorrupt);
+        setState(State::kUnmounted);
     }
 
     return res;
 }
 
 status_t VolumeBase::unmount() {
-    if (getState() != VolumeState::kMounted) {
-        SLOGE("Must be mounted to unmount %s", getId().c_str());
+    if (mState != State::kMounted) {
+        LOG(WARNING) << getId() << " unmount requires state mounted";
         return -EBUSY;
     }
 
-    setState(VolumeState::kUnmounting);
+    setState(State::kUnmounting);
 
-    for (std::string target : mBindTargets) {
-        ForceUnmount(target);
-    }
-    mBindTargets.clear();
-
-    for (std::shared_ptr<VolumeBase> v : mStacked) {
-        if (v->unmount()) {
-            ALOGW("Failed to unmount %s stacked above %s", v->getId().c_str(),
-                    getId().c_str());
+    for (auto vol : mVolumes) {
+        if (vol->unmount()) {
+            LOG(WARNING) << getId() << " failed to unmount " << vol->getId()
+                    << " stacked above";
         }
     }
-    mStacked.clear();
+    mVolumes.clear();
 
     status_t res = doUnmount();
-    setState(VolumeState::kUnmounted);
+    setState(State::kUnmounted);
     return res;
 }
 
 status_t VolumeBase::format() {
-    if (getState() != VolumeState::kUnmounted
-            || getState() != VolumeState::kCorrupt) {
-        SLOGE("Must be unmounted or corrupt to format %s", getId().c_str());
+    if (mState != State::kUnmounted) {
+        LOG(WARNING) << getId() << " format requires state unmounted";
         return -EBUSY;
     }
 
-    setState(VolumeState::kFormatting);
+    setState(State::kFormatting);
     status_t res = doFormat();
-    setState(VolumeState::kUnmounted);
+    setState(State::kUnmounted);
     return res;
 }
 
 status_t VolumeBase::doFormat() {
     return -ENOTSUP;
-}
-
-status_t VolumeBase::mountBind(const std::string& source, const std::string& target) {
-    if (::mount(source.c_str(), target.c_str(), "", MS_BIND, NULL)) {
-        SLOGE("Failed to bind mount %s to %s: %s", source.c_str(),
-                target.c_str(), strerror(errno));
-        return -errno;
-    }
-    mBindTargets.push_back(target);
-    return OK;
-}
-
-status_t VolumeBase::unmountBind(const std::string& target) {
-    ForceUnmount(target);
-    mBindTargets.remove(target);
-    return OK;
 }
 
 }  // namespace vold

@@ -38,6 +38,9 @@ status_t DestroyDeviceNode(const std::string& path);
 /* Really unmounts the path, killing active processes along the way */
 status_t ForceUnmount(const std::string& path);
 
+/* Creates bind mount from source to target */
+status_t BindMount(const std::string& source, const std::string& target);
+
 }  // namespace vold
 }  // namespace android
 

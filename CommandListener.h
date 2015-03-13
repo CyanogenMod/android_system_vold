@@ -18,6 +18,7 @@
 #define _COMMANDLISTENER_H__
 
 #include <sysutils/FrameworkListener.h>
+#include <utils/Errors.h>
 #include "VoldCommand.h"
 
 class CommandListener : public FrameworkListener {
@@ -27,6 +28,7 @@ public:
 
 private:
     static void dumpArgs(int argc, char **argv, int argObscure);
+    static int sendGenericOkFail(SocketClient *cli, int cond);
 
     class DumpCmd : public VoldCommand {
     public:

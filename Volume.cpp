@@ -521,20 +521,20 @@ int Volume::doUnmount(const char *path, bool force) {
             return 0;
         }
 
-        int action = 0;
+        int signal = 0;
 
         if (force) {
             if (retries == 1) {
-                action = 2; // SIGKILL
+                signal = SIGKILL;
             } else if (retries == 2) {
-                action = 1; // SIGHUP
+                signal = SIGTERM;
             }
         }
 
-        SLOGW("Failed to unmount %s (%s, retries %d, action %d)",
-                path, strerror(errno), retries, action);
+        SLOGW("Failed to unmount %s (%s, retries %d, signal %d)",
+                path, strerror(errno), retries, signal);
 
-        Process::killProcessesWithOpenFiles(path, action);
+        Process::killProcessesWithOpenFiles(path, signal);
         usleep(1000*1000);
     }
     errno = EBUSY;

@@ -42,24 +42,13 @@ public:
     explicit PublicVolume(dev_t device);
     virtual ~PublicVolume();
 
+protected:
+    status_t doMount() override;
+    status_t doUnmount() override;
+    status_t doFormat() override;
+
     status_t readMetadata();
     status_t initAsecStage();
-
-    void setPrimary(bool primary);
-    bool getPrimary() { return mPrimary; }
-
-    const std::string& getFsUuid() { return mFsUuid; }
-    const std::string& getFsLabel() { return mFsLabel; }
-
-    status_t bindUser(userid_t user);
-    status_t unbindUser(userid_t user);
-
-protected:
-    status_t doMount();
-    status_t doUnmount();
-    status_t doFormat();
-
-    status_t bindUserInternal(userid_t user, bool bind);
 
 private:
     /* Kernel device representing partition */
@@ -72,12 +61,12 @@ private:
     std::string mFusePath;
     /* PID of FUSE wrapper */
     pid_t mFusePid;
-    /* Flag indicating this is primary storage */
-    bool mPrimary;
 
-    /* Parsed UUID from filesystem */
+    /* Filesystem type */
+    std::string mFsType;
+    /* Filesystem UUID */
     std::string mFsUuid;
-    /* User-visible label from filesystem */
+    /* User-visible filesystem label */
     std::string mFsLabel;
 
     DISALLOW_COPY_AND_ASSIGN(PublicVolume);

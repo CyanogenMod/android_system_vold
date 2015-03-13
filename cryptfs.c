@@ -1451,10 +1451,10 @@ static int wait_and_unmount(char *mountpoint, bool kill)
         if (kill) {
             if (i == (WAIT_UNMOUNT_COUNT - 3)) {
                 SLOGW("sending SIGHUP to processes with open files\n");
-                vold_killProcessesWithOpenFiles(mountpoint, 1);
+                vold_killProcessesWithOpenFiles(mountpoint, SIGTERM);
             } else if (i == (WAIT_UNMOUNT_COUNT - 2)) {
                 SLOGW("sending SIGKILL to processes with open files\n");
-                vold_killProcessesWithOpenFiles(mountpoint, 2);
+                vold_killProcessesWithOpenFiles(mountpoint, SIGKILL);
             }
         }
 
@@ -3062,6 +3062,9 @@ int cryptfs_enable_internal(char *howarg, int crypt_type, char *passwd,
 
     property_get("ro.crypto.fuse_sdcard", fuse_sdcard, "");
     if (!strcmp(fuse_sdcard, "true")) {
+        // STOPSHIP: UNMOUNT ALL STORAGE BEFORE REACHING HERE, SINCE VOLD NOW MANAGES FUSE
+        // "ro.crypto.fuse_sdcard" is now deprecated
+
         /* This is a device using the fuse layer to emulate the sdcard semantics
          * on top of the userdata partition.  vold does not manage it, it is managed
          * by the sdcard service.  The sdcard service was killed by the property trigger

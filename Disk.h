@@ -28,16 +28,6 @@ namespace vold {
 
 class VolumeBase;
 
-// events:
-// disk_created 127:4
-// disk_meta 127:4 [size] [label]
-// disk_destroyed 127:4
-
-// commands:
-// disk partition_public 127:4
-// disk partition_private 127:4
-// disk partition_mixed 127:4 50
-
 /*
  * Representation of detected physical media.
  *
@@ -46,17 +36,34 @@ class VolumeBase;
  */
 class Disk {
 public:
-    Disk(const std::string& eventPath, dev_t device);
+    Disk(const std::string& eventPath, dev_t device, const std::string& nickname, int flags);
     virtual ~Disk();
 
+    enum Flags {
+        /* Flag that disk is adoptable */
+        kAdoptable = 1 << 0,
+        /* Flag that disk is considered primary when the user hasn't
+         * explicitly picked a primary storage location */
+        kDefaultPrimary = 1 << 1,
+        /* Flag that disk is SD card */
+        kSd = 1 << 2,
+        /* Flag that disk is USB disk */
+        kUsb = 1 << 3,
+    };
+
     const std::string& getId() { return mId; }
+    const std::string& getEventPath() { return mEventPath; }
     const std::string& getSysPath() { return mSysPath; }
     const std::string& getDevPath() { return mDevPath; }
     dev_t getDevice() { return mDevice; }
     uint64_t getSize() { return mSize; }
     const std::string& getLabel() { return mLabel; }
+    int getFlags() { return mFlags; }
 
     std::shared_ptr<VolumeBase> findVolume(const std::string& id);
+
+    status_t create();
+    status_t destroy();
 
     status_t readMetadata();
     status_t readPartitions();
@@ -68,6 +75,8 @@ public:
 private:
     /* ID that uniquely references this disk */
     std::string mId;
+    /* Original event path */
+    std::string mEventPath;
     /* Device path under sysfs */
     std::string mSysPath;
     /* Device path under dev */
@@ -79,7 +88,18 @@ private:
     /* User-visible label, such as manufacturer */
     std::string mLabel;
     /* Current partitions on disk */
-    std::vector<std::shared_ptr<VolumeBase>> mParts;
+    std::vector<std::shared_ptr<VolumeBase>> mVolumes;
+    /* Nickname for this disk */
+    std::string mNickname;
+    /* Flags applicable to this disk */
+    int mFlags;
+    /* Flag indicating object is created */
+    bool mCreated;
+
+    void createPublicVolume(dev_t device);
+    void createPrivateVolume(dev_t device);
+
+    void destroyAllVolumes();
 
     int getMaxMinors();
 
