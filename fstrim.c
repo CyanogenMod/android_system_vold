@@ -64,6 +64,7 @@ static void *do_fstrim_filesystems(void *thread_arg)
     struct fstrim_range range = { 0 };
     extern struct fstab *fstab;
     int deep_trim = !!thread_arg;
+    struct fstab_rec *prev_rec = NULL;
 
     SLOGI("Starting fstrim work...\n");
 
@@ -92,6 +93,13 @@ static void *do_fstrim_filesystems(void *thread_arg)
             continue;
         }
 
+        /* Skip the multi-type partitions, which are required to be following each other.
+         * See fs_mgr.c's mount_with_alternatives().
+         */
+        if (prev_rec && !strcmp(prev_rec->mount_point, fstab->recs[i].mount_point)) {
+            continue;
+        }
+
         fd = open(fstab->recs[i].mount_point, O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW);
         if (fd < 0) {
             SLOGE("Cannot open %s for FITRIM\n", fstab->recs[i].mount_point);
@@ -111,6 +119,7 @@ static void *do_fstrim_filesystems(void *thread_arg)
             SLOGI("Trimmed %llu bytes on %s\n", range.len, fstab->recs[i].mount_point);
         }
         close(fd);
+        prev_rec = &fstab->recs[i];
     }
 
     /* Log the finish time in the event log */
