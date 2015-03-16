@@ -21,10 +21,10 @@
 #include "Utils.h"
 #include "VolumeBase.h"
 
+#include <base/file.h>
+#include <base/stringprintf.h>
 #include <cutils/log.h>
 #include <diskconfig/diskconfig.h>
-#include <utils/file.h>
-#include <utils/stringprintf.h>
 
 #include <fcntl.h>
 #include <stdio.h>
@@ -32,6 +32,9 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/mount.h>
+
+using android::base::ReadFileToString;
+using android::base::StringPrintf;
 
 namespace android {
 namespace vold {

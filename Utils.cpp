@@ -22,8 +22,6 @@
 
 #include <cutils/fs.h>
 #include <cutils/log.h>
-#include <utils/file.h>
-#include <utils/stringprintf.h>
 #include <private/android_filesystem_config.h>
 
 #include <fcntl.h>

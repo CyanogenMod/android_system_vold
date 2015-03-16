@@ -20,10 +20,9 @@
 #include "PublicVolume.h"
 #include "Utils.h"
 
+#include <base/stringprintf.h>
 #include <cutils/fs.h>
 #include <cutils/log.h>
-#include <utils/file.h>
-#include <utils/stringprintf.h>
 #include <private/android_filesystem_config.h>
 
 #include <fcntl.h>
@@ -32,6 +31,8 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+
+using android::base::StringPrintf;
 
 namespace android {
 namespace vold {
