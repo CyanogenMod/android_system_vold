@@ -3977,7 +3977,7 @@ int cryptfs_setfield(const char *fieldname, const char *value)
     max_keylen = strlen(fieldname);
     if (num_entries > 1) {
         // Need an extra "_%d" suffix.
-        max_keylen += 1 + log10(num_entries);
+      //  max_keylen += 1 + log10(num_entries);
     }
     if (max_keylen > PROPERTY_KEY_MAX - 1) {
         rc = CRYPTO_SETFIELD_ERROR_FIELD_TOO_LONG;
