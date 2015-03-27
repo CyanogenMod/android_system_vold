@@ -243,7 +243,7 @@ extern "C" {
   int cryptfs_setfield(const char *fieldname, const char *value);
   int cryptfs_mount_default_encrypted(void);
   int cryptfs_get_password_type(void);
-  char* cryptfs_get_password(void);
+  const char* cryptfs_get_password(void);
   void cryptfs_clear_password(void);
 #ifdef __cplusplus
 }
