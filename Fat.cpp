@@ -227,28 +227,35 @@ int Fat::format(const char *fsPath, unsigned int numSectors, bool wipe) {
 }
 
 void Fat::wipe(const char *fsPath, unsigned int numSectors) {
-    int fd;
     unsigned long long range[2];
 
-    fd = open(fsPath, O_RDWR);
-    if (fd >= 0) {
-        if (numSectors == 0) {
-            numSectors = get_blkdev_size(fd);
-        }
-        if (numSectors == 0) {
-            SLOGE("Fat wipe failed to determine size of %s", fsPath);
+    int fd = open(fsPath, O_RDWR);
+    if (fd == -1) {
+        SLOGE("Fat wipe failed to open device %s", fsPath);
+        return;
+    }
+
+    if (numSectors == 0) {
+        unsigned long nr_sec;
+        get_blkdev_size(fd, &nr_sec);
+        if (nr_sec > UINT32_MAX) {
+            SLOGE("Too many sectors for FAT: %ld", nr_sec);
             close(fd);
             return;
         }
-        range[0] = 0;
-        range[1] = (unsigned long long)numSectors * 512;
-        if (ioctl(fd, BLKDISCARD, &range) < 0) {
-            SLOGE("Fat wipe failed to discard blocks on %s", fsPath);
-        } else {
-            SLOGI("Fat wipe %d sectors on %s succeeded", numSectors, fsPath);
-        }
-        close(fd);
-    } else {
-        SLOGE("Fat wipe failed to open device %s", fsPath);
+        numSectors = nr_sec;
     }
+    if (numSectors == 0) {
+        SLOGE("Fat wipe failed to determine size of %s", fsPath);
+        close(fd);
+        return;
+    }
+    range[0] = 0;
+    range[1] = (unsigned long long)numSectors * 512;
+    if (ioctl(fd, BLKDISCARD, &range) < 0) {
+        SLOGE("Fat wipe failed to discard blocks on %s", fsPath);
+    } else {
+        SLOGI("Fat wipe %d sectors on %s succeeded", numSectors, fsPath);
+    }
+    close(fd);
 }
