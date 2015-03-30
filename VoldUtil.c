@@ -17,13 +17,8 @@
 #include <sys/ioctl.h>
 #include <linux/fs.h>
 
-unsigned int get_blkdev_size(int fd)
-{
-  unsigned int nr_sec;
-
-  if ( (ioctl(fd, BLKGETSIZE, &nr_sec)) == -1) {
-    nr_sec = 0;
+void get_blkdev_size(int fd, unsigned long* nr_sec) {
+  if ((ioctl(fd, BLKGETSIZE, nr_sec)) == -1) {
+    *nr_sec = 0;
   }
-
-  return nr_sec;
 }

@@ -35,6 +35,7 @@
 #include <sysutils/SocketClient.h>
 #include "Loop.h"
 #include "Asec.h"
+#include "VoldUtil.h"
 #include "sehandle.h"
 
 int Loop::dumpState(SocketClient *c) {
@@ -296,7 +297,7 @@ int Loop::resizeImageFile(const char *file, unsigned int numSectors) {
     return 0;
 }
 
-int Loop::lookupInfo(const char *loopDevice, struct asec_superblock *sb, unsigned int *nr_sec) {
+int Loop::lookupInfo(const char *loopDevice, struct asec_superblock *sb, unsigned long *nr_sec) {
     int fd;
     struct asec_superblock buffer;
 
@@ -306,7 +307,8 @@ int Loop::lookupInfo(const char *loopDevice, struct asec_superblock *sb, unsigne
         return -1;
     }
 
-    if (ioctl(fd, BLKGETSIZE, nr_sec)) {
+    get_blkdev_size(fd, nr_sec);
+    if (*nr_sec == 0) {
         SLOGE("Failed to get loop size (%s)", strerror(errno));
         destroyByDevice(loopDevice);
         close(fd);

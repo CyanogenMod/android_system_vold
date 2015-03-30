@@ -27,7 +27,7 @@ public:
     static const int LOOP_MAX = 4096;
 public:
     static int lookupActive(const char *id, char *buffer, size_t len);
-    static int lookupInfo(const char *loopDevice, struct asec_superblock *sb, unsigned int *nr_sec);
+    static int lookupInfo(const char *loopDevice, struct asec_superblock *sb, unsigned long *nr_sec);
     static int create(const char *id, const char *loopFile, char *loopDeviceBuffer, size_t len);
     static int destroyByDevice(const char *loopDevice);
     static int destroyByFile(const char *loopFile);
