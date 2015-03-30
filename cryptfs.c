@@ -431,7 +431,6 @@ static int get_crypt_ftr_info(char **metadata_fname, off64_t *off)
   int fd;
   char key_loc[PROPERTY_VALUE_MAX];
   char real_blkdev[PROPERTY_VALUE_MAX];
-  unsigned int nr_sec;
   int rc = -1;
 
   if (!cached_data) {
@@ -443,7 +442,9 @@ static int get_crypt_ftr_info(char **metadata_fname, off64_t *off)
         return -1;
       }
 
-      if ((nr_sec = get_blkdev_size(fd))) {
+      unsigned long nr_sec = 0;
+      get_blkdev_size(fd, &nr_sec);
+      if (nr_sec != 0) {
         /* If it's an encrypted Android partition, the last 16 Kbytes contain the
          * encryption info footer and key, and plenty of bytes to spare for future
          * growth.
@@ -1923,17 +1924,22 @@ int cryptfs_setup_volume(const char *label, int major, int minor,
     char real_blkdev[MAXPATHLEN], crypto_blkdev[MAXPATHLEN];
     struct crypt_mnt_ftr sd_crypt_ftr;
     struct stat statbuf;
-    unsigned int nr_sec;
-    int fd;
 
     sprintf(real_blkdev, "/dev/block/vold/%d:%d", major, minor);
 
     get_crypt_ftr_and_key(&sd_crypt_ftr);
 
     /* Update the fs_size field to be the size of the volume */
-    fd = open(real_blkdev, O_RDONLY);
-    nr_sec = get_blkdev_size(fd);
+    int fd = open(real_blkdev, O_RDONLY);
+    if (fd == -1) {
+        SLOGE("Cannot open volume %s\n", real_blkdev);
+        return -1;
+    }
+
+    unsigned long nr_sec = 0;
+    get_blkdev_size(fd, &nr_sec);
     close(fd);
+
     if (nr_sec == 0) {
         SLOGE("Cannot get size of volume %s\n", real_blkdev);
         return -1;
@@ -2949,9 +2955,8 @@ int cryptfs_enable_internal(char *howarg, int crypt_type, char *passwd,
 {
     int how = 0;
     char crypto_blkdev[MAXPATHLEN], real_blkdev[MAXPATHLEN];
-    unsigned long nr_sec;
     unsigned char decrypted_master_key[KEY_LEN_BYTES];
-    int rc=-1, fd, i;
+    int rc=-1, i;
     struct crypt_mnt_ftr crypt_ftr;
     struct crypt_persist_data *pdata;
     char encrypted_state[PROPERTY_VALUE_MAX];
@@ -3000,8 +3005,14 @@ int cryptfs_enable_internal(char *howarg, int crypt_type, char *passwd,
     fs_mgr_get_crypt_info(fstab, 0, real_blkdev, sizeof(real_blkdev));
 
     /* Get the size of the real block device */
-    fd = open(real_blkdev, O_RDONLY);
-    if ( (nr_sec = get_blkdev_size(fd)) == 0) {
+    int fd = open(real_blkdev, O_RDONLY);
+    if (fd == -1) {
+        SLOGE("Cannot open block device %s\n", real_blkdev);
+        goto error_unencrypted;
+    }
+    unsigned long nr_sec;
+    get_blkdev_size(fd, &nr_sec);
+    if (nr_sec == 0) {
         SLOGE("Cannot get size of block device %s\n", real_blkdev);
         goto error_unencrypted;
     }

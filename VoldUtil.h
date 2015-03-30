@@ -22,7 +22,7 @@
 #define ARRAY_SIZE(a) (sizeof(a) / sizeof(*(a)))
 
 __BEGIN_DECLS
-  unsigned int get_blkdev_size(int fd);
+void get_blkdev_size(int fd, unsigned long* nr_sec);
 __END_DECLS
 
 #endif

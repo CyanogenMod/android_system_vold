@@ -52,6 +52,7 @@
 #include "Devmapper.h"
 #include "Process.h"
 #include "Asec.h"
+#include "VoldUtil.h"
 #include "cryptfs.h"
 
 #define MASS_STORAGE_FILE_PATH  "/sys/class/android_usb/android0/f_mass_storage/lun/file"
@@ -759,7 +760,7 @@ int VolumeManager::finalizeAsec(const char *id) {
         return -1;
     }
 
-    unsigned int nr_sec = 0;
+    unsigned long nr_sec = 0;
     struct asec_superblock sb;
 
     if (Loop::lookupInfo(loopDevice, &sb, &nr_sec)) {
@@ -822,7 +823,7 @@ int VolumeManager::fixupAsecPermissions(const char *id, gid_t gid, const char* f
         return -1;
     }
 
-    unsigned int nr_sec = 0;
+    unsigned long nr_sec = 0;
     struct asec_superblock sb;
 
     if (Loop::lookupInfo(loopDevice, &sb, &nr_sec)) {
@@ -1297,7 +1298,7 @@ int VolumeManager::mountAsec(const char *id, const char *key, int ownerUid, bool
     char dmDevice[255];
     bool cleanupDm = false;
 
-    unsigned int nr_sec = 0;
+    unsigned long nr_sec = 0;
     struct asec_superblock sb;
 
     if (Loop::lookupInfo(loopDevice, &sb, &nr_sec)) {
@@ -1403,7 +1404,7 @@ int VolumeManager::mountObb(const char *img, const char *key, int ownerGid) {
     char dmDevice[255];
     bool cleanupDm = false;
     int fd;
-    unsigned int nr_sec = 0;
+    unsigned long nr_sec = 0;
 
     if ((fd = open(loopDevice, O_RDWR)) < 0) {
         SLOGE("Failed to open loopdevice (%s)", strerror(errno));
@@ -1411,7 +1412,8 @@ int VolumeManager::mountObb(const char *img, const char *key, int ownerGid) {
         return -1;
     }
 
-    if (ioctl(fd, BLKGETSIZE, &nr_sec)) {
+    get_blkdev_size(fd, &nr_sec);
+    if (nr_sec == 0) {
         SLOGE("Failed to get loop size (%s)", strerror(errno));
         Loop::destroyByDevice(loopDevice);
         close(fd);
@@ -1420,7 +1422,7 @@ int VolumeManager::mountObb(const char *img, const char *key, int ownerGid) {
 
     close(fd);
 
-    if (setupDevMapperDevice(dmDevice, sizeof(loopDevice), loopDevice, img,key, idHash , nr_sec, &cleanupDm, mDebug)) {
+    if (setupDevMapperDevice(dmDevice, sizeof(loopDevice), loopDevice, img,key, idHash, nr_sec, &cleanupDm, mDebug)) {
         Loop::destroyByDevice(loopDevice);
         return -1;
     }
