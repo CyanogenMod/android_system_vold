@@ -27,6 +27,7 @@
 #include <diskconfig/diskconfig.h>
 
 #include <fcntl.h>
+#include <inttypes.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/types.h>
@@ -175,7 +176,7 @@ status_t Disk::readMetadata() {
 
     VolumeManager::Instance()->getBroadcaster()->sendBroadcast(
             ResponseCode::DiskSizeChanged,
-            StringPrintf("%s %lld", getId().c_str(), mSize).c_str(), false);
+            StringPrintf("%s %" PRId64, getId().c_str(), mSize).c_str(), false);
     VolumeManager::Instance()->getBroadcaster()->sendBroadcast(
             ResponseCode::DiskLabelChanged,
             StringPrintf("%s %s", getId().c_str(), mLabel.c_str()).c_str(), false);
