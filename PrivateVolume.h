@@ -14,8 +14,8 @@
  * limitations under the License.
  */
 
-#ifndef ANDROID_VOLD_PUBLIC_VOLUME_H
-#define ANDROID_VOLD_PUBLIC_VOLUME_H
+#ifndef ANDROID_VOLD_PRIVATE_VOLUME_H
+#define ANDROID_VOLD_PRIVATE_VOLUME_H
 
 #include "VolumeBase.h"
 
@@ -25,22 +25,20 @@ namespace android {
 namespace vold {
 
 /*
- * Shared storage provided by public (vfat) partition.
+ * Private storage provided by an encrypted partition.
  *
- * Knows how to mount itself and then spawn a FUSE daemon to synthesize
- * permissions.  AsecVolume and ObbVolume can be stacked above it.
+ * Given a raw block device, it knows how to wrap it in dm-crypt and
+ * format as ext4/f2fs.  EmulatedVolume can be stacked above it.
  *
- * This volume is not inherently multi-user aware, so it has two possible
- * modes of operation:
- * 1. If primary storage for the device, it only binds itself to the
- * owner user.
- * 2. If secondary storage, it binds itself for all users, but masks
- * away the Android directory for secondary users.
+ * This volume is designed to behave much like the internal /data
+ * partition, both in layout and function.  For example, apps and
+ * private app data can be safely stored on this volume because the
+ * keys are tightly tied to this device.
  */
-class PublicVolume : public VolumeBase {
+class PrivateVolume : public VolumeBase {
 public:
-    explicit PublicVolume(dev_t device);
-    virtual ~PublicVolume();
+    PrivateVolume(dev_t device, const std::string& keyRaw);
+    virtual ~PrivateVolume();
 
 protected:
     status_t doCreate() override;
@@ -50,19 +48,19 @@ protected:
     status_t doFormat() override;
 
     status_t readMetadata();
-    status_t initAsecStage();
 
 private:
-    /* Kernel device representing partition */
-    dev_t mDevice;
-    /* Block device path */
-    std::string mDevPath;
-    /* Mount point of raw partition */
-    std::string mRawPath;
-    /* Mount point of FUSE wrapper */
-    std::string mFusePath;
-    /* PID of FUSE wrapper */
-    pid_t mFusePid;
+    /* Kernel device of raw, encrypted partition */
+    dev_t mRawDevice;
+    /* Path to raw, encrypted block device */
+    std::string mRawDevPath;
+    /* Path to decrypted block device */
+    std::string mDmDevPath;
+    /* Path where decrypted device is mounted */
+    std::string mPath;
+
+    /* Encryption key as raw bytes */
+    std::string mKeyRaw;
 
     /* Filesystem type */
     std::string mFsType;
@@ -71,7 +69,7 @@ private:
     /* User-visible filesystem label */
     std::string mFsLabel;
 
-    DISALLOW_COPY_AND_ASSIGN(PublicVolume);
+    DISALLOW_COPY_AND_ASSIGN(PrivateVolume);
 };
 
 }  // namespace vold

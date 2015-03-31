@@ -19,6 +19,7 @@
 
 #include <utils/Errors.h>
 
+#include <vector>
 #include <string>
 
 // DISALLOW_COPY_AND_ASSIGN disallows the copy and operator= functions. It goes in the private:
@@ -40,6 +41,18 @@ status_t ForceUnmount(const std::string& path);
 
 /* Creates bind mount from source to target */
 status_t BindMount(const std::string& source, const std::string& target);
+
+/* Reads filesystem metadata from device at path */
+status_t ReadMetadata(const std::string& path, std::string& fsType,
+        std::string& fsUuid, std::string& fsLabel);
+
+status_t ForkExecvp(const std::vector<std::string>& args, int* status,
+        bool ignore_int_quit, bool logwrap);
+
+status_t ReadRandomBytes(size_t bytes, std::string& out);
+
+status_t HexToStr(const std::string& hex, std::string& str);
+status_t StrToHex(const std::string& str, std::string& hex);
 
 }  // namespace vold
 }  // namespace android

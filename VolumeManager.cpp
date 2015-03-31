@@ -243,30 +243,7 @@ void VolumeManager::setDebug(bool enable) {
 int VolumeManager::start() {
     // Always start from a clean slate by unmounting everything in
     // directories that we own, in case we crashed.
-    FILE* fp = setmntent("/proc/mounts", "r");
-    if (fp == NULL) {
-        SLOGE("Error opening /proc/mounts: %s", strerror(errno));
-        return -errno;
-    }
-
-    // Some volumes can be stacked on each other, so force unmount in
-    // reverse order to give us the best chance of success.
-    std::list<std::string> toUnmount;
-    mntent* mentry;
-    while ((mentry = getmntent(fp)) != NULL) {
-        if (strncmp(mentry->mnt_dir, "/mnt/", 5) == 0
-                || strncmp(mentry->mnt_dir, "/storage/", 9) == 0) {
-            toUnmount.push_front(std::string(mentry->mnt_dir));
-        }
-    }
-    endmntent(fp);
-
-    for (auto path : toUnmount) {
-        SLOGW("Tearing down stale mount %s", path.c_str());
-        android::vold::ForceUnmount(path);
-    }
-
-    // TODO: nuke all files under mnt and storage tmpfs too?
+    unmountAll();
 
     // Assume that we always have an emulated volume on internal
     // storage; the framework will decide if it should be mounted.
@@ -440,10 +417,48 @@ int VolumeManager::reset() {
 }
 
 int VolumeManager::shutdown() {
+    mInternalEmulated->destroy();
     for (auto disk : mDisks) {
         disk->destroy();
     }
     mDisks.clear();
+    return 0;
+}
+
+int VolumeManager::unmountAll() {
+    // First, try gracefully unmounting all known devices
+    if (mInternalEmulated != nullptr) {
+        mInternalEmulated->unmount();
+    }
+    for (auto disk : mDisks) {
+        disk->unmountAll();
+    }
+
+    // Worst case we might have some stale mounts lurking around, so
+    // force unmount those just to be safe.
+    FILE* fp = setmntent("/proc/mounts", "r");
+    if (fp == NULL) {
+        SLOGE("Error opening /proc/mounts: %s", strerror(errno));
+        return -errno;
+    }
+
+    // Some volumes can be stacked on each other, so force unmount in
+    // reverse order to give us the best chance of success.
+    std::list<std::string> toUnmount;
+    mntent* mentry;
+    while ((mentry = getmntent(fp)) != NULL) {
+        if (strncmp(mentry->mnt_dir, "/mnt/", 5) == 0
+                || strncmp(mentry->mnt_dir, "/storage/", 9) == 0) {
+            toUnmount.push_front(std::string(mentry->mnt_dir));
+        }
+    }
+    endmntent(fp);
+
+    for (auto path : toUnmount) {
+        SLOGW("Tearing down stale mount %s", path.c_str());
+        android::vold::ForceUnmount(path);
+    }
+
     return 0;
 }
 
@@ -1831,35 +1846,6 @@ int VolumeManager::unshareVolume(const char *label, const char *method) {
     return 0;
 }
 
-extern "C" int vold_disableVol(const char *label) {
-    VolumeManager *vm = VolumeManager::Instance();
-    vm->disableVolumeManager();
-    vm->unshareVolume(label, "ums");
-    return vm->unmountVolume(label, true, false);
-}
-
-extern "C" int vold_getNumDirectVolumes(void) {
-    VolumeManager *vm = VolumeManager::Instance();
-    return vm->getNumDirectVolumes();
-}
-
-int VolumeManager::getNumDirectVolumes(void) {
-    VolumeCollection::iterator i;
-    int n=0;
-
-    for (i = mVolumes->begin(); i != mVolumes->end(); ++i) {
-        if ((*i)->getShareDevice() != (dev_t)0) {
-            n++;
-        }
-    }
-    return n;
-}
-
-extern "C" int vold_getDirectVolumeList(struct volume_info *vol_list) {
-    VolumeManager *vm = VolumeManager::Instance();
-    return vm->getDirectVolumeList(vol_list);
-}
-
 int VolumeManager::getDirectVolumeList(struct volume_info *vol_list) {
     VolumeCollection::iterator i;
     int n=0;
@@ -1902,15 +1888,9 @@ int VolumeManager::unmountVolume(const char *label, bool force, bool revert) {
     return v->unmountVol(force, revert);
 }
 
-extern "C" int vold_unmountAllAsecs(void) {
-    int rc;
-
+extern "C" int vold_unmountAll(void) {
     VolumeManager *vm = VolumeManager::Instance();
-    rc = vm->unmountAllAsecsInDir(Volume::SEC_ASECDIR_EXT);
-    if (vm->unmountAllAsecsInDir(Volume::SEC_ASECDIR_INT)) {
-        rc = -1;
-    }
-    return rc;
+    return vm->unmountAll();
 }
 
 #define ID_BUF_LEN 256

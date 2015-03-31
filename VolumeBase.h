@@ -87,7 +87,6 @@ public:
 
     status_t create();
     status_t destroy();
-
     status_t mount();
     status_t unmount();
     status_t format();
@@ -95,6 +94,8 @@ public:
 protected:
     explicit VolumeBase(Type type);
 
+    virtual status_t doCreate();
+    virtual status_t doDestroy();
     virtual status_t doMount() = 0;
     virtual status_t doUnmount() = 0;
     virtual status_t doFormat();

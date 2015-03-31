@@ -16,6 +16,7 @@
 
 #include "Disk.h"
 #include "PublicVolume.h"
+#include "PrivateVolume.h"
 #include "Utils.h"
 #include "VolumeBase.h"
 #include "VolumeManager.h"
@@ -26,6 +27,7 @@
 #include <base/logging.h>
 #include <diskconfig/diskconfig.h>
 
+#include <vector>
 #include <fcntl.h>
 #include <inttypes.h>
 #include <stdio.h>
@@ -35,6 +37,7 @@
 #include <sys/mount.h>
 
 using android::base::ReadFileToString;
+using android::base::WriteStringToFile;
 using android::base::StringPrintf;
 
 namespace android {
@@ -51,6 +54,8 @@ static const unsigned int kMajorBlockMmc = 179;
 static const char* kGptBasicData = "EBD0A0A2-B9E5-4433-87C0-68B6B72699C7";
 static const char* kGptAndroidMeta = "19A710A2-B3CA-11E4-B026-10604B889DCF";
 static const char* kGptAndroidExt = "193D1EA4-B3CA-11E4-B075-10604B889DCF";
+
+static const char* kKeyPath = "/data/misc/vold";
 
 enum class Table {
     kUnknown,
@@ -105,18 +110,44 @@ status_t Disk::destroy() {
     return OK;
 }
 
+static std::string BuildKeyPath(const std::string& partGuid) {
+    return StringPrintf("%s/ext_%s.key", kKeyPath, partGuid.c_str());
+}
+
 void Disk::createPublicVolume(dev_t device) {
-    auto vol = new PublicVolume(device);
+    auto vol = std::shared_ptr<VolumeBase>(new PublicVolume(device));
     vol->create();
 
-    mVolumes.push_back(std::shared_ptr<VolumeBase>(vol));
+    mVolumes.push_back(vol);
     VolumeManager::Instance()->getBroadcaster()->sendBroadcast(
             ResponseCode::DiskVolumeCreated,
             StringPrintf("%s %s", getId().c_str(), vol->getId().c_str()).c_str(), false);
 }
 
-void Disk::createPrivateVolume(dev_t device) {
-    // TODO: create and add
+void Disk::createPrivateVolume(dev_t device, const std::string& partGuid) {
+    std::string tmp;
+    std::string normalizedGuid;
+    if (HexToStr(partGuid, tmp)) {
+        LOG(WARNING) << "Invalid GUID " << partGuid;
+        return;
+    }
+    StrToHex(tmp, normalizedGuid);
+
+    std::string keyRaw;
+    if (!ReadFileToString(BuildKeyPath(normalizedGuid), &keyRaw)) {
+        PLOG(ERROR) << "Failed to load key for GUID " << normalizedGuid;
+        return;
+    }
+
+    LOG(DEBUG) << "Found key for GUID " << normalizedGuid;
+
+    auto vol = std::shared_ptr<VolumeBase>(new PrivateVolume(device, keyRaw));
+    vol->create();
+
+    mVolumes.push_back(vol);
+    VolumeManager::Instance()->getBroadcaster()->sendBroadcast(
+            ResponseCode::DiskVolumeCreated,
+            StringPrintf("%s %s", getId().c_str(), vol->getId().c_str()).c_str(), false);
 }
 
 void Disk::destroyAllVolumes() {
@@ -246,7 +277,7 @@ status_t Disk::readPartitions() {
                 if (!strcasecmp(typeGuid, kGptBasicData)) {
                     createPublicVolume(partDevice);
                 } else if (!strcasecmp(typeGuid, kGptAndroidExt)) {
-                    createPrivateVolume(partDevice);
+                    createPrivateVolume(partDevice, partGuid);
                 }
             }
         }
@@ -259,6 +290,13 @@ status_t Disk::readPartitions() {
     }
 
     pclose(fp);
+    return OK;
+}
+
+status_t Disk::unmountAll() {
+    for (auto vol : mVolumes) {
+        vol->unmount();
+    }
     return OK;
 }
 
@@ -304,13 +342,84 @@ out:
 }
 
 status_t Disk::partitionPrivate() {
-    destroyAllVolumes();
-    return -ENOTSUP;
+    return partitionMixed(0);
 }
 
 status_t Disk::partitionMixed(int8_t ratio) {
+    int status = 0;
+
     destroyAllVolumes();
-    return -ENOTSUP;
+
+    // First nuke any existing partition table
+    std::vector<std::string> cmd;
+    cmd.push_back(kSgdiskPath);
+    cmd.push_back("--zap-all");
+    cmd.push_back(mDevPath);
+
+    if (ForkExecvp(cmd, &status, false, true)) {
+        LOG(ERROR) << "Failed to zap; status " << status;
+        return -EIO;
+    }
+
+    // We've had some success above, so generate both the private partition
+    // GUID and encryption key and persist them.
+    std::string partGuidRaw;
+    std::string keyRaw;
+    if (ReadRandomBytes(16, partGuidRaw) || ReadRandomBytes(16, keyRaw)) {
+        LOG(ERROR) << "Failed to generate GUID or key";
+        return -EIO;
+    }
+
+    std::string partGuid;
+    StrToHex(partGuidRaw, partGuid);
+
+    if (!WriteStringToFile(keyRaw, BuildKeyPath(partGuid))) {
+        LOG(ERROR) << "Failed to persist key";
+        return -EIO;
+    } else {
+        LOG(DEBUG) << "Persisted key for GUID " << partGuid;
+    }
+
+    // Now let's build the new GPT table. We heavily rely on sgdisk to
+    // force optimal alignment on the created partitions.
+    cmd.clear();
+    cmd.push_back(kSgdiskPath);
+
+    // If requested, create a public partition first. Mixed-mode partitioning
+    // like this is an experimental feature.
+    if (ratio > 0) {
+        if (ratio < 10 || ratio > 90) {
+            LOG(ERROR) << "Mixed partition ratio must be between 10-90%";
+            return -EINVAL;
+        }
+
+        uint64_t splitMb = ((mSize / 100) * ratio) / 1024 / 1024;
+        cmd.push_back(StringPrintf("--new=0:0:+%" PRId64 "M", splitMb));
+        cmd.push_back(StringPrintf("--typecode=0:%s", kGptBasicData));
+        cmd.push_back("--change-name=0:shared");
+    }
+
+    // Define a metadata partition which is designed for future use; there
+    // should only be one of these per physical device, even if there are
+    // multiple private volumes.
+    cmd.push_back("--new=0:0:+16M");
+    cmd.push_back(StringPrintf("--typecode=0:%s", kGptAndroidMeta));
+    cmd.push_back("--change-name=0:android_meta");
+
+    // Define a single private partition filling the rest of disk.
+    cmd.push_back("--new=0:0:-0");
+    cmd.push_back(StringPrintf("--typecode=0:%s", kGptAndroidExt));
+    cmd.push_back(StringPrintf("--partition-guid=0:%s", partGuid.c_str()));
+    cmd.push_back("--change-name=0:android_ext");
+
+    cmd.push_back(mDevPath);
+
+    if (ForkExecvp(cmd, &status, false, true)) {
+        LOG(ERROR) << "Failed to partition; status " << status;
+        return -EIO;
+    }
+
+    return OK;
 }
 
 int Disk::getMaxMinors() {

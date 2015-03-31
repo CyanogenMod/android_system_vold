@@ -395,12 +395,12 @@ int Volume::mountVol() {
            return -1;
        }
 
-       if (cryptfs_setup_volume(getLabel(), MAJOR(deviceNodes[0]), MINOR(deviceNodes[0]),
-                                new_sys_path, sizeof(new_sys_path),
-                                &new_major, &new_minor)) {
+//       if (cryptfs_setup_volume(getLabel(), MAJOR(deviceNodes[0]), MINOR(deviceNodes[0]),
+//                                new_sys_path, sizeof(new_sys_path),
+//                                &new_major, &new_minor)) {
            SLOGE("Cannot setup encryption mapping for %s\n", getMountpoint());
            return -1;
-       }
+//       }
        /* We now have the new sysfs path for the decrypted block device, and the
         * majore and minor numbers for it.  So, create the device, update the
         * path to the new sysfs path, and continue.
@@ -587,8 +587,8 @@ int Volume::unmountVol(bool force, bool revert) {
      * the device info to the original values.
      */
     if (revert && isDecrypted()) {
-        cryptfs_revert_volume(getLabel());
-        revertDeviceInfo();
+//        cryptfs_revert_volume(getLabel());
+//        revertDeviceInfo();
         SLOGI("Encrypted volume %s reverted successfully", getMountpoint());
     }
 

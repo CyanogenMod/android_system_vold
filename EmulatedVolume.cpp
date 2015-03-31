@@ -53,7 +53,7 @@ EmulatedVolume::~EmulatedVolume() {
 
 status_t EmulatedVolume::doMount() {
     if (fs_prepare_dir(mFusePath.c_str(), 0700, AID_ROOT, AID_ROOT)) {
-        PLOG(ERROR) << "Failed to create mount point " << mFusePath;
+        PLOG(ERROR) << getId() << " failed to create mount point " << mFusePath;
         return -errno;
     }
 
@@ -75,7 +75,7 @@ status_t EmulatedVolume::doMount() {
     }
 
     if (mFusePid == -1) {
-        PLOG(ERROR) << "Failed to fork";
+        PLOG(ERROR) << getId() << " failed to fork";
         return -errno;
     }
 
@@ -93,7 +93,7 @@ status_t EmulatedVolume::doUnmount() {
     ForceUnmount(mRawPath);
 
     if (TEMP_FAILURE_RETRY(rmdir(mFusePath.c_str()))) {
-        PLOG(ERROR) << "Failed to rmdir mount point " << mFusePath;
+        PLOG(ERROR) << getId() << " failed to rmdir mount point " << mFusePath;
         return -errno;
     }
 

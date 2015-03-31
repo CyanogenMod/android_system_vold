@@ -68,6 +68,8 @@ public:
     status_t readMetadata();
     status_t readPartitions();
 
+    status_t unmountAll();
+
     status_t partitionPublic();
     status_t partitionPrivate();
     status_t partitionMixed(int8_t ratio);
@@ -97,7 +99,7 @@ private:
     bool mCreated;
 
     void createPublicVolume(dev_t device);
-    void createPrivateVolume(dev_t device);
+    void createPrivateVolume(dev_t device, const std::string& partGuid);
 
     void destroyAllVolumes();
 

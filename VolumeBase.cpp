@@ -113,10 +113,16 @@ std::shared_ptr<VolumeBase> VolumeBase::findVolume(const std::string& id) {
 
 status_t VolumeBase::create() {
     CHECK(!mCreated);
+
     mCreated = true;
+    status_t res = doCreate();
     VolumeManager::Instance()->getBroadcaster()->sendBroadcast(
             ResponseCode::VolumeCreated,
             StringPrintf("%s %d", getId().c_str(), mType).c_str(), false);
+    return res;
+}
+
+status_t VolumeBase::doCreate() {
     return OK;
 }
 
@@ -127,9 +133,14 @@ status_t VolumeBase::destroy() {
         unmount();
     }
 
-    mCreated = false;
     VolumeManager::Instance()->getBroadcaster()->sendBroadcast(
             ResponseCode::VolumeDestroyed, getId().c_str(), false);
+    status_t res = doDestroy();
+    mCreated = false;
+    return res;
+}
+
+status_t VolumeBase::doDestroy() {
     return OK;
 }
 

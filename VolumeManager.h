@@ -118,6 +118,8 @@ public:
     int reset();
     /* Prepare for device shutdown, safely unmounting all devices */
     int shutdown();
+    /* Unmount all volumes, usually for encryption */
+    int unmountAll();
 
     int listVolumes(SocketClient *cli, bool broadcast);
     int mountVolume(const char *label);
@@ -213,10 +215,7 @@ private:
 extern "C" {
 #endif /* __cplusplus */
 #define UNMOUNT_NOT_MOUNTED_ERR -2
-    int vold_disableVol(const char *label);
-    int vold_getNumDirectVolumes(void);
-    int vold_getDirectVolumeList(struct volume_info *v);
-    int vold_unmountAllAsecs(void);
+    int vold_unmountAll(void);
 #ifdef __cplusplus
 }
 #endif

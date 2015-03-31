@@ -21,6 +21,7 @@ common_src_files := \
 	Disk.cpp \
 	VolumeBase.cpp \
 	PublicVolume.cpp \
+	PrivateVolume.cpp \
 	EmulatedVolume.cpp \
 	Utils.cpp \
 

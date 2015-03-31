@@ -945,9 +945,8 @@ static unsigned char* convert_hex_ascii_to_key(const char* master_key_ascii,
 /* Convert a binary key of specified length into an ascii hex string equivalent,
  * without the leading 0x and with null termination
  */
-static void convert_key_to_hex_ascii(unsigned char *master_key, unsigned int keysize,
-                              char *master_key_ascii)
-{
+static void convert_key_to_hex_ascii(const unsigned char *master_key,
+        unsigned int keysize, char *master_key_ascii) {
   unsigned int i, a;
   unsigned char nibble;
 
@@ -965,10 +964,9 @@ static void convert_key_to_hex_ascii(unsigned char *master_key, unsigned int key
 
 }
 
-static int load_crypto_mapping_table(struct crypt_mnt_ftr *crypt_ftr, unsigned char *master_key,
-                                     char *real_blk_name, const char *name, int fd,
-                                     char *extra_params)
-{
+static int load_crypto_mapping_table(struct crypt_mnt_ftr *crypt_ftr,
+        const unsigned char *master_key, const char *real_blk_name,
+        const char *name, int fd, const char *extra_params) {
   _Alignas(struct dm_ioctl) char buffer[DM_CRYPT_BUF_SIZE];
   struct dm_ioctl *io;
   struct dm_target_spec *tgt;
@@ -1057,9 +1055,9 @@ static int get_dm_crypt_version(int fd, const char *name,  int *version)
     return -1;
 }
 
-static int create_crypto_blk_dev(struct crypt_mnt_ftr *crypt_ftr, unsigned char *master_key,
-                                    char *real_blk_name, char *crypto_blk_name, const char *name)
-{
+static int create_crypto_blk_dev(struct crypt_mnt_ftr *crypt_ftr,
+        const unsigned char *master_key, const char *real_blk_name,
+        char *crypto_blk_name, const char *name) {
   char buffer[DM_CRYPT_BUF_SIZE];
   struct dm_ioctl *io;
   unsigned int minor;
@@ -1885,36 +1883,18 @@ static int test_mount_encrypted_fs(struct crypt_mnt_ftr* crypt_ftr,
   return rc;
 }
 
-/* Called by vold when it wants to undo the crypto mapping of a volume it
- * manages.  This is usually in response to a factory reset, when we want
- * to undo the crypto mapping so the volume is formatted in the clear.
- */
-int cryptfs_revert_volume(const char *label)
-{
-    return delete_crypto_blk_dev((char *)label);
-}
-
 /*
- * Called by vold when it's asked to mount an encrypted, nonremovable volume.
- * Setup a dm-crypt mapping, use the saved master key from
- * setting up the /data mapping, and return the new device path.
+ * Called by vold when it's asked to mount an encrypted external
+ * storage volume. The incoming partition has no crypto header/footer,
+ * as any metadata is been stored in a separate, small partition.
+ *
+ * out_crypto_blkdev must be MAXPATHLEN.
  */
-int cryptfs_setup_volume(const char *label, int major, int minor,
-                         char *crypto_sys_path, unsigned int max_path,
-                         int *new_major, int *new_minor)
-{
-    char real_blkdev[MAXPATHLEN], crypto_blkdev[MAXPATHLEN];
-    struct crypt_mnt_ftr sd_crypt_ftr;
-    struct stat statbuf;
-
-    sprintf(real_blkdev, "/dev/block/vold/%d:%d", major, minor);
-
-    get_crypt_ftr_and_key(&sd_crypt_ftr);
-
-    /* Update the fs_size field to be the size of the volume */
+int cryptfs_setup_ext_volume(const char* label, const char* real_blkdev,
+        const unsigned char* key, int keysize, char* out_crypto_blkdev) {
     int fd = open(real_blkdev, O_RDONLY);
     if (fd == -1) {
-        SLOGE("Cannot open volume %s\n", real_blkdev);
+        SLOGE("Failed to open %s: %s", real_blkdev, strerror(errno));
         return -1;
     }
 
@@ -1923,25 +1903,26 @@ int cryptfs_setup_volume(const char *label, int major, int minor,
     close(fd);
 
     if (nr_sec == 0) {
-        SLOGE("Cannot get size of volume %s\n", real_blkdev);
+        SLOGE("Failed to get size of %s: %s", real_blkdev, strerror(errno));
         return -1;
     }
 
-    sd_crypt_ftr.fs_size = nr_sec;
-    create_crypto_blk_dev(&sd_crypt_ftr, saved_master_key, real_blkdev, 
-                          crypto_blkdev, label);
+    struct crypt_mnt_ftr ext_crypt_ftr;
+    memset(&ext_crypt_ftr, 0, sizeof(ext_crypt_ftr));
+    ext_crypt_ftr.fs_size = nr_sec;
+    ext_crypt_ftr.keysize = keysize;
+    strcpy((char*) ext_crypt_ftr.crypto_type_name, "aes-cbc-essiv:sha256");
 
-    if (stat(crypto_blkdev, &statbuf) < 0) {
-        SLOGE("Error get stat for crypto_blkdev %s. err=%d(%s)\n",
-              crypto_blkdev, errno, strerror(errno));
-    }
-    *new_major = MAJOR(statbuf.st_rdev);
-    *new_minor = MINOR(statbuf.st_rdev);
+    return create_crypto_blk_dev(&ext_crypt_ftr, key, real_blkdev,
+            out_crypto_blkdev, label);
+}
 
-    /* Create path to sys entry for this block device */
-    snprintf(crypto_sys_path, max_path, "/devices/virtual/block/%s", strrchr(crypto_blkdev, '/')+1);
-
-    return 0;
+/*
+ * Called by vold when it's asked to unmount an encrypted external
+ * storage volume.
+ */
+int cryptfs_revert_ext_volume(const char* label) {
+    return delete_crypto_blk_dev((char*) label);
 }
 
 int cryptfs_crypto_complete(void)
@@ -2836,12 +2817,6 @@ static int cryptfs_enable_inplace(char *crypto_blkdev, char *real_blkdev,
 
 #define FRAMEWORK_BOOT_WAIT 60
 
-static inline int should_encrypt(struct volume_info *volume)
-{
-    return (volume->flags & (VOL_ENCRYPTABLE | VOL_NONREMOVABLE)) ==
-            (VOL_ENCRYPTABLE | VOL_NONREMOVABLE);
-}
-
 static int cryptfs_SHA256_fileblock(const char* filename, __le8* buf)
 {
     int fd = open(filename, O_RDONLY);
@@ -2944,10 +2919,7 @@ int cryptfs_enable_internal(char *howarg, int crypt_type, char *passwd,
     char encrypted_state[PROPERTY_VALUE_MAX];
     char lockid[32] = { 0 };
     char key_loc[PROPERTY_VALUE_MAX];
-    char fuse_sdcard[PROPERTY_VALUE_MAX];
-    char *sd_mnt_point;
     int num_vols;
-    struct volume_info *vol_list = 0;
     off64_t previously_encrypted_upto = 0;
 
     if (!strcmp(howarg, "wipe")) {
@@ -3022,58 +2994,15 @@ int cryptfs_enable_internal(char *howarg, int crypt_type, char *passwd,
     snprintf(lockid, sizeof(lockid), "enablecrypto%d", (int) getpid());
     acquire_wake_lock(PARTIAL_WAKE_LOCK, lockid);
 
-    /* Get the sdcard mount point */
-    sd_mnt_point = getenv("EMULATED_STORAGE_SOURCE");
-    if (!sd_mnt_point) {
-       sd_mnt_point = getenv("EXTERNAL_STORAGE");
-    }
-    if (!sd_mnt_point) {
-        sd_mnt_point = "/mnt/sdcard";
-    }
-
-    /* TODO
-     * Currently do not have test devices with multiple encryptable volumes.
-     * When we acquire some, re-add support.
-     */
-    num_vols=vold_getNumDirectVolumes();
-    vol_list = malloc(sizeof(struct volume_info) * num_vols);
-    vold_getDirectVolumeList(vol_list);
-
-    for (i=0; i<num_vols; i++) {
-        if (should_encrypt(&vol_list[i])) {
-            SLOGE("Cannot encrypt if there are multiple encryptable volumes"
-                  "%s\n", vol_list[i].label);
-            goto error_unencrypted;
-        }
-    }
-
     /* The init files are setup to stop the class main and late start when
      * vold sets trigger_shutdown_framework.
      */
     property_set("vold.decrypt", "trigger_shutdown_framework");
     SLOGD("Just asked init to shut down class main\n");
 
-    if (vold_unmountAllAsecs()) {
-        /* Just report the error.  If any are left mounted,
-         * umounting /data below will fail and handle the error.
-         */
-        SLOGE("Error unmounting internal asecs");
-    }
-
-    property_get("ro.crypto.fuse_sdcard", fuse_sdcard, "");
-    if (!strcmp(fuse_sdcard, "true")) {
-        // STOPSHIP: UNMOUNT ALL STORAGE BEFORE REACHING HERE, SINCE VOLD NOW MANAGES FUSE
-        // "ro.crypto.fuse_sdcard" is now deprecated
-
-        /* This is a device using the fuse layer to emulate the sdcard semantics
-         * on top of the userdata partition.  vold does not manage it, it is managed
-         * by the sdcard service.  The sdcard service was killed by the property trigger
-         * above, so just unmount it now.  We must do this _AFTER_ killing the framework,
-         * unlike the case for vold managed devices above.
-         */
-        if (wait_and_unmount(sd_mnt_point, false)) {
-            goto error_shutting_down;
-        }
+    /* Ask vold to unmount all devices that it manages */
+    if (vold_unmountAll()) {
+        SLOGE("Failed to unmount all vold managed devices");
     }
 
     /* Now unmount the /data partition. */
@@ -3221,8 +3150,6 @@ int cryptfs_enable_internal(char *howarg, int crypt_type, char *passwd,
     /* Undo the dm-crypt mapping whether we succeed or not */
     delete_crypto_blk_dev("userdata");
 
-    free(vol_list);
-
     if (! rc) {
         /* Success */
         crypt_ftr.flags &= ~CRYPT_INCONSISTENT_STATE;
@@ -3289,7 +3216,6 @@ int cryptfs_enable_internal(char *howarg, int crypt_type, char *passwd,
     return rc;
 
 error_unencrypted:
-    free(vol_list);
     property_set("vold.encrypt_progress", "error_not_encrypted");
     if (lockid[0]) {
         release_wake_lock(lockid);
@@ -3306,7 +3232,6 @@ error_shutting_down:
 
     /* shouldn't get here */
     property_set("vold.encrypt_progress", "error_shutting_down");
-    free(vol_list);
     if (lockid[0]) {
         release_wake_lock(lockid);
     }
