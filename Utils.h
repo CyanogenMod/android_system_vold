@@ -18,6 +18,7 @@
 #define ANDROID_VOLD_UTILS_H
 
 #include <utils/Errors.h>
+#include <selinux/selinux.h>
 
 #include <vector>
 #include <string>
@@ -33,6 +34,12 @@
 namespace android {
 namespace vold {
 
+/* SELinux contexts used depending on the block device type */
+extern security_context_t sBlkidContext;
+extern security_context_t sBlkidUntrustedContext;
+extern security_context_t sFsckContext;
+extern security_context_t sFsckUntrustedContext;
+
 status_t CreateDeviceNode(const std::string& path, dev_t dev);
 status_t DestroyDeviceNode(const std::string& path);
 
@@ -46,12 +53,18 @@ status_t BindMount(const std::string& source, const std::string& target);
 status_t ReadMetadata(const std::string& path, std::string& fsType,
         std::string& fsUuid, std::string& fsLabel);
 
+/* Reads filesystem metadata from untrusted device at path */
+status_t ReadMetadataUntrusted(const std::string& path, std::string& fsType,
+        std::string& fsUuid, std::string& fsLabel);
+
 status_t ForkExecvp(const std::vector<std::string>& args, int* status,
         bool ignore_int_quit, bool logwrap);
 
 status_t ReadRandomBytes(size_t bytes, std::string& out);
 
+/* Converts hex string to raw bytes, ignoring [ :-] */
 status_t HexToStr(const std::string& hex, std::string& str);
+/* Converts raw bytes to hex string */
 status_t StrToHex(const std::string& str, std::string& hex);
 
 }  // namespace vold

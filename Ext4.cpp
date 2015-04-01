@@ -37,10 +37,12 @@
 
 #define LOG_TAG "Vold"
 
+#include <base/logging.h>
 #include <base/stringprintf.h>
 #include <cutils/log.h>
 #include <cutils/properties.h>
 #include <logwrap/logwrap.h>
+#include <selinux/selinux.h>
 
 #include "Ext4.h"
 #include "Utils.h"
@@ -110,8 +112,17 @@ int Ext4::check(const char *fsPath, const char *mountPoint) {
     } else {
         ALOGD("Running %s on %s\n", kFsckPath, blk_device);
 
+        // Ext4 devices are currently always trusted
+        if (setexeccon(android::vold::sFsckContext)) {
+            LOG(ERROR) << "Failed to setexeccon()";
+            errno = EPERM;
+            return -1;
+        }
         ret = android_fork_execvp(ARRAY_SIZE(e2fsck_argv), e2fsck_argv,
                                     &status, false, true);
+        if (setexeccon(NULL)) {
+            abort();
+        }
 
         if (ret < 0) {
             /* No need to check for error in fork, we can't really handle it now */

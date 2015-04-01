@@ -41,6 +41,11 @@ using android::base::StringPrintf;
 namespace android {
 namespace vold {
 
+security_context_t sBlkidContext = nullptr;
+security_context_t sBlkidUntrustedContext = nullptr;
+security_context_t sFsckContext = nullptr;
+security_context_t sFsckUntrustedContext = nullptr;
+
 static const char* kBlkidPath = "/system/bin/blkid";
 
 status_t CreateDeviceNode(const std::string& path, dev_t dev) {
@@ -111,14 +116,21 @@ status_t BindMount(const std::string& source, const std::string& target) {
     return OK;
 }
 
-status_t ReadMetadata(const std::string& path, std::string& fsType,
-        std::string& fsUuid, std::string& fsLabel) {
+static status_t readMetadata(const std::string& path, std::string& fsType,
+        std::string& fsUuid, std::string& fsLabel, bool untrusted) {
     fsType.clear();
     fsUuid.clear();
     fsLabel.clear();
 
     std::string cmd(StringPrintf("%s -c /dev/null %s", kBlkidPath, path.c_str()));
+    if (setexeccon(untrusted ? sBlkidUntrustedContext : sBlkidContext)) {
+        LOG(ERROR) << "Failed to setexeccon()";
+        return -EPERM;
+    }
     FILE* fp = popen(cmd.c_str(), "r");
+    if (setexeccon(NULL)) {
+        abort();
+    }
     if (!fp) {
         PLOG(ERROR) << "Failed to run " << cmd;
         return -errno;
@@ -152,6 +164,16 @@ status_t ReadMetadata(const std::string& path, std::string& fsType,
 
     pclose(fp);
     return res;
+}
+
+status_t ReadMetadata(const std::string& path, std::string& fsType,
+        std::string& fsUuid, std::string& fsLabel) {
+    return readMetadata(path, fsType, fsUuid, fsLabel, false);
+}
+
+status_t ReadMetadataUntrusted(const std::string& path, std::string& fsType,
+        std::string& fsUuid, std::string& fsLabel) {
+    return readMetadata(path, fsType, fsUuid, fsLabel, true);
 }
 
 status_t ForkExecvp(const std::vector<std::string>& args, int* status,

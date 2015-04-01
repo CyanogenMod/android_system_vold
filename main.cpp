@@ -20,6 +20,7 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <getopt.h>
 
 #include <fcntl.h>
 #include <dirent.h>
@@ -43,6 +44,7 @@
 
 static int process_config(VolumeManager *vm);
 static void coldboot(const char *path);
+static void parse_args(int argc, char** argv);
 
 //#define DEBUG_FSTAB "/data/local/tmp/fstab.debug"
 
@@ -52,7 +54,9 @@ struct selabel_handle *sehandle;
 
 using android::base::StringPrintf;
 
-int main(int argc, char* argv[]) {
+int main(int argc, char** argv) {
+    SLOGI("Vold 2.1 (the revenge) firing up");
+
     setenv("ANDROID_LOG_TAGS", "*:v", 1);
     android::base::InitLogging(argv);
 
@@ -60,11 +64,12 @@ int main(int argc, char* argv[]) {
     CommandListener *cl;
     NetlinkManager *nm;
 
-    SLOGI("Vold 2.1 (the revenge) firing up");
+    parse_args(argc, argv);
 
     sehandle = selinux_android_file_context_handle();
-    if (sehandle)
+    if (sehandle) {
         selinux_android_set_sehandle(sehandle);
+    }
 
     mkdir("/dev/block/vold", 0755);
 
@@ -75,13 +80,12 @@ int main(int argc, char* argv[]) {
     if (!(vm = VolumeManager::Instance())) {
         SLOGE("Unable to create VolumeManager");
         exit(1);
-    };
+    }
 
     if (!(nm = NetlinkManager::Instance())) {
         SLOGE("Unable to create NetlinkManager");
         exit(1);
-    };
-
+    }
 
     cl = new CommandListener();
     vm->setBroadcaster((SocketListener *) cl);
@@ -121,8 +125,31 @@ int main(int argc, char* argv[]) {
     exit(0);
 }
 
-static void do_coldboot(DIR *d, int lvl)
-{
+static void parse_args(int argc, char** argv) {
+    static struct option opts[] = {
+        {"blkid_context", required_argument, 0, 'b' },
+        {"blkid_untrusted_context", required_argument, 0, 'B' },
+        {"fsck_context", required_argument, 0, 'f' },
+        {"fsck_untrusted_context", required_argument, 0, 'F' },
+    };
+
+    int c;
+    while ((c = getopt_long(argc, argv, "", opts, nullptr)) != -1) {
+        switch (c) {
+        case 'b': android::vold::sBlkidContext = optarg; break;
+        case 'B': android::vold::sBlkidUntrustedContext = optarg; break;
+        case 'f': android::vold::sFsckContext = optarg; break;
+        case 'F': android::vold::sFsckUntrustedContext = optarg; break;
+        }
+    }
+
+    CHECK(android::vold::sBlkidContext != nullptr);
+    CHECK(android::vold::sBlkidUntrustedContext != nullptr);
+    CHECK(android::vold::sFsckContext != nullptr);
+    CHECK(android::vold::sFsckUntrustedContext != nullptr);
+}
+
+static void do_coldboot(DIR *d, int lvl) {
     struct dirent *de;
     int dfd, fd;
 
@@ -157,8 +184,7 @@ static void do_coldboot(DIR *d, int lvl)
     }
 }
 
-static void coldboot(const char *path)
-{
+static void coldboot(const char *path) {
     DIR *d = opendir(path);
     if(d) {
         do_coldboot(d, 0);
@@ -166,8 +192,7 @@ static void coldboot(const char *path)
     }
 }
 
-static int process_config(VolumeManager *vm)
- {
+static int process_config(VolumeManager *vm) {
     char hardware[PROPERTY_VALUE_MAX];
     property_get("ro.hardware", hardware, "");
     std::string fstab_filename(StringPrintf("/fstab.%s", hardware));

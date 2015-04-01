@@ -51,7 +51,7 @@ PublicVolume::~PublicVolume() {
 }
 
 status_t PublicVolume::readMetadata() {
-    status_t res = ReadMetadata(mDevPath, mFsType, mFsUuid, mFsLabel);
+    status_t res = ReadMetadataUntrusted(mDevPath, mFsType, mFsUuid, mFsLabel);
 
     VolumeManager::Instance()->getBroadcaster()->sendBroadcast(
             ResponseCode::VolumeFsTypeChanged,

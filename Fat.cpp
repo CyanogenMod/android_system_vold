@@ -37,12 +37,15 @@
 
 #define LOG_TAG "Vold"
 
+#include <base/logging.h>
 #include <cutils/log.h>
 #include <cutils/properties.h>
+#include <selinux/selinux.h>
 
 #include <logwrap/logwrap.h>
 
 #include "Fat.h"
+#include "Utils.h"
 #include "VoldUtil.h"
 
 static char FSCK_MSDOS_PATH[] = "/system/bin/fsck_msdos";
@@ -65,8 +68,18 @@ int Fat::check(const char *fsPath) {
         args[2] = "-f";
         args[3] = fsPath;
 
+        // Fat devices are currently always untrusted
+        if (setexeccon(android::vold::sFsckUntrustedContext)) {
+            LOG(ERROR) << "Failed to setexeccon()";
+            errno = EPERM;
+            return -1;
+        }
         rc = android_fork_execvp(ARRAY_SIZE(args), (char **)args, &status,
                 false, true);
+        if (setexeccon(NULL)) {
+            abort();
+        }
+
         if (rc != 0) {
             SLOGE("Filesystem check failed due to logwrap error");
             errno = EIO;
