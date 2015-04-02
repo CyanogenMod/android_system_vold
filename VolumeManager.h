@@ -29,9 +29,9 @@
 #include <cutils/multiuser.h>
 #include <utils/List.h>
 #include <sysutils/SocketListener.h>
+#include <sysutils/NetlinkEvent.h>
 
 #include "Disk.h"
-#include "Volume.h"
 #include "VolumeBase.h"
 
 /* The length of an MD5 hash when encoded into ASCII hex characters */
@@ -60,12 +60,17 @@ public:
 typedef android::List<ContainerData*> AsecIdCollection;
 
 class VolumeManager {
+public:
+    static const char *SEC_ASECDIR_EXT;
+    static const char *SEC_ASECDIR_INT;
+    static const char *ASECDIR;
+    static const char *LOOPDIR;
+
 private:
     static VolumeManager *sInstance;
 
     SocketListener        *mBroadcaster;
 
-    VolumeCollection      *mVolumes;
     AsecIdCollection      *mActiveContainers;
     bool                   mDebug;
 
@@ -73,7 +78,6 @@ private:
     int                    mUmsSharingCount;
     int                    mSavedDirtyRatio;
     int                    mUmsDirtyRatio;
-    int                    mVolManagerDisabled;
 
 public:
     virtual ~VolumeManager();
@@ -82,8 +86,6 @@ public:
     int stop();
 
     void handleBlockEvent(NetlinkEvent *evt);
-
-    int addVolume(Volume *v);
 
     class DiskSource {
     public:
@@ -121,15 +123,6 @@ public:
     /* Unmount all volumes, usually for encryption */
     int unmountAll();
 
-    int listVolumes(SocketClient *cli, bool broadcast);
-    int mountVolume(const char *label);
-    int unmountVolume(const char *label, bool force, bool revert);
-    int shareVolume(const char *label, const char *method);
-    int unshareVolume(const char *label, const char *method);
-    int shareEnabled(const char *path, const char *method, bool *enabled);
-    int formatVolume(const char *label, bool wipe);
-    void disableVolumeManager(void) { mVolManagerDisabled = 1; }
-
     /* ASEC */
     int findAsec(const char *id, char *asecPath = NULL, size_t asecPathLen = 0,
             const char **directory = NULL) const;
@@ -162,16 +155,11 @@ public:
     int unmountObb(const char *fileName, bool force);
     int getObbMountPath(const char *id, char *buffer, int maxlen);
 
-    Volume* getVolumeForFile(const char *fileName);
-
     /* Shared between ASEC and Loopback images */
     int unmountLoopImage(const char *containerId, const char *loopId,
             const char *fileName, const char *mountPoint, bool force);
 
     void setDebug(bool enable);
-
-    // XXX: Post froyo this should be moved and cleaned up
-    int cleanupAsec(Volume *v, bool force);
 
     void setBroadcaster(SocketListener *sl) { mBroadcaster = sl; }
     SocketListener *getBroadcaster() { return mBroadcaster; }
@@ -179,11 +167,6 @@ public:
     static VolumeManager *Instance();
 
     static char *asecHash(const char *id, char *buffer, size_t len);
-
-    Volume *lookupVolume(const char *label);
-    int getNumDirectVolumes(void);
-    int getDirectVolumeList(struct volume_info *vol_list);
-    int unmountAllAsecsInDir(const char *directory);
 
     /*
      * Ensure that all directories along given path exist, creating parent

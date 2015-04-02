@@ -14,6 +14,19 @@
  * limitations under the License.
  */
 
+#include "Disk.h"
+#include "VolumeManager.h"
+#include "CommandListener.h"
+#include "NetlinkManager.h"
+#include "cryptfs.h"
+#include "sehandle.h"
+
+#include <base/logging.h>
+#include <base/stringprintf.h>
+#include <cutils/klog.h>
+#include <cutils/properties.h>
+#include <cutils/sockets.h>
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <errno.h>
@@ -21,27 +34,9 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <getopt.h>
-
 #include <fcntl.h>
 #include <dirent.h>
 #include <fs_mgr.h>
-
-#define LOG_TAG "Vold"
-
-#include <base/logging.h>
-#include <base/stringprintf.h>
-#include "cutils/klog.h"
-#include "cutils/log.h"
-#include "cutils/properties.h"
-#include "cutils/sockets.h"
-
-#include "Disk.h"
-#include "VolumeManager.h"
-#include "CommandListener.h"
-#include "NetlinkManager.h"
-#include "DirectVolume.h"
-#include "cryptfs.h"
-#include "sehandle.h"
 
 static int process_config(VolumeManager *vm);
 static void coldboot(const char *path);
@@ -56,10 +51,10 @@ struct selabel_handle *sehandle;
 using android::base::StringPrintf;
 
 int main(int argc, char** argv) {
-    SLOGI("Vold 2.1 (the revenge) firing up");
-
     setenv("ANDROID_LOG_TAGS", "*:v", 1);
     android::base::InitLogging(argv);
+
+    LOG(INFO) << "Vold 3.0 (the awakening) firing up";
 
     VolumeManager *vm;
     CommandListener *cl;
@@ -82,12 +77,12 @@ int main(int argc, char** argv) {
 
     /* Create our singleton managers */
     if (!(vm = VolumeManager::Instance())) {
-        SLOGE("Unable to create VolumeManager");
+        LOG(ERROR) << "Unable to create VolumeManager";
         exit(1);
     }
 
     if (!(nm = NetlinkManager::Instance())) {
-        SLOGE("Unable to create NetlinkManager");
+        LOG(ERROR) << "Unable to create NetlinkManager";
         exit(1);
     }
 
@@ -96,16 +91,16 @@ int main(int argc, char** argv) {
     nm->setBroadcaster((SocketListener *) cl);
 
     if (vm->start()) {
-        SLOGE("Unable to start VolumeManager (%s)", strerror(errno));
+        PLOG(ERROR) << "Unable to start VolumeManager";
         exit(1);
     }
 
     if (process_config(vm)) {
-        SLOGE("Error reading configuration (%s)... continuing anyways", strerror(errno));
+        PLOG(ERROR) << "Error reading configuration... continuing anyways";
     }
 
     if (nm->start()) {
-        SLOGE("Unable to start NetlinkManager (%s)", strerror(errno));
+        PLOG(ERROR) << "Unable to start NetlinkManager";
         exit(1);
     }
 
@@ -116,7 +111,7 @@ int main(int argc, char** argv) {
      * Now that we're up, we can respond to commands
      */
     if (cl->startListener()) {
-        SLOGE("Unable to start CommandListener (%s)", strerror(errno));
+        PLOG(ERROR) << "Unable to start CommandListener";
         exit(1);
     }
 
@@ -125,7 +120,7 @@ int main(int argc, char** argv) {
         sleep(1000);
     }
 
-    SLOGI("Vold exiting");
+    LOG(ERROR) << "Vold exiting";
     exit(0);
 }
 

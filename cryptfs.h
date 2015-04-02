@@ -172,21 +172,6 @@ struct crypt_persist_data {
   struct crypt_persist_entry persist_entry[0];
 };
 
-// TODO: remove this deprecated struct
-struct volume_info {
-   unsigned int size;
-   unsigned int flags;
-   struct crypt_mnt_ftr crypt_ftr;
-   char mnt_point[256];
-   char blk_dev[256];
-   char crypto_blkdev[256];
-   char label[256];
-};
-#define VOL_NONREMOVABLE   0x1
-#define VOL_ENCRYPTABLE    0x2
-#define VOL_PRIMARY        0x4
-#define VOL_PROVIDES_ASEC  0x8
-
 #define DATA_MNT_POINT "/data"
 
 /* Return values for cryptfs_crypto_complete */

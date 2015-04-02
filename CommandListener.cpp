@@ -349,8 +349,8 @@ int CommandListener::AsecCmd::runCommand(SocketClient *cli,
     if (!strcmp(argv[1], "list")) {
         dumpArgs(argc, argv, -1);
 
-        listAsecsInDirectory(cli, Volume::SEC_ASECDIR_EXT);
-        listAsecsInDirectory(cli, Volume::SEC_ASECDIR_INT);
+        listAsecsInDirectory(cli, VolumeManager::SEC_ASECDIR_EXT);
+        listAsecsInDirectory(cli, VolumeManager::SEC_ASECDIR_INT);
     } else if (!strcmp(argv[1], "create")) {
         dumpArgs(argc, argv, 5);
         if (argc != 8) {

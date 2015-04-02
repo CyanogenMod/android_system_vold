@@ -6,8 +6,6 @@ common_src_files := \
 	VoldCommand.cpp \
 	NetlinkManager.cpp \
 	NetlinkHandler.cpp \
-	Volume.cpp \
-	DirectVolume.cpp \
 	Process.cpp \
 	Ext4.cpp \
 	Fat.cpp \

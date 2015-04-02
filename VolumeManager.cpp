@@ -48,7 +48,6 @@
 #include "EmulatedVolume.h"
 #include "VolumeManager.h"
 #include "NetlinkManager.h"
-#include "DirectVolume.h"
 #include "ResponseCode.h"
 #include "Loop.h"
 #include "Ext4.h"
@@ -68,6 +67,26 @@
                                          + (number & (~((1U << po2) - 1))))
 
 using android::base::StringPrintf;
+
+/*
+ * Path to external storage where *only* root can access ASEC image files
+ */
+const char *VolumeManager::SEC_ASECDIR_EXT   = "/mnt/secure/asec";
+
+/*
+ * Path to internal storage where *only* root can access ASEC image files
+ */
+const char *VolumeManager::SEC_ASECDIR_INT   = "/data/app-asec";
+
+/*
+ * Path to where secure containers are mounted
+ */
+const char *VolumeManager::ASECDIR           = "/mnt/asec";
+
+/*
+ * Path to where OBBs are mounted
+ */
+const char *VolumeManager::LOOPDIR           = "/mnt/obb";
 
 static const char* kUserMountPath = "/mnt/user";
 
@@ -185,18 +204,15 @@ VolumeManager *VolumeManager::Instance() {
 
 VolumeManager::VolumeManager() {
     mDebug = false;
-    mVolumes = new VolumeCollection();
     mActiveContainers = new AsecIdCollection();
     mBroadcaster = NULL;
     mUmsSharingCount = 0;
     mSavedDirtyRatio = -1;
     // set dirty ratio to 0 when UMS is active
     mUmsDirtyRatio = 0;
-    mVolManagerDisabled = 0;
 }
 
 VolumeManager::~VolumeManager() {
-    delete mVolumes;
     delete mActiveContainers;
 }
 
@@ -234,10 +250,6 @@ char *VolumeManager::asecHash(const char *id, char *buffer, size_t len) {
 
 void VolumeManager::setDebug(bool enable) {
     mDebug = enable;
-    VolumeCollection::iterator it;
-    for (it = mVolumes->begin(); it != mVolumes->end(); ++it) {
-        (*it)->setDebug(enable);
-    }
 }
 
 int VolumeManager::start() {
@@ -257,11 +269,6 @@ int VolumeManager::start() {
 int VolumeManager::stop() {
     mInternalEmulated->destroy();
     mInternalEmulated = nullptr;
-    return 0;
-}
-
-int VolumeManager::addVolume(Volume *v) {
-    mVolumes->push_back(v);
     return 0;
 }
 
@@ -462,52 +469,6 @@ int VolumeManager::unmountAll() {
     return 0;
 }
 
-int VolumeManager::listVolumes(SocketClient *cli, bool broadcast) {
-    VolumeCollection::iterator i;
-    char msg[256];
-
-    for (i = mVolumes->begin(); i != mVolumes->end(); ++i) {
-        char *buffer;
-        asprintf(&buffer, "%s %s %d",
-                 (*i)->getLabel(), (*i)->getFuseMountpoint(),
-                 (*i)->getState());
-        cli->sendMsg(ResponseCode::VolumeListResult, buffer, false);
-        free(buffer);
-        if (broadcast) {
-            if((*i)->getUuid()) {
-                snprintf(msg, sizeof(msg), "%s %s \"%s\"", (*i)->getLabel(),
-                    (*i)->getFuseMountpoint(), (*i)->getUuid());
-                mBroadcaster->sendBroadcast(ResponseCode::VolumeUuidChange,
-                    msg, false);
-            }
-            if((*i)->getUserLabel()) {
-                snprintf(msg, sizeof(msg), "%s %s \"%s\"", (*i)->getLabel(),
-                    (*i)->getFuseMountpoint(), (*i)->getUserLabel());
-                mBroadcaster->sendBroadcast(ResponseCode::VolumeUserLabelChange,
-                    msg, false);
-            }
-        }
-    }
-    cli->sendMsg(ResponseCode::CommandOkay, "Volumes listed.", false);
-    return 0;
-}
-
-int VolumeManager::formatVolume(const char *label, bool wipe) {
-    Volume *v = lookupVolume(label);
-
-    if (!v) {
-        errno = ENOENT;
-        return -1;
-    }
-
-    if (mVolManagerDisabled) {
-        errno = EBUSY;
-        return -1;
-    }
-
-    return v->formatVol(wipe);
-}
-
 int VolumeManager::getObbMountPath(const char *sourceFile, char *mountPath, int mountPathLen) {
     char idHash[33];
     if (!asecHash(sourceFile, idHash, sizeof(idHash))) {
@@ -516,7 +477,7 @@ int VolumeManager::getObbMountPath(const char *sourceFile, char *mountPath, int 
     }
 
     memset(mountPath, 0, mountPathLen);
-    int written = snprintf(mountPath, mountPathLen, "%s/%s", Volume::LOOPDIR, idHash);
+    int written = snprintf(mountPath, mountPathLen, "%s/%s", VolumeManager::LOOPDIR, idHash);
     if ((written < 0) || (written >= mountPathLen)) {
         errno = EINVAL;
         return -1;
@@ -550,7 +511,7 @@ int VolumeManager::getAsecMountPath(const char *id, char *buffer, int maxlen) {
         return -1;
     }
 
-    int written = snprintf(buffer, maxlen, "%s/%s", Volume::ASECDIR, id);
+    int written = snprintf(buffer, maxlen, "%s/%s", VolumeManager::ASECDIR, id);
     if ((written < 0) || (written >= maxlen)) {
         SLOGE("getAsecMountPath failed for %s: couldn't construct path in buffer", id);
         errno = EINVAL;
@@ -622,12 +583,6 @@ int VolumeManager::createAsec(const char *id, unsigned int numSectors, const cha
         return -1;
     }
 
-    if (lookupVolume(id)) {
-        SLOGE("ASEC id '%s' currently exists", id);
-        errno = EADDRINUSE;
-        return -1;
-    }
-
     char asecFileName[255];
 
     if (!findAsec(id, asecFileName, sizeof(asecFileName))) {
@@ -637,7 +592,7 @@ int VolumeManager::createAsec(const char *id, unsigned int numSectors, const cha
         return -1;
     }
 
-    const char *asecDir = isExternal ? Volume::SEC_ASECDIR_EXT : Volume::SEC_ASECDIR_INT;
+    const char *asecDir = isExternal ? VolumeManager::SEC_ASECDIR_EXT : VolumeManager::SEC_ASECDIR_INT;
 
     int written = snprintf(asecFileName, sizeof(asecFileName), "%s/%s.asec", asecDir, id);
     if ((written < 0) || (size_t(written) >= sizeof(asecFileName))) {
@@ -713,7 +668,7 @@ int VolumeManager::createAsec(const char *id, unsigned int numSectors, const cha
         int formatStatus;
         char mountPoint[255];
 
-        int written = snprintf(mountPoint, sizeof(mountPoint), "%s/%s", Volume::ASECDIR, id);
+        int written = snprintf(mountPoint, sizeof(mountPoint), "%s/%s", VolumeManager::ASECDIR, id);
         if ((written < 0) || (size_t(written) >= sizeof(mountPoint))) {
             SLOGE("ASEC fs format failed: couldn't construct mountPoint");
             if (cleanupDm) {
@@ -804,7 +759,7 @@ int VolumeManager::resizeAsec(const char *id, unsigned numSectors, const char *k
         return -1;
     }
 
-    int written = snprintf(mountPoint, sizeof(mountPoint), "%s/%s", Volume::ASECDIR, id);
+    int written = snprintf(mountPoint, sizeof(mountPoint), "%s/%s", VolumeManager::ASECDIR, id);
     if ((written < 0) || (size_t(written) >= sizeof(mountPoint))) {
        SLOGE("ASEC resize failed for %s: couldn't construct mountpoint", id);
        return -1;
@@ -965,7 +920,7 @@ int VolumeManager::finalizeAsec(const char *id) {
         return -1;
     }
 
-    int written = snprintf(mountPoint, sizeof(mountPoint), "%s/%s", Volume::ASECDIR, id);
+    int written = snprintf(mountPoint, sizeof(mountPoint), "%s/%s", VolumeManager::ASECDIR, id);
     if ((written < 0) || (size_t(written) >= sizeof(mountPoint))) {
         SLOGE("ASEC finalize failed: couldn't construct mountPoint");
         return -1;
@@ -1028,7 +983,7 @@ int VolumeManager::fixupAsecPermissions(const char *id, gid_t gid, const char* f
         return -1;
     }
 
-    int written = snprintf(mountPoint, sizeof(mountPoint), "%s/%s", Volume::ASECDIR, id);
+    int written = snprintf(mountPoint, sizeof(mountPoint), "%s/%s", VolumeManager::ASECDIR, id);
     if ((written < 0) || (size_t(written) >= sizeof(mountPoint))) {
         SLOGE("Unable remount to fix permissions for %s: couldn't construct mountpoint", id);
         return -1;
@@ -1143,7 +1098,7 @@ int VolumeManager::renameAsec(const char *id1, const char *id2) {
 
     asprintf(&asecFilename2, "%s/%s.asec", dir, id2);
 
-    int written = snprintf(mountPoint, sizeof(mountPoint), "%s/%s", Volume::ASECDIR, id1);
+    int written = snprintf(mountPoint, sizeof(mountPoint), "%s/%s", VolumeManager::ASECDIR, id1);
     if ((written < 0) || (size_t(written) >= sizeof(mountPoint))) {
         SLOGE("Rename failed: couldn't construct mountpoint");
         goto out_err;
@@ -1155,7 +1110,7 @@ int VolumeManager::renameAsec(const char *id1, const char *id2) {
         goto out_err;
     }
 
-    written = snprintf(mountPoint, sizeof(mountPoint), "%s/%s", Volume::ASECDIR, id2);
+    written = snprintf(mountPoint, sizeof(mountPoint), "%s/%s", VolumeManager::ASECDIR, id2);
     if ((written < 0) || (size_t(written) >= sizeof(mountPoint))) {
         SLOGE("Rename failed: couldn't construct mountpoint2");
         goto out_err;
@@ -1203,7 +1158,7 @@ int VolumeManager::unmountAsec(const char *id, bool force) {
         return -1;
     }
 
-    int written = snprintf(mountPoint, sizeof(mountPoint), "%s/%s", Volume::ASECDIR, id);
+    int written = snprintf(mountPoint, sizeof(mountPoint), "%s/%s", VolumeManager::ASECDIR, id);
     if ((written < 0) || (size_t(written) >= sizeof(mountPoint))) {
         SLOGE("ASEC unmount failed for %s: couldn't construct mountpoint", id);
         return -1;
@@ -1227,7 +1182,7 @@ int VolumeManager::unmountObb(const char *fileName, bool force) {
         return -1;
     }
 
-    int written = snprintf(mountPoint, sizeof(mountPoint), "%s/%s", Volume::LOOPDIR, idHash);
+    int written = snprintf(mountPoint, sizeof(mountPoint), "%s/%s", VolumeManager::LOOPDIR, idHash);
     if ((written < 0) || (size_t(written) >= sizeof(mountPoint))) {
         SLOGE("OBB unmount failed for %s: couldn't construct mountpoint", fileName);
         return -1;
@@ -1339,7 +1294,7 @@ int VolumeManager::destroyAsec(const char *id, bool force) {
         return -1;
     }
 
-    int written = snprintf(mountPoint, sizeof(mountPoint), "%s/%s", Volume::ASECDIR, id);
+    int written = snprintf(mountPoint, sizeof(mountPoint), "%s/%s", VolumeManager::ASECDIR, id);
     if ((written < 0) || (size_t(written) >= sizeof(mountPoint))) {
         SLOGE("ASEC destroy failed for %s: couldn't construct mountpoint", id);
         return -1;
@@ -1430,10 +1385,10 @@ int VolumeManager::findAsec(const char *id, char *asecPath, size_t asecPathLen,
     }
 
     const char *dir;
-    if (isAsecInDirectory(Volume::SEC_ASECDIR_INT, asecName)) {
-        dir = Volume::SEC_ASECDIR_INT;
-    } else if (isAsecInDirectory(Volume::SEC_ASECDIR_EXT, asecName)) {
-        dir = Volume::SEC_ASECDIR_EXT;
+    if (isAsecInDirectory(VolumeManager::SEC_ASECDIR_INT, asecName)) {
+        dir = VolumeManager::SEC_ASECDIR_INT;
+    } else if (isAsecInDirectory(VolumeManager::SEC_ASECDIR_EXT, asecName)) {
+        dir = VolumeManager::SEC_ASECDIR_EXT;
     } else {
         free(asecName);
         return -1;
@@ -1471,7 +1426,7 @@ int VolumeManager::mountAsec(const char *id, const char *key, int ownerUid, bool
         return -1;
     }
 
-    int written = snprintf(mountPoint, sizeof(mountPoint), "%s/%s", Volume::ASECDIR, id);
+    int written = snprintf(mountPoint, sizeof(mountPoint), "%s/%s", VolumeManager::ASECDIR, id);
     if ((written < 0) || (size_t(written) >= sizeof(mountPoint))) {
         SLOGE("ASEC mount failed for %s: couldn't construct mountpoint", id);
         return -1;
@@ -1558,19 +1513,6 @@ int VolumeManager::mountAsec(const char *id, const char *key, int ownerUid, bool
     return 0;
 }
 
-Volume* VolumeManager::getVolumeForFile(const char *fileName) {
-    VolumeCollection::iterator i;
-
-    for (i = mVolumes->begin(); i != mVolumes->end(); ++i) {
-        const char* mountPoint = (*i)->getFuseMountpoint();
-        if (!strncmp(fileName, mountPoint, strlen(mountPoint))) {
-            return *i;
-        }
-    }
-
-    return NULL;
-}
-
 /**
  * Mounts an image file <code>img</code>.
  */
@@ -1583,7 +1525,7 @@ int VolumeManager::mountObb(const char *img, const char *key, int ownerGid) {
         return -1;
     }
 
-    int written = snprintf(mountPoint, sizeof(mountPoint), "%s/%s", Volume::LOOPDIR, idHash);
+    int written = snprintf(mountPoint, sizeof(mountPoint), "%s/%s", VolumeManager::LOOPDIR, idHash);
     if ((written < 0) || (size_t(written) >= sizeof(mountPoint))) {
         SLOGE("OBB mount failed for %s: couldn't construct mountpoint", img);
         return -1;
@@ -1653,17 +1595,6 @@ int VolumeManager::mountObb(const char *img, const char *key, int ownerGid) {
     return 0;
 }
 
-int VolumeManager::mountVolume(const char *label) {
-    Volume *v = lookupVolume(label);
-
-    if (!v) {
-        errno = ENOENT;
-        return -1;
-    }
-
-    return v->mountVol();
-}
-
 int VolumeManager::listMountedObbs(SocketClient* cli) {
     FILE *fp = setmntent("/proc/mounts", "r");
     if (fp == NULL) {
@@ -1672,9 +1603,9 @@ int VolumeManager::listMountedObbs(SocketClient* cli) {
     }
 
     // Create a string to compare against that has a trailing slash
-    int loopDirLen = strlen(Volume::LOOPDIR);
+    int loopDirLen = strlen(VolumeManager::LOOPDIR);
     char loopDir[loopDirLen + 2];
-    strcpy(loopDir, Volume::LOOPDIR);
+    strcpy(loopDir, VolumeManager::LOOPDIR);
     loopDir[loopDirLen++] = '/';
     loopDir[loopDirLen] = '\0';
 
@@ -1696,264 +1627,9 @@ int VolumeManager::listMountedObbs(SocketClient* cli) {
     return 0;
 }
 
-int VolumeManager::shareEnabled(const char *label, const char *method, bool *enabled) {
-    Volume *v = lookupVolume(label);
-
-    if (!v) {
-        errno = ENOENT;
-        return -1;
-    }
-
-    if (strcmp(method, "ums")) {
-        errno = ENOSYS;
-        return -1;
-    }
-
-    if (v->getState() != Volume::State_Shared) {
-        *enabled = false;
-    } else {
-        *enabled = true;
-    }
-    return 0;
-}
-
-int VolumeManager::shareVolume(const char *label, const char *method) {
-    Volume *v = lookupVolume(label);
-
-    if (!v) {
-        errno = ENOENT;
-        return -1;
-    }
-
-    /*
-     * Eventually, we'll want to support additional share back-ends,
-     * some of which may work while the media is mounted. For now,
-     * we just support UMS
-     */
-    if (strcmp(method, "ums")) {
-        errno = ENOSYS;
-        return -1;
-    }
-
-    if (v->getState() == Volume::State_NoMedia) {
-        errno = ENODEV;
-        return -1;
-    }
-
-    if (v->getState() != Volume::State_Idle) {
-        // You need to unmount manually befoe sharing
-        errno = EBUSY;
-        return -1;
-    }
-
-    if (mVolManagerDisabled) {
-        errno = EBUSY;
-        return -1;
-    }
-
-    dev_t d = v->getShareDevice();
-    if ((MAJOR(d) == 0) && (MINOR(d) == 0)) {
-        // This volume does not support raw disk access
-        errno = EINVAL;
-        return -1;
-    }
-
-    int fd;
-    char nodepath[255];
-    int written = snprintf(nodepath,
-             sizeof(nodepath), "/dev/block/vold/%d:%d",
-             major(d), minor(d));
-
-    if ((written < 0) || (size_t(written) >= sizeof(nodepath))) {
-        SLOGE("shareVolume failed: couldn't construct nodepath");
-        return -1;
-    }
-
-    if ((fd = open(MASS_STORAGE_FILE_PATH, O_WRONLY)) < 0) {
-        SLOGE("Unable to open ums lunfile (%s)", strerror(errno));
-        return -1;
-    }
-
-    if (write(fd, nodepath, strlen(nodepath)) < 0) {
-        SLOGE("Unable to write to ums lunfile (%s)", strerror(errno));
-        close(fd);
-        return -1;
-    }
-
-    close(fd);
-    v->handleVolumeShared();
-    if (mUmsSharingCount++ == 0) {
-        FILE* fp;
-        mSavedDirtyRatio = -1; // in case we fail
-        if ((fp = fopen("/proc/sys/vm/dirty_ratio", "r+"))) {
-            char line[16];
-            if (fgets(line, sizeof(line), fp) && sscanf(line, "%d", &mSavedDirtyRatio)) {
-                fprintf(fp, "%d\n", mUmsDirtyRatio);
-            } else {
-                SLOGE("Failed to read dirty_ratio (%s)", strerror(errno));
-            }
-            fclose(fp);
-        } else {
-            SLOGE("Failed to open /proc/sys/vm/dirty_ratio (%s)", strerror(errno));
-        }
-    }
-    return 0;
-}
-
-int VolumeManager::unshareVolume(const char *label, const char *method) {
-    Volume *v = lookupVolume(label);
-
-    if (!v) {
-        errno = ENOENT;
-        return -1;
-    }
-
-    if (strcmp(method, "ums")) {
-        errno = ENOSYS;
-        return -1;
-    }
-
-    if (v->getState() != Volume::State_Shared) {
-        errno = EINVAL;
-        return -1;
-    }
-
-    int fd;
-    if ((fd = open(MASS_STORAGE_FILE_PATH, O_WRONLY)) < 0) {
-        SLOGE("Unable to open ums lunfile (%s)", strerror(errno));
-        return -1;
-    }
-
-    char ch = 0;
-    if (write(fd, &ch, 1) < 0) {
-        SLOGE("Unable to write to ums lunfile (%s)", strerror(errno));
-        close(fd);
-        return -1;
-    }
-
-    close(fd);
-    v->handleVolumeUnshared();
-    if (--mUmsSharingCount == 0 && mSavedDirtyRatio != -1) {
-        FILE* fp;
-        if ((fp = fopen("/proc/sys/vm/dirty_ratio", "r+"))) {
-            fprintf(fp, "%d\n", mSavedDirtyRatio);
-            fclose(fp);
-        } else {
-            SLOGE("Failed to open /proc/sys/vm/dirty_ratio (%s)", strerror(errno));
-        }
-        mSavedDirtyRatio = -1;
-    }
-    return 0;
-}
-
-int VolumeManager::getDirectVolumeList(struct volume_info *vol_list) {
-    VolumeCollection::iterator i;
-    int n=0;
-    dev_t d;
-
-    for (i = mVolumes->begin(); i != mVolumes->end(); ++i) {
-        if ((d=(*i)->getShareDevice()) != (dev_t)0) {
-            (*i)->getVolInfo(&vol_list[n]);
-            snprintf(vol_list[n].blk_dev, sizeof(vol_list[n].blk_dev),
-                     "/dev/block/vold/%d:%d", major(d), minor(d));
-            n++;
-        }
-    }
-
-    return 0;
-}
-
-int VolumeManager::unmountVolume(const char *label, bool force, bool revert) {
-    Volume *v = lookupVolume(label);
-
-    if (!v) {
-        errno = ENOENT;
-        return -1;
-    }
-
-    if (v->getState() == Volume::State_NoMedia) {
-        errno = ENODEV;
-        return -1;
-    }
-
-    if (v->getState() != Volume::State_Mounted) {
-        SLOGW("Attempt to unmount volume which isn't mounted (%d)\n",
-             v->getState());
-        errno = EBUSY;
-        return UNMOUNT_NOT_MOUNTED_ERR;
-    }
-
-    cleanupAsec(v, force);
-
-    return v->unmountVol(force, revert);
-}
-
 extern "C" int vold_unmountAll(void) {
     VolumeManager *vm = VolumeManager::Instance();
     return vm->unmountAll();
-}
-
-#define ID_BUF_LEN 256
-#define ASEC_SUFFIX ".asec"
-#define ASEC_SUFFIX_LEN (sizeof(ASEC_SUFFIX) - 1)
-int VolumeManager::unmountAllAsecsInDir(const char *directory) {
-    DIR *d = opendir(directory);
-    int rc = 0;
-
-    if (!d) {
-        SLOGE("Could not open asec dir %s", directory);
-        return -1;
-    }
-
-    size_t dirent_len = offsetof(struct dirent, d_name) +
-            fpathconf(dirfd(d), _PC_NAME_MAX) + 1;
-
-    struct dirent *dent = (struct dirent *) malloc(dirent_len);
-    if (dent == NULL) {
-        SLOGE("Failed to allocate memory for asec dir");
-        return -1;
-    }
-
-    struct dirent *result;
-    while (!readdir_r(d, dent, &result) && result != NULL) {
-        if (dent->d_name[0] == '.')
-            continue;
-        if (dent->d_type != DT_REG)
-            continue;
-        size_t name_len = strlen(dent->d_name);
-        if (name_len > 5 && name_len < (ID_BUF_LEN + ASEC_SUFFIX_LEN - 1) &&
-                !strcmp(&dent->d_name[name_len - 5], ASEC_SUFFIX)) {
-            char id[ID_BUF_LEN];
-            strlcpy(id, dent->d_name, name_len - 4);
-            if (unmountAsec(id, true)) {
-                /* Register the error, but try to unmount more asecs */
-                rc = -1;
-            }
-        }
-    }
-    closedir(d);
-
-    free(dent);
-
-    return rc;
-}
-
-/*
- * Looks up a volume by it's label or mount-point
- */
-Volume *VolumeManager::lookupVolume(const char *label) {
-    VolumeCollection::iterator i;
-
-    for (i = mVolumes->begin(); i != mVolumes->end(); ++i) {
-        if (label[0] == '/') {
-            if (!strcmp(label, (*i)->getFuseMountpoint()))
-                return (*i);
-        } else {
-            if (!strcmp(label, (*i)->getLabel()))
-                return (*i);
-        }
-    }
-    return NULL;
 }
 
 bool VolumeManager::isMountpointMounted(const char *mp)
@@ -1974,59 +1650,6 @@ bool VolumeManager::isMountpointMounted(const char *mp)
     }
     endmntent(fp);
     return found_mp;
-}
-
-int VolumeManager::cleanupAsec(Volume *v, bool force) {
-    int rc = 0;
-
-    char asecFileName[255];
-
-    AsecIdCollection removeAsec;
-    AsecIdCollection removeObb;
-
-    for (AsecIdCollection::iterator it = mActiveContainers->begin(); it != mActiveContainers->end();
-            ++it) {
-        ContainerData* cd = *it;
-
-        if (cd->type == ASEC) {
-            if (findAsec(cd->id, asecFileName, sizeof(asecFileName))) {
-                SLOGE("Couldn't find ASEC %s; cleaning up", cd->id);
-                removeAsec.push_back(cd);
-            } else {
-                SLOGD("Found ASEC at path %s", asecFileName);
-                if (!strncmp(asecFileName, Volume::SEC_ASECDIR_EXT,
-                        strlen(Volume::SEC_ASECDIR_EXT))) {
-                    removeAsec.push_back(cd);
-                }
-            }
-        } else if (cd->type == OBB) {
-            if (v == getVolumeForFile(cd->id)) {
-                removeObb.push_back(cd);
-            }
-        } else {
-            SLOGE("Unknown container type %d!", cd->type);
-        }
-    }
-
-    for (AsecIdCollection::iterator it = removeAsec.begin(); it != removeAsec.end(); ++it) {
-        ContainerData *cd = *it;
-        SLOGI("Unmounting ASEC %s (dependent on %s)", cd->id, v->getLabel());
-        if (unmountAsec(cd->id, force)) {
-            SLOGE("Failed to unmount ASEC %s (%s)", cd->id, strerror(errno));
-            rc = -1;
-        }
-    }
-
-    for (AsecIdCollection::iterator it = removeObb.begin(); it != removeObb.end(); ++it) {
-        ContainerData *cd = *it;
-        SLOGI("Unmounting OBB %s (dependent on %s)", cd->id, v->getLabel());
-        if (unmountObb(cd->id, force)) {
-            SLOGE("Failed to unmount OBB %s (%s)", cd->id, strerror(errno));
-            rc = -1;
-        }
-    }
-
-    return rc;
 }
 
 int VolumeManager::mkdirs(char* path) {
