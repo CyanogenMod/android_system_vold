@@ -33,6 +33,7 @@
 #include "cutils/klog.h"
 #include "cutils/log.h"
 #include "cutils/properties.h"
+#include "cutils/sockets.h"
 
 #include "Disk.h"
 #include "VolumeManager.h"
@@ -70,6 +71,9 @@ int main(int argc, char** argv) {
     if (sehandle) {
         selinux_android_set_sehandle(sehandle);
     }
+
+    // Quickly throw a CLOEXEC on the socket we just inherited from init
+    fcntl(android_get_control_socket("vold"), F_SETFD, FD_CLOEXEC);
 
     mkdir("/dev/block/vold", 0755);
 
@@ -155,7 +159,7 @@ static void do_coldboot(DIR *d, int lvl) {
 
     dfd = dirfd(d);
 
-    fd = openat(dfd, "uevent", O_WRONLY);
+    fd = openat(dfd, "uevent", O_WRONLY | O_CLOEXEC);
     if(fd >= 0) {
         write(fd, "add\n", 4);
         close(fd);
