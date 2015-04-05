@@ -63,11 +63,18 @@ public:
     };
 
     enum class State {
+        /* Next states: mounting, formatting */
         kUnmounted = 0,
+        /* Next states: mounted, unmountable */
         kMounting,
+        /* Next states: unmounting */
         kMounted,
+        /* Next states: unmounted */
         kFormatting,
+        /* Next states: unmounted */
         kUnmounting,
+        /* Next states: mounting, formatting */
+        kUnmountable,
     };
 
     const std::string& getId() { return mId; }
