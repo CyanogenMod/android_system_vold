@@ -110,7 +110,7 @@ status_t PublicVolume::doMount() {
     // Use UUID as stable name, if available
     std::string stableName = getId();
     if (!mFsUuid.empty()) {
-        stableName = "public:" + mFsUuid;
+        stableName = mFsUuid;
     }
 
     mRawPath = StringPrintf("/mnt/media_rw/%s", stableName.c_str());

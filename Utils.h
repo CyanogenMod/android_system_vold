@@ -43,6 +43,9 @@ extern security_context_t sFsckUntrustedContext;
 status_t CreateDeviceNode(const std::string& path, dev_t dev);
 status_t DestroyDeviceNode(const std::string& path);
 
+/* fs_prepare_dir wrapper that creates with SELinux context */
+status_t PrepareDir(const std::string& path, mode_t mode, uid_t uid, gid_t gid);
+
 /* Really unmounts the path, killing active processes along the way */
 status_t ForceUnmount(const std::string& path);
 

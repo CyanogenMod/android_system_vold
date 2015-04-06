@@ -85,26 +85,53 @@ status_t DestroyDeviceNode(const std::string& path) {
     }
 }
 
+status_t PrepareDir(const std::string& path, mode_t mode, uid_t uid, gid_t gid) {
+    const char* cpath = path.c_str();
+
+    char* secontext = nullptr;
+    if (sehandle) {
+        if (!selabel_lookup(sehandle, &secontext, cpath, S_IFDIR)) {
+            setfscreatecon(secontext);
+        }
+    }
+
+    int res = fs_prepare_dir(cpath, mode, uid, gid);
+
+    if (secontext) {
+        setfscreatecon(nullptr);
+        freecon(secontext);
+    }
+
+    if (res == 0) {
+        return OK;
+    } else {
+        return -errno;
+    }
+}
+
 status_t ForceUnmount(const std::string& path) {
     const char* cpath = path.c_str();
     if (!umount2(cpath, UMOUNT_NOFOLLOW) || errno == EINVAL || errno == ENOENT) {
         return OK;
     }
-    PLOG(WARNING) << "Failed to unmount " << path << "; sending SIGTERM";
+    PLOG(WARNING) << "Failed to unmount " << path;
+
+    sleep(5);
     Process::killProcessesWithOpenFiles(cpath, SIGTERM);
-    sleep(5);
 
     if (!umount2(cpath, UMOUNT_NOFOLLOW) || errno == EINVAL || errno == ENOENT) {
         return OK;
     }
-    PLOG(WARNING) << "Failed to unmount " << path << "; sending SIGKILL";
+    PLOG(WARNING) << "Failed to unmount " << path;
+
+    sleep(5);
     Process::killProcessesWithOpenFiles(cpath, SIGKILL);
-    sleep(5);
 
     if (!umount2(cpath, UMOUNT_NOFOLLOW) || errno == EINVAL || errno == ENOENT) {
         return OK;
     }
-    PLOG(ERROR) << "Failed to unmount " << path << "; giving up";
+    PLOG(ERROR) << "Failed to unmount " << path;
+
     return -errno;
 }
 

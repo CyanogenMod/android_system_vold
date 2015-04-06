@@ -43,7 +43,6 @@ PrivateVolume::PrivateVolume(dev_t device, const std::string& keyRaw) :
         VolumeBase(Type::kPrivate), mRawDevice(device), mKeyRaw(keyRaw) {
     setId(StringPrintf("private:%u,%u", major(device), minor(device)));
     mRawDevPath = StringPrintf("/dev/block/vold/%s", getId().c_str());
-    mPath = StringPrintf("/mnt/secure/%s", getId().c_str());
 }
 
 PrivateVolume::~PrivateVolume() {
@@ -101,20 +100,31 @@ status_t PrivateVolume::doMount() {
         return -EIO;
     }
 
+    mPath = StringPrintf("/mnt/expand/%s", mFsUuid.c_str());
+    setPath(mPath);
+
+    if (PrepareDir(mPath, 0700, AID_ROOT, AID_ROOT)) {
+        PLOG(ERROR) << getId() << " failed to create mount point " << mPath;
+        return -EIO;
+    }
+
     if (Ext4::check(mDmDevPath.c_str(), mPath.c_str())) {
         PLOG(ERROR) << getId() << " failed filesystem check";
         return -EIO;
     }
 
-    setPath(mPath);
-
-    if (fs_prepare_dir(mPath.c_str(), 0700, AID_ROOT, AID_ROOT)) {
-        PLOG(ERROR) << getId() << " failed to create mount point " << mPath;
-        return -errno;
-    }
-
     if (Ext4::doMount(mDmDevPath.c_str(), mPath.c_str(), false, false, true)) {
         PLOG(ERROR) << getId() << " failed to mount";
+        return -EIO;
+    }
+
+    // Verify that common directories are ready to roll
+    if (PrepareDir(mPath + "/app", 0771, AID_SYSTEM, AID_SYSTEM) ||
+            PrepareDir(mPath + "/user", 0711, AID_SYSTEM, AID_SYSTEM) ||
+            PrepareDir(mPath + "/media", 0770, AID_MEDIA_RW, AID_MEDIA_RW) ||
+            PrepareDir(mPath + "/local", 0751, AID_ROOT, AID_ROOT) ||
+            PrepareDir(mPath + "/local/tmp", 0771, AID_SHELL, AID_SHELL)) {
+        PLOG(ERROR) << getId() << " failed to prepare";
         return -EIO;
     }
 
