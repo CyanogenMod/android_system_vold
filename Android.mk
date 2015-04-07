@@ -51,6 +51,7 @@ common_shared_libraries := \
 
 common_static_libraries := \
 	libfs_mgr \
+	libsquashfs_utils \
 	libscrypt_static \
 	libmincrypt \
 	libbatteryservice
