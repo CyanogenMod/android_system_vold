@@ -66,7 +66,7 @@ int Process::pathMatchesMountPoint(const char* path, const char* mountPoint) {
 void Process::getProcessName(int pid, char *buffer, size_t max) {
     int fd;
     snprintf(buffer, max, "/proc/%d/cmdline", pid);
-    fd = open(buffer, O_RDONLY);
+    fd = open(buffer, O_RDONLY | O_CLOEXEC);
     if (fd < 0) {
         strcpy(buffer, "???");
     } else {

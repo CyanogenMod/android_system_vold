@@ -55,7 +55,7 @@ int Devmapper::dumpState(SocketClient *c) {
     }
 
     int fd;
-    if ((fd = open("/dev/device-mapper", O_RDWR)) < 0) {
+    if ((fd = open("/dev/device-mapper", O_RDWR | O_CLOEXEC)) < 0) {
         SLOGE("Error opening devmapper (%s)", strerror(errno));
         free(buffer);
         free(buffer2);
@@ -138,7 +138,7 @@ int Devmapper::lookupActive(const char *name, char *ubuffer, size_t len) {
     }
 
     int fd;
-    if ((fd = open("/dev/device-mapper", O_RDWR)) < 0) {
+    if ((fd = open("/dev/device-mapper", O_RDWR | O_CLOEXEC)) < 0) {
         SLOGE("Error opening devmapper (%s)", strerror(errno));
         free(buffer);
         return -1;
@@ -172,7 +172,7 @@ int Devmapper::create(const char *name, const char *loopFile, const char *key,
     }
 
     int fd;
-    if ((fd = open("/dev/device-mapper", O_RDWR)) < 0) {
+    if ((fd = open("/dev/device-mapper", O_RDWR | O_CLOEXEC)) < 0) {
         SLOGE("Error opening devmapper (%s)", strerror(errno));
         free(buffer);
         return -1;
@@ -269,7 +269,7 @@ int Devmapper::destroy(const char *name) {
     }
 
     int fd;
-    if ((fd = open("/dev/device-mapper", O_RDWR)) < 0) {
+    if ((fd = open("/dev/device-mapper", O_RDWR | O_CLOEXEC)) < 0) {
         SLOGE("Error opening devmapper (%s)", strerror(errno));
         free(buffer);
         return -1;

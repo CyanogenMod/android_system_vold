@@ -52,17 +52,9 @@ PublicVolume::~PublicVolume() {
 
 status_t PublicVolume::readMetadata() {
     status_t res = ReadMetadataUntrusted(mDevPath, mFsType, mFsUuid, mFsLabel);
-
-    VolumeManager::Instance()->getBroadcaster()->sendBroadcast(
-            ResponseCode::VolumeFsTypeChanged,
-            StringPrintf("%s %s", getId().c_str(), mFsType.c_str()).c_str(), false);
-    VolumeManager::Instance()->getBroadcaster()->sendBroadcast(
-            ResponseCode::VolumeFsUuidChanged,
-            StringPrintf("%s %s", getId().c_str(), mFsUuid.c_str()).c_str(), false);
-    VolumeManager::Instance()->getBroadcaster()->sendBroadcast(
-            ResponseCode::VolumeFsLabelChanged,
-            StringPrintf("%s %s", getId().c_str(), mFsLabel.c_str()).c_str(), false);
-
+    notifyEvent(ResponseCode::VolumeFsTypeChanged, mFsType);
+    notifyEvent(ResponseCode::VolumeFsUuidChanged, mFsUuid);
+    notifyEvent(ResponseCode::VolumeFsLabelChanged, mFsLabel);
     return res;
 }
 

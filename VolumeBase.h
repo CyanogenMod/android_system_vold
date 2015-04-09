@@ -86,6 +86,7 @@ public:
 
     status_t setFlags(int flags);
     status_t setUser(userid_t user);
+    status_t setSilent(bool silent);
 
     void addVolume(const std::shared_ptr<VolumeBase>& volume);
     void removeVolume(const std::shared_ptr<VolumeBase>& volume);
@@ -110,6 +111,9 @@ protected:
     status_t setId(const std::string& id);
     status_t setPath(const std::string& path);
 
+    void notifyEvent(int msg);
+    void notifyEvent(int msg, const std::string& value);
+
 private:
     /* ID that uniquely references volume while alive */
     std::string mId;
@@ -125,6 +129,8 @@ private:
     State mState;
     /* Path to mounted volume */
     std::string mPath;
+    /* Flag indicating that volume should emit no events */
+    bool mSilent;
 
     /* Volumes stacked on top of this volume */
     std::list<std::shared_ptr<VolumeBase>> mVolumes;

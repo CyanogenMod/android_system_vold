@@ -380,7 +380,7 @@ static unsigned int get_fs_size(char *dev)
     struct ext4_super_block sb;
     off64_t len;
 
-    if ((fd = open(dev, O_RDONLY)) < 0) {
+    if ((fd = open(dev, O_RDONLY|O_CLOEXEC)) < 0) {
         SLOGE("Cannot open device to get filesystem size ");
         return 0;
     }
@@ -423,7 +423,7 @@ static int get_crypt_ftr_info(char **metadata_fname, off64_t *off)
     fs_mgr_get_crypt_info(fstab, key_loc, real_blkdev, sizeof(key_loc));
 
     if (!strcmp(key_loc, KEY_IN_FOOTER)) {
-      if ( (fd = open(real_blkdev, O_RDWR)) < 0) {
+      if ( (fd = open(real_blkdev, O_RDWR|O_CLOEXEC)) < 0) {
         SLOGE("Cannot open real block device %s\n", real_blkdev);
         return -1;
       }
@@ -485,7 +485,7 @@ static int put_crypt_ftr_and_key(struct crypt_mnt_ftr *crypt_ftr)
     SLOGE("Unexpected value for crypto key location\n");
     return -1;
   }
-  if ( (fd = open(fname, O_RDWR | O_CREAT, 0600)) < 0) {
+  if ( (fd = open(fname, O_RDWR | O_CREAT|O_CLOEXEC, 0600)) < 0) {
     SLOGE("Cannot open footer file %s for put\n", fname);
     return -1;
   }
@@ -623,7 +623,7 @@ static int get_crypt_ftr_and_key(struct crypt_mnt_ftr *crypt_ftr)
     SLOGE("Unexpected value for crypto key location\n");
     return -1;
   }
-  if ( (fd = open(fname, O_RDWR)) < 0) {
+  if ( (fd = open(fname, O_RDWR|O_CLOEXEC)) < 0) {
     SLOGE("Cannot open footer file %s for get\n", fname);
     return -1;
   }
@@ -748,7 +748,7 @@ static int load_persistent_data(void)
         return -1;
     }
 
-    fd = open(fname, O_RDONLY);
+    fd = open(fname, O_RDONLY|O_CLOEXEC);
     if (fd < 0) {
         SLOGE("Cannot open %s metadata file", fname);
         return -1;
@@ -829,7 +829,7 @@ static int save_persistent_data(void)
         return -1;
     }
 
-    fd = open(fname, O_RDWR);
+    fd = open(fname, O_RDWR|O_CLOEXEC);
     if (fd < 0) {
         SLOGE("Cannot open %s metadata file", fname);
         return -1;
@@ -1067,7 +1067,7 @@ static int create_crypto_blk_dev(struct crypt_mnt_ftr *crypt_ftr,
   char *extra_params;
   int load_count;
 
-  if ((fd = open("/dev/device-mapper", O_RDWR)) < 0 ) {
+  if ((fd = open("/dev/device-mapper", O_RDWR|O_CLOEXEC)) < 0 ) {
     SLOGE("Cannot open device-mapper\n");
     goto errout;
   }
@@ -1132,7 +1132,7 @@ static int delete_crypto_blk_dev(char *name)
   struct dm_ioctl *io;
   int retval = -1;
 
-  if ((fd = open("/dev/device-mapper", O_RDWR)) < 0 ) {
+  if ((fd = open("/dev/device-mapper", O_RDWR|O_CLOEXEC)) < 0 ) {
     SLOGE("Cannot open device-mapper\n");
     goto errout;
   }
@@ -1416,7 +1416,7 @@ static int create_encrypted_random_key(char *passwd, unsigned char *master_key, 
     unsigned char key_buf[KEY_LEN_BYTES];
 
     /* Get some random bits for a key */
-    fd = open("/dev/urandom", O_RDONLY);
+    fd = open("/dev/urandom", O_RDONLY|O_CLOEXEC);
     read(fd, key_buf, sizeof(key_buf));
     read(fd, salt, SALT_LEN);
     close(fd);
@@ -1892,7 +1892,7 @@ static int test_mount_encrypted_fs(struct crypt_mnt_ftr* crypt_ftr,
  */
 int cryptfs_setup_ext_volume(const char* label, const char* real_blkdev,
         const unsigned char* key, int keysize, char* out_crypto_blkdev) {
-    int fd = open(real_blkdev, O_RDONLY);
+    int fd = open(real_blkdev, O_RDONLY|O_CLOEXEC);
     if (fd == -1) {
         SLOGE("Failed to open %s: %s", real_blkdev, strerror(errno));
         return -1;
@@ -2453,14 +2453,14 @@ static int cryptfs_enable_inplace_ext4(char *crypto_blkdev,
     data.real_blkdev = real_blkdev;
     data.crypto_blkdev = crypto_blkdev;
 
-    if ( (data.realfd = open(real_blkdev, O_RDWR)) < 0) {
+    if ( (data.realfd = open(real_blkdev, O_RDWR|O_CLOEXEC)) < 0) {
         SLOGE("Error opening real_blkdev %s for inplace encrypt. err=%d(%s)\n",
               real_blkdev, errno, strerror(errno));
         rc = -1;
         goto errout;
     }
 
-    if ( (data.cryptofd = open(crypto_blkdev, O_WRONLY)) < 0) {
+    if ( (data.cryptofd = open(crypto_blkdev, O_WRONLY|O_CLOEXEC)) < 0) {
         SLOGE("Error opening crypto_blkdev %s for ext4 inplace encrypt. err=%d(%s)\n",
               crypto_blkdev, errno, strerror(errno));
         rc = ENABLE_INPLACE_ERR_DEV;
@@ -2584,12 +2584,12 @@ static int cryptfs_enable_inplace_f2fs(char *crypto_blkdev,
     data.crypto_blkdev = crypto_blkdev;
     data.realfd = -1;
     data.cryptofd = -1;
-    if ( (data.realfd = open64(real_blkdev, O_RDWR)) < 0) {
+    if ( (data.realfd = open64(real_blkdev, O_RDWR|O_CLOEXEC)) < 0) {
         SLOGE("Error opening real_blkdev %s for f2fs inplace encrypt\n",
               real_blkdev);
         goto errout;
     }
-    if ( (data.cryptofd = open64(crypto_blkdev, O_WRONLY)) < 0) {
+    if ( (data.cryptofd = open64(crypto_blkdev, O_WRONLY|O_CLOEXEC)) < 0) {
         SLOGE("Error opening crypto_blkdev %s for f2fs inplace encrypt. err=%d(%s)\n",
               crypto_blkdev, errno, strerror(errno));
         rc = ENABLE_INPLACE_ERR_DEV;
@@ -2656,12 +2656,12 @@ static int cryptfs_enable_inplace_full(char *crypto_blkdev, char *real_blkdev,
     off64_t one_pct, cur_pct, new_pct;
     off64_t blocks_already_done, tot_numblocks;
 
-    if ( (realfd = open(real_blkdev, O_RDONLY)) < 0) { 
+    if ( (realfd = open(real_blkdev, O_RDONLY|O_CLOEXEC)) < 0) {
         SLOGE("Error opening real_blkdev %s for inplace encrypt\n", real_blkdev);
         return ENABLE_INPLACE_ERR_OTHER;
     }
 
-    if ( (cryptofd = open(crypto_blkdev, O_WRONLY)) < 0) { 
+    if ( (cryptofd = open(crypto_blkdev, O_WRONLY|O_CLOEXEC)) < 0) {
         SLOGE("Error opening crypto_blkdev %s for inplace encrypt. err=%d(%s)\n",
               crypto_blkdev, errno, strerror(errno));
         close(realfd);
@@ -2819,7 +2819,7 @@ static int cryptfs_enable_inplace(char *crypto_blkdev, char *real_blkdev,
 
 static int cryptfs_SHA256_fileblock(const char* filename, __le8* buf)
 {
-    int fd = open(filename, O_RDONLY);
+    int fd = open(filename, O_RDONLY|O_CLOEXEC);
     if (fd == -1) {
         SLOGE("Error opening file %s", filename);
         return -1;
@@ -2959,7 +2959,7 @@ int cryptfs_enable_internal(char *howarg, int crypt_type, char *passwd,
     fs_mgr_get_crypt_info(fstab, 0, real_blkdev, sizeof(real_blkdev));
 
     /* Get the size of the real block device */
-    int fd = open(real_blkdev, O_RDONLY);
+    int fd = open(real_blkdev, O_RDONLY|O_CLOEXEC);
     if (fd == -1) {
         SLOGE("Cannot open block device %s\n", real_blkdev);
         goto error_unencrypted;
@@ -3190,7 +3190,7 @@ int cryptfs_enable_internal(char *howarg, int crypt_type, char *passwd,
             /* wipe data if encryption failed */
             SLOGE("encryption failed - rebooting into recovery to wipe data\n");
             mkdir("/cache/recovery", 0700);
-            int fd = open("/cache/recovery/command", O_RDWR|O_CREAT|O_TRUNC, 0600);
+            int fd = open("/cache/recovery/command", O_RDWR|O_CREAT|O_TRUNC|O_CLOEXEC, 0600);
             if (fd >= 0) {
                 write(fd, "--wipe_data\n", strlen("--wipe_data\n") + 1);
                 write(fd, "--reason=cryptfs_enable_internal\n", strlen("--reason=cryptfs_enable_internal\n") + 1);

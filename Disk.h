@@ -74,6 +74,9 @@ public:
     status_t partitionPrivate();
     status_t partitionMixed(int8_t ratio);
 
+    void notifyEvent(int msg);
+    void notifyEvent(int msg, const std::string& value);
+
 private:
     /* ID that uniquely references this disk */
     std::string mId;
@@ -97,6 +100,8 @@ private:
     int mFlags;
     /* Flag indicating object is created */
     bool mCreated;
+    /* Flag that we just partitioned and should format all volumes */
+    bool mJustPartitioned;
 
     void createPublicVolume(dev_t device);
     void createPrivateVolume(dev_t device, const std::string& partGuid);

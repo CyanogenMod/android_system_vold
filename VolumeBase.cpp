@@ -36,7 +36,8 @@ namespace android {
 namespace vold {
 
 VolumeBase::VolumeBase(Type type) :
-        mType(type), mFlags(0), mUser(-1), mCreated(false), mState(State::kUnmounted) {
+        mType(type), mFlags(0), mUser(-1), mCreated(false), mState(
+                State::kUnmounted), mSilent(false) {
 }
 
 VolumeBase::~VolumeBase() {
@@ -45,10 +46,7 @@ VolumeBase::~VolumeBase() {
 
 void VolumeBase::setState(State state) {
     mState = state;
-
-    VolumeManager::Instance()->getBroadcaster()->sendBroadcast(
-            ResponseCode::VolumeStateChanged,
-            StringPrintf("%s %d", getId().c_str(), mState).c_str(), false);
+    notifyEvent(ResponseCode::VolumeStateChanged, StringPrintf("%d", mState));
 }
 
 status_t VolumeBase::setFlags(int flags) {
@@ -71,6 +69,16 @@ status_t VolumeBase::setUser(userid_t user) {
     return OK;
 }
 
+status_t VolumeBase::setSilent(bool silent) {
+    if (mCreated) {
+        LOG(WARNING) << getId() << " silence change requires destroyed";
+        return -EBUSY;
+    }
+
+    mSilent = silent;
+    return OK;
+}
+
 status_t VolumeBase::setId(const std::string& id) {
     if (mCreated) {
         LOG(WARNING) << getId() << " id change requires not created";
@@ -88,10 +96,20 @@ status_t VolumeBase::setPath(const std::string& path) {
     }
 
     mPath = path;
-    VolumeManager::Instance()->getBroadcaster()->sendBroadcast(
-            ResponseCode::VolumePathChanged,
-            StringPrintf("%s %s", getId().c_str(), mPath.c_str()).c_str(), false);
+    notifyEvent(ResponseCode::VolumePathChanged, mPath);
     return OK;
+}
+
+void VolumeBase::notifyEvent(int event) {
+    if (mSilent) return;
+    VolumeManager::Instance()->getBroadcaster()->sendBroadcast(event,
+            getId().c_str(), false);
+}
+
+void VolumeBase::notifyEvent(int event, const std::string& value) {
+    if (mSilent) return;
+    VolumeManager::Instance()->getBroadcaster()->sendBroadcast(event,
+            StringPrintf("%s %s", getId().c_str(), value.c_str()).c_str(), false);
 }
 
 void VolumeBase::addVolume(const std::shared_ptr<VolumeBase>& volume) {
@@ -116,9 +134,7 @@ status_t VolumeBase::create() {
 
     mCreated = true;
     status_t res = doCreate();
-    VolumeManager::Instance()->getBroadcaster()->sendBroadcast(
-            ResponseCode::VolumeCreated,
-            StringPrintf("%s %d", getId().c_str(), mType).c_str(), false);
+    notifyEvent(ResponseCode::VolumeCreated, StringPrintf("%d", mType));
     return res;
 }
 
@@ -133,8 +149,7 @@ status_t VolumeBase::destroy() {
         unmount();
     }
 
-    VolumeManager::Instance()->getBroadcaster()->sendBroadcast(
-            ResponseCode::VolumeDestroyed, getId().c_str(), false);
+    notifyEvent(ResponseCode::VolumeDestroyed);
     status_t res = doDestroy();
     mCreated = false;
     return res;

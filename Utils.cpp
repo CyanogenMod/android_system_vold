@@ -24,6 +24,7 @@
 #include <private/android_filesystem_config.h>
 #include <logwrap/logwrap.h>
 
+#include <mutex>
 #include <fcntl.h>
 #include <linux/fs.h>
 #include <stdlib.h>
@@ -40,6 +41,10 @@ using android::base::StringPrintf;
 
 namespace android {
 namespace vold {
+
+/* Since we use setexeccon(), we need to carefully lock around any
+ * code that calls exec() to avoid crossing the streams. */
+static std::mutex sExecLock;
 
 security_context_t sBlkidContext = nullptr;
 security_context_t sBlkidUntrustedContext = nullptr;
@@ -117,6 +122,14 @@ status_t ForceUnmount(const std::string& path) {
     PLOG(WARNING) << "Failed to unmount " << path;
 
     sleep(5);
+    Process::killProcessesWithOpenFiles(cpath, SIGINT);
+
+    if (!umount2(cpath, UMOUNT_NOFOLLOW) || errno == EINVAL || errno == ENOENT) {
+        return OK;
+    }
+    PLOG(WARNING) << "Failed to unmount " << path;
+
+    sleep(5);
     Process::killProcessesWithOpenFiles(cpath, SIGTERM);
 
     if (!umount2(cpath, UMOUNT_NOFOLLOW) || errno == EINVAL || errno == ENOENT) {
@@ -149,48 +162,40 @@ static status_t readMetadata(const std::string& path, std::string& fsType,
     fsUuid.clear();
     fsLabel.clear();
 
-    std::string cmd(StringPrintf("%s -c /dev/null %s", kBlkidPath, path.c_str()));
-    if (setexeccon(untrusted ? sBlkidUntrustedContext : sBlkidContext)) {
-        LOG(ERROR) << "Failed to setexeccon()";
-        return -EPERM;
-    }
-    FILE* fp = popen(cmd.c_str(), "r");
-    if (setexeccon(NULL)) {
-        abort();
-    }
-    if (!fp) {
-        PLOG(ERROR) << "Failed to run " << cmd;
-        return -errno;
+    std::vector<std::string> cmd;
+    cmd.push_back(kBlkidPath);
+    cmd.push_back("-c");
+    cmd.push_back("/dev/null");
+    cmd.push_back(path);
+
+    std::vector<std::string> output;
+    status_t res = ForkExecvp(cmd, output, untrusted ? sBlkidUntrustedContext : sBlkidContext);
+    if (res != OK) {
+        LOG(WARNING) << "blkid failed to identify " << path;
+        return res;
     }
 
-    status_t res = OK;
-    char line[1024];
     char value[128];
-    if (fgets(line, sizeof(line), fp) != nullptr) {
-        LOG(DEBUG) << "blkid identified " << path << " as " << line;
-
+    for (auto line : output) {
         // Extract values from blkid output, if defined
-        char* start = strstr(line, "TYPE=");
+        const char* cline = line.c_str();
+        char* start = strstr(cline, "TYPE=");
         if (start != nullptr && sscanf(start + 5, "\"%127[^\"]\"", value) == 1) {
             fsType = value;
         }
 
-        start = strstr(line, "UUID=");
+        start = strstr(cline, "UUID=");
         if (start != nullptr && sscanf(start + 5, "\"%127[^\"]\"", value) == 1) {
             fsUuid = value;
         }
 
-        start = strstr(line, "LABEL=");
+        start = strstr(cline, "LABEL=");
         if (start != nullptr && sscanf(start + 6, "\"%127[^\"]\"", value) == 1) {
             fsLabel = value;
         }
-    } else {
-        LOG(WARNING) << "blkid failed to identify " << path;
-        res = -ENODATA;
     }
 
-    pclose(fp);
-    return res;
+    return OK;
 }
 
 status_t ReadMetadata(const std::string& path, std::string& fsType,
@@ -203,11 +208,14 @@ status_t ReadMetadataUntrusted(const std::string& path, std::string& fsType,
     return readMetadata(path, fsType, fsUuid, fsLabel, true);
 }
 
-status_t ForkExecvp(const std::vector<std::string>& args, int* status,
-        bool ignore_int_quit, bool logwrap) {
-    int argc = args.size();
+status_t ForkExecvp(const std::vector<std::string>& args) {
+    return ForkExecvp(args, nullptr);
+}
+
+status_t ForkExecvp(const std::vector<std::string>& args, security_context_t context) {
+    size_t argc = args.size();
     char** argv = (char**) calloc(argc, sizeof(char*));
-    for (int i = 0; i < argc; i++) {
+    for (size_t i = 0; i < argc; i++) {
         argv[i] = (char*) args[i].c_str();
         if (i == 0) {
             LOG(VERBOSE) << args[i];
@@ -215,9 +223,71 @@ status_t ForkExecvp(const std::vector<std::string>& args, int* status,
             LOG(VERBOSE) << "    " << args[i];
         }
     }
-    int res = android_fork_execvp(argc, argv, status, ignore_int_quit, logwrap);
+
+    status_t res = OK;
+    {
+        std::lock_guard<std::mutex> lock(sExecLock);
+        if (setexeccon(context)) {
+            LOG(ERROR) << "Failed to setexeccon";
+            abort();
+        }
+        res = android_fork_execvp(argc, argv, NULL, false, true);
+        if (setexeccon(nullptr)) {
+            LOG(ERROR) << "Failed to setexeccon";
+            abort();
+        }
+    }
     free(argv);
     return res;
+}
+
+status_t ForkExecvp(const std::vector<std::string>& args,
+        std::vector<std::string>& output) {
+    return ForkExecvp(args, output, nullptr);
+}
+
+status_t ForkExecvp(const std::vector<std::string>& args,
+        std::vector<std::string>& output, security_context_t context) {
+    std::string cmd;
+    for (size_t i = 0; i < args.size(); i++) {
+        cmd += args[i] + " ";
+        if (i == 0) {
+            LOG(VERBOSE) << args[i];
+        } else {
+            LOG(VERBOSE) << "    " << args[i];
+        }
+    }
+    output.clear();
+
+    FILE* fp = nullptr;
+    {
+        std::lock_guard<std::mutex> lock(sExecLock);
+        if (setexeccon(context)) {
+            LOG(ERROR) << "Failed to setexeccon";
+            abort();
+        }
+        fp = popen(cmd.c_str(), "r");
+        if (setexeccon(nullptr)) {
+            LOG(ERROR) << "Failed to setexeccon";
+            abort();
+        }
+    }
+
+    if (!fp) {
+        PLOG(ERROR) << "Failed to popen " << cmd;
+        return -errno;
+    }
+    char line[1024];
+    while (fgets(line, sizeof(line), fp) != nullptr) {
+        LOG(VERBOSE) << line;
+        output.push_back(std::string(line));
+    }
+    if (pclose(fp) != 0) {
+        PLOG(ERROR) << "Failed to pclose " << cmd;
+        return -errno;
+    }
+
+    return OK;
 }
 
 status_t ReadRandomBytes(size_t bytes, std::string& out) {

@@ -60,8 +60,14 @@ status_t ReadMetadata(const std::string& path, std::string& fsType,
 status_t ReadMetadataUntrusted(const std::string& path, std::string& fsType,
         std::string& fsUuid, std::string& fsLabel);
 
-status_t ForkExecvp(const std::vector<std::string>& args, int* status,
-        bool ignore_int_quit, bool logwrap);
+/* Returns either WEXITSTATUS() status, or a negative errno */
+status_t ForkExecvp(const std::vector<std::string>& args);
+status_t ForkExecvp(const std::vector<std::string>& args, security_context_t context);
+
+status_t ForkExecvp(const std::vector<std::string>& args,
+        std::vector<std::string>& output);
+status_t ForkExecvp(const std::vector<std::string>& args,
+        std::vector<std::string>& output, security_context_t context);
 
 status_t ReadRandomBytes(size_t bytes, std::string& out);
 

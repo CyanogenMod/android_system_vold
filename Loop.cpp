@@ -49,7 +49,7 @@ int Loop::dumpState(SocketClient *c) {
 
         sprintf(filename, "/dev/block/loop%d", i);
 
-        if ((fd = open(filename, O_RDWR)) < 0) {
+        if ((fd = open(filename, O_RDWR | O_CLOEXEC)) < 0) {
             if (errno != ENOENT) {
                 SLOGE("Unable to open %s (%s)", filename, strerror(errno));
             } else {
@@ -93,7 +93,7 @@ int Loop::lookupActive(const char *id, char *buffer, size_t len) {
 
         sprintf(filename, "/dev/block/loop%d", i);
 
-        if ((fd = open(filename, O_RDWR)) < 0) {
+        if ((fd = open(filename, O_RDWR | O_CLOEXEC)) < 0) {
             if (errno != ENOENT) {
                 SLOGE("Unable to open %s (%s)", filename, strerror(errno));
             } else {
@@ -168,7 +168,7 @@ int Loop::create(const char *id, const char *loopFile, char *loopDeviceBuffer, s
             setfscreatecon(NULL);
         }
 
-        if ((fd = open(filename, O_RDWR)) < 0) {
+        if ((fd = open(filename, O_RDWR | O_CLOEXEC)) < 0) {
             SLOGE("Unable to open %s (%s)", filename, strerror(errno));
             return -1;
         }
@@ -196,7 +196,7 @@ int Loop::create(const char *id, const char *loopFile, char *loopDeviceBuffer, s
 
     int file_fd;
 
-    if ((file_fd = open(loopFile, O_RDWR)) < 0) {
+    if ((file_fd = open(loopFile, O_RDWR | O_CLOEXEC)) < 0) {
         SLOGE("Unable to open %s (%s)", loopFile, strerror(errno));
         close(fd);
         return -1;
@@ -231,7 +231,7 @@ int Loop::create(const char *id, const char *loopFile, char *loopDeviceBuffer, s
 int Loop::destroyByDevice(const char *loopDevice) {
     int device_fd;
 
-    device_fd = open(loopDevice, O_RDONLY);
+    device_fd = open(loopDevice, O_RDONLY | O_CLOEXEC);
     if (device_fd < 0) {
         SLOGE("Failed to open loop (%d)", errno);
         return -1;
@@ -272,7 +272,7 @@ int Loop::createImageFile(const char *file, unsigned int numSectors) {
 int Loop::resizeImageFile(const char *file, unsigned int numSectors) {
     int fd;
 
-    if ((fd = open(file, O_RDWR)) < 0) {
+    if ((fd = open(file, O_RDWR | O_CLOEXEC)) < 0) {
         SLOGE("Error opening imagefile (%s)", strerror(errno));
         return -1;
     }
@@ -301,7 +301,7 @@ int Loop::lookupInfo(const char *loopDevice, struct asec_superblock *sb, unsigne
     int fd;
     struct asec_superblock buffer;
 
-    if ((fd = open(loopDevice, O_RDONLY)) < 0) {
+    if ((fd = open(loopDevice, O_RDONLY | O_CLOEXEC)) < 0) {
         SLOGE("Failed to open loopdevice (%s)", strerror(errno));
         destroyByDevice(loopDevice);
         return -1;

@@ -53,7 +53,7 @@ static const unsigned int kMajorBlockMmc = 179;
 
 static const char* kGptBasicData = "EBD0A0A2-B9E5-4433-87C0-68B6B72699C7";
 static const char* kGptAndroidMeta = "19A710A2-B3CA-11E4-B026-10604B889DCF";
-static const char* kGptAndroidExt = "193D1EA4-B3CA-11E4-B075-10604B889DCF";
+static const char* kGptAndroidExpand = "193D1EA4-B3CA-11E4-B075-10604B889DCF";
 
 static const char* kKeyPath = "/data/misc/vold";
 
@@ -63,8 +63,10 @@ enum class Table {
     kGpt,
 };
 
-Disk::Disk(const std::string& eventPath, dev_t device, const std::string& nickname, int flags) :
-        mDevice(device), mSize(-1), mNickname(nickname), mFlags(flags), mCreated(false) {
+Disk::Disk(const std::string& eventPath, dev_t device,
+        const std::string& nickname, int flags) :
+        mDevice(device), mSize(-1), mNickname(nickname), mFlags(flags), mCreated(
+                false), mJustPartitioned(false) {
     mId = StringPrintf("disk:%u,%u", major(device), minor(device));
     mEventPath = eventPath;
     mSysPath = StringPrintf("/sys/%s", eventPath.c_str());
@@ -93,9 +95,7 @@ std::shared_ptr<VolumeBase> Disk::findVolume(const std::string& id) {
 status_t Disk::create() {
     CHECK(!mCreated);
     mCreated = true;
-    VolumeManager::Instance()->getBroadcaster()->sendBroadcast(
-            ResponseCode::DiskCreated,
-            StringPrintf("%s %d", getId().c_str(), mFlags).c_str(), false);
+    notifyEvent(ResponseCode::DiskCreated, StringPrintf("%d", mFlags));
     readMetadata();
     readPartitions();
     return OK;
@@ -105,23 +105,28 @@ status_t Disk::destroy() {
     CHECK(mCreated);
     destroyAllVolumes();
     mCreated = false;
-    VolumeManager::Instance()->getBroadcaster()->sendBroadcast(
-            ResponseCode::DiskDestroyed, getId().c_str(), false);
+    notifyEvent(ResponseCode::DiskDestroyed);
     return OK;
 }
 
 static std::string BuildKeyPath(const std::string& partGuid) {
-    return StringPrintf("%s/ext_%s.key", kKeyPath, partGuid.c_str());
+    return StringPrintf("%s/expand_%s.key", kKeyPath, partGuid.c_str());
 }
 
 void Disk::createPublicVolume(dev_t device) {
     auto vol = std::shared_ptr<VolumeBase>(new PublicVolume(device));
-    vol->create();
+    if (mJustPartitioned) {
+        LOG(DEBUG) << "Device just partitioned; silently formatting";
+        vol->setSilent(true);
+        vol->create();
+        vol->format();
+        vol->destroy();
+        vol->setSilent(false);
+    }
 
     mVolumes.push_back(vol);
-    VolumeManager::Instance()->getBroadcaster()->sendBroadcast(
-            ResponseCode::DiskVolumeCreated,
-            StringPrintf("%s %s", getId().c_str(), vol->getId().c_str()).c_str(), false);
+    vol->create();
+    notifyEvent(ResponseCode::DiskVolumeCreated, vol->getId());
 }
 
 void Disk::createPrivateVolume(dev_t device, const std::string& partGuid) {
@@ -142,12 +147,18 @@ void Disk::createPrivateVolume(dev_t device, const std::string& partGuid) {
     LOG(DEBUG) << "Found key for GUID " << normalizedGuid;
 
     auto vol = std::shared_ptr<VolumeBase>(new PrivateVolume(device, keyRaw));
-    vol->create();
+    if (mJustPartitioned) {
+        LOG(DEBUG) << "Device just partitioned; silently formatting";
+        vol->setSilent(true);
+        vol->create();
+        vol->format();
+        vol->destroy();
+        vol->setSilent(false);
+    }
 
     mVolumes.push_back(vol);
-    VolumeManager::Instance()->getBroadcaster()->sendBroadcast(
-            ResponseCode::DiskVolumeCreated,
-            StringPrintf("%s %s", getId().c_str(), vol->getId().c_str()).c_str(), false);
+    vol->create();
+    notifyEvent(ResponseCode::DiskVolumeCreated, vol->getId());
 }
 
 void Disk::destroyAllVolumes() {
@@ -161,7 +172,7 @@ status_t Disk::readMetadata() {
     mSize = -1;
     mLabel.clear();
 
-    int fd = open(mDevPath.c_str(), O_RDONLY);
+    int fd = open(mDevPath.c_str(), O_RDONLY | O_CLOEXEC);
     if (fd != -1) {
         if (ioctl(fd, BLKGETSIZE64, &mSize)) {
             mSize = -1;
@@ -205,13 +216,8 @@ status_t Disk::readMetadata() {
     }
     }
 
-    VolumeManager::Instance()->getBroadcaster()->sendBroadcast(
-            ResponseCode::DiskSizeChanged,
-            StringPrintf("%s %" PRId64, getId().c_str(), mSize).c_str(), false);
-    VolumeManager::Instance()->getBroadcaster()->sendBroadcast(
-            ResponseCode::DiskLabelChanged,
-            StringPrintf("%s %s", getId().c_str(), mLabel.c_str()).c_str(), false);
-
+    notifyEvent(ResponseCode::DiskSizeChanged, StringPrintf("%" PRId64, mSize));
+    notifyEvent(ResponseCode::DiskLabelChanged, mLabel);
     return OK;
 }
 
@@ -224,22 +230,25 @@ status_t Disk::readPartitions() {
     destroyAllVolumes();
 
     // Parse partition table
-    std::string path(kSgdiskPath);
-    path += " --android-dump ";
-    path += mDevPath;
-    FILE* fp = popen(path.c_str(), "r");
-    if (!fp) {
-        PLOG(ERROR) << "Failed to run " << path;
-        return -errno;
+
+    std::vector<std::string> cmd;
+    cmd.push_back(kSgdiskPath);
+    cmd.push_back("--android-dump");
+    cmd.push_back(mDevPath);
+
+    std::vector<std::string> output;
+    status_t res = ForkExecvp(cmd, output);
+    if (res != OK) {
+        LOG(WARNING) << "sgdisk failed to scan " << mDevPath;
+        mJustPartitioned = false;
+        return res;
     }
 
-    char line[1024];
     Table table = Table::kUnknown;
     bool foundParts = false;
-    while (fgets(line, sizeof(line), fp) != nullptr) {
-        LOG(DEBUG) << "sgdisk: " << line;
-
-        char* token = strtok(line, kSgdiskToken);
+    for (auto line : output) {
+        char* cline = (char*) line.c_str();
+        char* token = strtok(cline, kSgdiskToken);
         if (token == nullptr) continue;
 
         if (!strcmp(token, "DISK")) {
@@ -276,7 +285,7 @@ status_t Disk::readPartitions() {
 
                 if (!strcasecmp(typeGuid, kGptBasicData)) {
                     createPublicVolume(partDevice);
-                } else if (!strcasecmp(typeGuid, kGptAndroidExt)) {
+                } else if (!strcasecmp(typeGuid, kGptAndroidExpand)) {
                     createPrivateVolume(partDevice, partGuid);
                 }
             }
@@ -289,7 +298,7 @@ status_t Disk::readPartitions() {
         createPublicVolume(mDevice);
     }
 
-    pclose(fp);
+    mJustPartitioned = false;
     return OK;
 }
 
@@ -303,6 +312,7 @@ status_t Disk::unmountAll() {
 status_t Disk::partitionPublic() {
     // TODO: improve this code
     destroyAllVolumes();
+    mJustPartitioned = true;
 
     struct disk_info dinfo;
     memset(&dinfo, 0, sizeof(dinfo));
@@ -346,9 +356,10 @@ status_t Disk::partitionPrivate() {
 }
 
 status_t Disk::partitionMixed(int8_t ratio) {
-    int status = 0;
+    int res;
 
     destroyAllVolumes();
+    mJustPartitioned = true;
 
     // First nuke any existing partition table
     std::vector<std::string> cmd;
@@ -356,9 +367,9 @@ status_t Disk::partitionMixed(int8_t ratio) {
     cmd.push_back("--zap-all");
     cmd.push_back(mDevPath);
 
-    if (ForkExecvp(cmd, &status, false, true)) {
-        LOG(ERROR) << "Failed to zap; status " << status;
-        return -EIO;
+    if ((res = ForkExecvp(cmd)) != 0) {
+        LOG(ERROR) << "Failed to zap; status " << res;
+        return res;
     }
 
     // We've had some success above, so generate both the private partition
@@ -408,18 +419,28 @@ status_t Disk::partitionMixed(int8_t ratio) {
 
     // Define a single private partition filling the rest of disk.
     cmd.push_back("--new=0:0:-0");
-    cmd.push_back(StringPrintf("--typecode=0:%s", kGptAndroidExt));
+    cmd.push_back(StringPrintf("--typecode=0:%s", kGptAndroidExpand));
     cmd.push_back(StringPrintf("--partition-guid=0:%s", partGuid.c_str()));
-    cmd.push_back("--change-name=0:android_ext");
+    cmd.push_back("--change-name=0:android_expand");
 
     cmd.push_back(mDevPath);
 
-    if (ForkExecvp(cmd, &status, false, true)) {
-        LOG(ERROR) << "Failed to partition; status " << status;
-        return -EIO;
+    if ((res = ForkExecvp(cmd)) != 0) {
+        LOG(ERROR) << "Failed to partition; status " << res;
+        return res;
     }
 
     return OK;
+}
+
+void Disk::notifyEvent(int event) {
+    VolumeManager::Instance()->getBroadcaster()->sendBroadcast(event,
+            getId().c_str(), false);
+}
+
+void Disk::notifyEvent(int event, const std::string& value) {
+    VolumeManager::Instance()->getBroadcaster()->sendBroadcast(event,
+            StringPrintf("%s %s", getId().c_str(), value.c_str()).c_str(), false);
 }
 
 int Disk::getMaxMinors() {

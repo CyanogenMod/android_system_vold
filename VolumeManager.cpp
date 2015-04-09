@@ -95,7 +95,7 @@ static const unsigned int kMajorBlockMmc = 179;
 
 /* writes superblock at end of file or device given by name */
 static int writeSuperBlock(const char* name, struct asec_superblock *sb, unsigned int numImgSectors) {
-    int sbfd = open(name, O_RDWR);
+    int sbfd = open(name, O_RDWR | O_CLOEXEC);
     if (sbfd < 0) {
         SLOGE("Failed to open %s for superblock write (%s)", name, strerror(errno));
         return -1;
@@ -726,7 +726,7 @@ int VolumeManager::createAsec(const char *id, unsigned int numSectors, const cha
         }
 
         if (usingExt4) {
-            int dirfd = open(mountPoint, O_DIRECTORY);
+            int dirfd = open(mountPoint, O_DIRECTORY | O_CLOEXEC);
             if (dirfd >= 0) {
                 if (fchown(dirfd, ownerUid, AID_SYSTEM)
                         || fchmod(dirfd, S_IRUSR | S_IWUSR | S_IXUSR | S_ISGID | S_IRGRP | S_IXGRP)) {
@@ -775,7 +775,7 @@ int VolumeManager::resizeAsec(const char *id, unsigned numSectors, const char *k
     int fd;
     unsigned int oldNumSec = 0;
 
-    if ((fd = open(asecFileName, O_RDONLY)) < 0) {
+    if ((fd = open(asecFileName, O_RDONLY | O_CLOEXEC)) < 0) {
         SLOGE("Failed to open ASEC file (%s)", strerror(errno));
         return -1;
     }
@@ -1021,7 +1021,7 @@ int VolumeManager::fixupAsecPermissions(const char *id, gid_t gid, const char* f
              */
             const bool privateFile = !strcmp(ftsent->fts_name, filename);
 
-            int fd = open(ftsent->fts_accpath, O_NOFOLLOW);
+            int fd = open(ftsent->fts_accpath, O_NOFOLLOW | O_CLOEXEC);
             if (fd < 0) {
                 SLOGE("Couldn't open file %s: %s", ftsent->fts_accpath, strerror(errno));
                 result = -1;
@@ -1046,7 +1046,7 @@ int VolumeManager::fixupAsecPermissions(const char *id, gid_t gid, const char* f
         fts_close(fts);
 
         // Finally make the directory readable by everyone.
-        int dirfd = open(mountPoint, O_DIRECTORY);
+        int dirfd = open(mountPoint, O_DIRECTORY | O_CLOEXEC);
         if (dirfd < 0 || fchmod(dirfd, 0755)) {
             SLOGE("Couldn't change owner of existing directory %s: %s", mountPoint, strerror(errno));
             result |= -1;
@@ -1354,7 +1354,7 @@ bool VolumeManager::isLegalAsecId(const char *id) const {
 }
 
 bool VolumeManager::isAsecInDirectory(const char *dir, const char *asecName) const {
-    int dirfd = open(dir, O_DIRECTORY);
+    int dirfd = open(dir, O_DIRECTORY | O_CLOEXEC);
     if (dirfd < 0) {
         SLOGE("Couldn't open internal ASEC dir (%s)", strerror(errno));
         return false;
@@ -1546,7 +1546,7 @@ int VolumeManager::mountObb(const char *img, const char *key, int ownerGid) {
     int fd;
     unsigned long nr_sec = 0;
 
-    if ((fd = open(loopDevice, O_RDWR)) < 0) {
+    if ((fd = open(loopDevice, O_RDWR | O_CLOEXEC)) < 0) {
         SLOGE("Failed to open loopdevice (%s)", strerror(errno));
         Loop::destroyByDevice(loopDevice);
         return -1;
@@ -1612,7 +1612,7 @@ int VolumeManager::listMountedObbs(SocketClient* cli) {
     mntent* mentry;
     while ((mentry = getmntent(fp)) != NULL) {
         if (!strncmp(mentry->mnt_dir, loopDir, loopDirLen)) {
-            int fd = open(mentry->mnt_fsname, O_RDONLY);
+            int fd = open(mentry->mnt_fsname, O_RDONLY | O_CLOEXEC);
             if (fd >= 0) {
                 struct loop_info64 li;
                 if (ioctl(fd, LOOP_GET_STATUS64, &li) >= 0) {
