@@ -1,12 +1,15 @@
 #include "Ext4Crypt.h"
 
-#include <string>
-#include <fstream>
+#include <iomanip>
 #include <map>
+#include <fstream>
+#include <string>
+#include <sstream>
 
 #include <errno.h>
 #include <sys/mount.h>
 #include <cutils/properties.h>
+#include <openssl/sha.h>
 
 #include "unencrypted_properties.h"
 #include "key_control.h"
@@ -19,6 +22,8 @@
 namespace {
     // Key length in bits
     const int key_length = 128;
+    static_assert(key_length % 8 == 0,
+                  "Key length must be multiple of 8 bits");
 
     // How is device encrypted
     struct keys {
@@ -27,14 +32,27 @@ namespace {
     };
     std::map<std::string, keys> s_key_store;
 
+    // ext4enc:TODO get these consts from somewhere good
+    const int SHA512_LENGTH = 64;
+    const int EXT4_KEY_DESCRIPTOR_SIZE = 8;
+
     // ext4enc:TODO Include structure from somewhere sensible
     // MUST be in sync with ext4_crypto.c in kernel
-    const int EXT4_MAX_KEY_SIZE = 76;
+    const int EXT4_MAX_KEY_SIZE = 64;
+    const int EXT4_ENCRYPTION_MODE_AES_256_XTS = 1;
     struct ext4_encryption_key {
-            uint32_t mode;
-            char raw[EXT4_MAX_KEY_SIZE];
-            uint32_t size;
+        uint32_t mode;
+        char raw[EXT4_MAX_KEY_SIZE];
+        uint32_t size;
     };
+
+    // ext4enc:TODO Get from somewhere good
+    struct ext4_encryption_policy {
+        char version;
+        char contents_encryption_mode;
+        char filenames_encryption_mode;
+        char master_key_descriptor[EXT4_KEY_DESCRIPTOR_SIZE];
+    } __attribute__((__packed__));
 
     namespace tag {
         const char* magic = "magic";
@@ -259,6 +277,23 @@ int e4crypt_crypto_complete(const char* path)
     return 0;
 }
 
+static std::string generate_key_ref(const char* key, int length)
+{
+    SHA512_CTX c;
+
+    SHA512_Init(&c);
+    SHA512_Update(&c, key, length);
+    unsigned char key_ref1[SHA512_LENGTH];
+    SHA512_Final(key_ref1, &c);
+
+    SHA512_Init(&c);
+    SHA512_Update(&c, key_ref1, SHA512_LENGTH);
+    unsigned char key_ref2[SHA512_LENGTH];
+    SHA512_Final(key_ref2, &c);
+
+    return std::string((char*)key_ref2, EXT4_KEY_DESCRIPTOR_SIZE);
+}
+
 int e4crypt_check_passwd(const char* path, const char* password)
 {
     SLOGI("e4crypt_check_password");
@@ -286,16 +321,35 @@ int e4crypt_check_passwd(const char* path, const char* password)
                              password};
 
     // Install password into global keyring
-    ext4_encryption_key ext4_key = {0, {0}, key_length / 8};
-    memcpy(ext4_key.raw, master_key, ext4_key.size);
+    // ext4enc:TODO Currently raw key is required to be of length
+    // sizeof(ext4_key.raw) == EXT4_MAX_KEY_SIZE, so zero pad to
+    // this length. Change when kernel bug is fixed.
+    ext4_encryption_key ext4_key = {EXT4_ENCRYPTION_MODE_AES_256_XTS,
+                                    {0},
+                                    sizeof(ext4_key.raw)};
+    memset(ext4_key.raw, 0, sizeof(ext4_key.raw));
+    static_assert(key_length / 8 <= sizeof(ext4_key.raw),
+                  "Key too long!");
+    memcpy(ext4_key.raw, master_key, key_length / 8);
 
-    // ext4enc:TODO Use better reference not 1234567890
+    // Get raw keyref - used to make keyname and to pass to ioctl
+    auto raw_ref = generate_key_ref(ext4_key.raw, ext4_key.size);
+
+    // Generate keyname
+    std::ostringstream o;
+    for (auto i = raw_ref.begin(); i != raw_ref.end(); ++i) {
+        o << std::hex << std::setw(2) << std::setfill('0') << (int)*i;
+    }
+    auto ref = std::string("ext4:") + o.str();
+
+    // Find existing keyring
     key_serial_t device_keyring = keyctl_search(KEY_SPEC_SESSION_KEYRING,
                                                 "keyring", "e4crypt", 0);
 
     SLOGI("Found device_keyring - id is %d", device_keyring);
 
-    key_serial_t key_id = add_key("logon", "ext4-key:1234567890",
+    // Add key ...
+    key_serial_t key_id = add_key("logon", ref.c_str(),
                                   (void*)&ext4_key, sizeof(ext4_key),
                                   device_keyring);
 
@@ -305,8 +359,8 @@ int e4crypt_check_passwd(const char* path, const char* password)
         return -1;
     }
 
-    SLOGI("Added key %d to keyring %d in process %d",
-          key_id, device_keyring, getpid());
+    SLOGI("Added key %d (%s) to keyring %d in process %d",
+          key_id, ref.c_str(), device_keyring, getpid());
 
     // ext4enc:TODO set correct permissions
     long result = keyctl_setperm(key_id, 0x3f3f3f3f);
@@ -316,7 +370,7 @@ int e4crypt_check_passwd(const char* path, const char* password)
     }
 
     // Save reference to key so we can set policy later
-    if (!props.Set(properties::ref, "@s.ext4-key:1234567890")) {
+    if (!props.Set(properties::ref, raw_ref)) {
         SLOGE("Cannot save key reference");
         return -1;
     }
