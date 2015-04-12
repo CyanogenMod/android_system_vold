@@ -135,6 +135,7 @@ status_t VolumeBase::create() {
     mCreated = true;
     status_t res = doCreate();
     notifyEvent(ResponseCode::VolumeCreated, StringPrintf("%d", mType));
+    setState(State::kUnmounted);
     return res;
 }
 
@@ -149,6 +150,7 @@ status_t VolumeBase::destroy() {
         unmount();
     }
 
+    setState(State::kRemoved);
     notifyEvent(ResponseCode::VolumeDestroyed);
     status_t res = doDestroy();
     mCreated = false;
@@ -185,8 +187,8 @@ status_t VolumeBase::unmount() {
     setState(State::kUnmounting);
 
     for (auto vol : mVolumes) {
-        if (vol->unmount()) {
-            LOG(WARNING) << getId() << " failed to unmount " << vol->getId()
+        if (vol->destroy()) {
+            LOG(WARNING) << getId() << " failed to destroy " << vol->getId()
                     << " stacked above";
         }
     }

@@ -16,6 +16,7 @@
 
 #include "Ext4.h"
 #include "PrivateVolume.h"
+#include "EmulatedVolume.h"
 #include "Utils.h"
 #include "VolumeManager.h"
 #include "ResponseCode.h"
@@ -119,6 +120,14 @@ status_t PrivateVolume::doMount() {
         PLOG(ERROR) << getId() << " failed to prepare";
         return -EIO;
     }
+
+    // Create a new emulated volume stacked above us, it will automatically
+    // be destroyed during unmount
+    std::string mediaPath(mPath + "/media");
+    auto vol = std::shared_ptr<VolumeBase>(
+            new EmulatedVolume(mediaPath, mRawDevice, mFsUuid));
+    addVolume(vol);
+    vol->create();
 
     return OK;
 }

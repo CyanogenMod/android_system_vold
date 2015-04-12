@@ -260,7 +260,7 @@ int VolumeManager::start() {
     // Assume that we always have an emulated volume on internal
     // storage; the framework will decide if it should be mounted.
     mInternalEmulated = std::shared_ptr<android::vold::VolumeBase>(
-            new android::vold::EmulatedVolume("/data/media", ""));
+            new android::vold::EmulatedVolume("/data/media"));
     mInternalEmulated->create();
 
     return 0;

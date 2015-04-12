@@ -36,16 +36,18 @@ namespace vold {
 
 static const char* kFusePath = "/system/bin/sdcard";
 
-EmulatedVolume::EmulatedVolume(const std::string& rawPath,
-        const std::string& fsUuid) : VolumeBase(Type::kEmulated), mFusePid(0) {
-    if (fsUuid.empty()) {
-        setId("emulated");
-    } else {
-        setId(StringPrintf("emulated:%s", fsUuid.c_str()));
-    }
-
+EmulatedVolume::EmulatedVolume(const std::string& rawPath) :
+        VolumeBase(Type::kEmulated), mFusePid(0) {
+    setId("emulated");
+    mFusePath = "/storage/emulated";
     mRawPath = rawPath;
-    mFusePath = StringPrintf("/storage/%s", getId().c_str());
+}
+
+EmulatedVolume::EmulatedVolume(const std::string& rawPath, dev_t device,
+        const std::string& fsUuid) : VolumeBase(Type::kEmulated), mFusePid(0) {
+    setId(StringPrintf("emulated:%u,%u", major(device), minor(device)));
+    mFusePath = StringPrintf("/storage/%s", fsUuid.c_str());
+    mRawPath = rawPath;
 }
 
 EmulatedVolume::~EmulatedVolume() {

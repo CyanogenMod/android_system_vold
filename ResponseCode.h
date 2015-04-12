@@ -70,6 +70,7 @@ public:
     static const int DiskSizeChanged = 641;
     static const int DiskLabelChanged = 642;
     static const int DiskVolumeCreated = 643;
+    static const int DiskVolumeDestroyed = 644;
     static const int DiskDestroyed = 649;
 
     static const int VolumeCreated = 650;

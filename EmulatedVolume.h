@@ -37,7 +37,8 @@ namespace vold {
  */
 class EmulatedVolume : public VolumeBase {
 public:
-    EmulatedVolume(const std::string& rawPath, const std::string& fsUuid);
+    EmulatedVolume(const std::string& rawPath);
+    EmulatedVolume(const std::string& rawPath, dev_t device, const std::string& fsUuid);
     virtual ~EmulatedVolume();
 
 protected:

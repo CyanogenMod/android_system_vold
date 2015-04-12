@@ -75,6 +75,8 @@ public:
         kUnmounting,
         /* Next states: mounting, formatting */
         kUnmountable,
+        /* Next states: none */
+        kRemoved,
     };
 
     const std::string& getId() { return mId; }

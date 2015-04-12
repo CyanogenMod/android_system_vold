@@ -163,6 +163,7 @@ void Disk::createPrivateVolume(dev_t device, const std::string& partGuid) {
 
 void Disk::destroyAllVolumes() {
     for (auto vol : mVolumes) {
+        notifyEvent(ResponseCode::DiskVolumeDestroyed, vol->getId());
         vol->destroy();
     }
     mVolumes.clear();
