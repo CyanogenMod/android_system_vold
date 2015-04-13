@@ -177,6 +177,7 @@ status_t PublicVolume::doUnmount() {
         mFusePid = 0;
     }
 
+    ForceUnmount(kAsecPath);
     ForceUnmount(mFusePath);
     ForceUnmount(mRawPath);
 
