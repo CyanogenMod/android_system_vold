@@ -313,7 +313,18 @@ int e4crypt_check_passwd(const char* path, const char* password)
     unsigned char master_key[key_length / 8];
     if (cryptfs_get_master_key (&ftr, password, master_key)){
         SLOGI("Incorrect password");
-        return -1;
+        ftr.failed_decrypt_count++;
+        if (put_crypt_ftr_and_key(ftr, key_props)) {
+            SLOGW("Failed to update failed_decrypt_count");
+        }
+        return ftr.failed_decrypt_count;
+    }
+
+    if (ftr.failed_decrypt_count) {
+        ftr.failed_decrypt_count = 0;
+        if (put_crypt_ftr_and_key(ftr, key_props)) {
+            SLOGW("Failed to reset failed_decrypt_count");
+        }
     }
 
     s_key_store[path] = keys{std::string(reinterpret_cast<char*>(master_key),
