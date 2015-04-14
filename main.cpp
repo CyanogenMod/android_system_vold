@@ -228,6 +228,10 @@ static int process_config(VolumeManager *vm) {
                 flags |= android::vold::Disk::Flags::kDefaultPrimary;
             }
 
+            if (property_get_bool("vold.force_adoptable", false)) {
+                flags |= android::vold::Disk::Flags::kAdoptable;
+            }
+
             vm->addDiskSource(std::shared_ptr<VolumeManager::DiskSource>(
                     new VolumeManager::DiskSource(sysPattern, nickname, flags)));
         }
