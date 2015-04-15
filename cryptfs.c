@@ -1141,17 +1141,29 @@ static int create_crypto_blk_dev(struct crypt_mnt_ftr *crypt_ftr, unsigned char 
   snprintf(crypto_blk_name, MAXPATHLEN, "/dev/block/dm-%u", minor);
 
 #ifdef CONFIG_HW_DISK_ENCRYPTION
-  /* Set fde_enabled if either FDE completed or in-progress */
-  property_get("ro.crypto.state", encrypted_state, ""); /* FDE completed */
-  property_get("vold.encrypt_progress", progress, ""); /* FDE in progress */
-  if (!strcmp(encrypted_state, "encrypted") || strcmp(progress, "")) {
-      if (is_ice_enabled())
-          extra_params = "fde_enabled ice";
+  if (is_hw_disk_encryption((char*)crypt_ftr->crypto_type_name)) {
+      /* Set fde_enabled if either FDE completed or in-progress */
+      property_get("ro.crypto.state", encrypted_state, ""); /* FDE completed */
+      property_get("vold.encrypt_progress", progress, ""); /* FDE in progress */
+      if (!strcmp(encrypted_state, "encrypted") || strcmp(progress, "")) {
+          if (is_ice_enabled())
+              extra_params = "fde_enabled ice";
+          else
+          extra_params = "fde_enabled";
+      }
       else
-      extra_params = "fde_enabled";
+          extra_params = "fde_disabled";
+  } else {
+      extra_params = "";
+      if (! get_dm_crypt_version(fd, name, version)) {
+          /* Support for allow_discards was added in version 1.11.0 */
+          if ((version[0] >= 2) ||
+              ((version[0] == 1) && (version[1] >= 11))) {
+              extra_params = "1 allow_discards";
+              SLOGI("Enabling support for allow_discards in dmcrypt.\n");
+          }
+      }
   }
-  else
-      extra_params = "fde_disabled";
 #else
   extra_params = "";
   if (! get_dm_crypt_version(fd, name, version)) {
