@@ -1138,7 +1138,8 @@ static int create_crypto_blk_dev(struct crypt_mnt_ftr *crypt_ftr, unsigned char 
   snprintf(crypto_blk_name, MAXPATHLEN, "/dev/block/dm-%u", minor);
 
 #ifdef CONFIG_HW_DISK_ENCRYPTION
-  if (is_hw_fde_enabled()) {
+  if (is_hw_disk_encryption((char*)crypt_ftr->crypto_type_name) &&
+                                                is_hw_fde_enabled()) {
       /* Set fde_enabled if either FDE completed or in-progress */
       property_get("ro.crypto.state", encrypted_state, ""); /* FDE completed */
       property_get("vold.encrypt_progress", progress, ""); /* FDE in progress */
