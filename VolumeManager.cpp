@@ -310,6 +310,7 @@ void VolumeManager::handleBlockEvent(NetlinkEvent *evt) {
         break;
     }
     case NetlinkEvent::Action::kChange: {
+        LOG(DEBUG) << "Disk at " << major << ":" << minor << " changed";
         for (auto disk : mDisks) {
             if (disk->getDevice() == device) {
                 disk->readMetadata();

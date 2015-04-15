@@ -21,6 +21,7 @@
 
 #include <utils/Errors.h>
 
+#include <mutex>
 #include <vector>
 
 namespace android {
@@ -100,6 +101,8 @@ private:
     int mFlags;
     /* Flag indicating object is created */
     bool mCreated;
+    /* Lock held while partitioning */
+    std::mutex mLock;
     /* Flag that we just partitioned and should format all volumes */
     bool mJustPartitioned;
 
