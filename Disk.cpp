@@ -368,9 +368,10 @@ status_t Disk::partitionMixed(int8_t ratio) {
     cmd.push_back("--zap-all");
     cmd.push_back(mDevPath);
 
+    // Zap sometimes returns an error when it actually succeeded, so
+    // just log as warning and keep rolling forward.
     if ((res = ForkExecvp(cmd)) != 0) {
-        LOG(ERROR) << "Failed to zap; status " << res;
-        return res;
+        LOG(WARNING) << "Failed to zap; status " << res;
     }
 
     // We've had some success above, so generate both the private partition
