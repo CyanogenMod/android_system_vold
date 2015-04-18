@@ -52,7 +52,7 @@ using android::base::StringPrintf;
 
 int main(int argc, char** argv) {
     setenv("ANDROID_LOG_TAGS", "*:v", 1);
-    android::base::InitLogging(argv);
+    android::base::InitLogging(argv, android::base::LogdLogger(android::base::SYSTEM));
 
     LOG(INFO) << "Vold 3.0 (the awakening) firing up";
 
@@ -228,7 +228,9 @@ static int process_config(VolumeManager *vm) {
                 flags |= android::vold::Disk::Flags::kDefaultPrimary;
             }
 
-            if (property_get_bool("vold.force_adoptable", false)) {
+            if (property_get_bool("vold.force_adoptable", false)
+                    || property_get_bool("persist.vold.force_adoptable", false)) {
+                LOG(DEBUG) << "Forcing " << sysPattern << " to be adoptable";
                 flags |= android::vold::Disk::Flags::kAdoptable;
             }
 
