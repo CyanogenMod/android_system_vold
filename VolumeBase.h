@@ -55,7 +55,7 @@ public:
         kObb,
     };
 
-    enum Flags {
+    enum MountFlags {
         /* Flag that volume is primary external storage */
         kPrimary = 1 << 0,
         /* Flag that volume is visible to normal apps */
@@ -63,31 +63,28 @@ public:
     };
 
     enum class State {
-        /* Next states: mounting, formatting */
         kUnmounted = 0,
-        /* Next states: mounted, unmountable */
-        kMounting,
-        /* Next states: unmounting */
+        kChecking,
         kMounted,
-        /* Next states: unmounted */
+        kMountedReadOnly,
         kFormatting,
-        /* Next states: unmounted */
-        kUnmounting,
-        /* Next states: mounting, formatting */
+        kEjecting,
         kUnmountable,
-        /* Next states: none */
         kRemoved,
+        kBadRemoval,
     };
 
     const std::string& getId() { return mId; }
+    const std::string& getDiskId() { return mDiskId; }
     Type getType() { return mType; }
-    int getFlags() { return mFlags; }
-    userid_t getUser() { return mUser; }
+    int getMountFlags() { return mMountFlags; }
+    userid_t getMountUserId() { return mMountUserId; }
     State getState() { return mState; }
     const std::string& getPath() { return mPath; }
 
-    status_t setFlags(int flags);
-    status_t setUser(userid_t user);
+    status_t setDiskId(const std::string& diskId);
+    status_t setMountFlags(int mountFlags);
+    status_t setMountUserId(userid_t mountUserId);
     status_t setSilent(bool silent);
 
     void addVolume(const std::shared_ptr<VolumeBase>& volume);
@@ -119,12 +116,14 @@ protected:
 private:
     /* ID that uniquely references volume while alive */
     std::string mId;
+    /* ID that uniquely references parent disk while alive */
+    std::string mDiskId;
     /* Volume type */
     Type mType;
-    /* Flags applicable to volume */
-    int mFlags;
+    /* Flags used when mounting this volume */
+    int mMountFlags;
     /* User that owns this volume, otherwise -1 */
-    userid_t mUser;
+    userid_t mMountUserId;
     /* Flag indicating object is created */
     bool mCreated;
     /* Current state of volume */

@@ -159,7 +159,7 @@ public:
     int unmountLoopImage(const char *containerId, const char *loopId,
             const char *fileName, const char *mountPoint, bool force);
 
-    void setDebug(bool enable);
+    int setDebug(bool enable);
 
     void setBroadcaster(SocketListener *sl) { mBroadcaster = sl; }
     SocketListener *getBroadcaster() { return mBroadcaster; }

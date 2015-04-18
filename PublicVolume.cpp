@@ -124,18 +124,23 @@ status_t PublicVolume::doMount() {
         return -EIO;
     }
 
-    if (getFlags() & Flags::kPrimary) {
+    if (getMountFlags() & MountFlags::kPrimary) {
         initAsecStage();
-    }
-
-    // Only need to spin up FUSE when visible
-    if (!(getFlags() & Flags::kVisible)) {
-        return OK;
     }
 
     // TODO: teach FUSE daemon to protect itself with user-specific GID
     if (!(mFusePid = fork())) {
-        if (getFlags() & Flags::kPrimary) {
+        if (!(getMountFlags() & MountFlags::kVisible)) {
+            // TODO: mount so that only system apps can access
+            if (execl(kFusePath, kFusePath,
+                    "-u", "1023", // AID_MEDIA_RW
+                    "-g", "1023", // AID_MEDIA_RW
+                    mRawPath.c_str(),
+                    mFusePath.c_str(),
+                    NULL)) {
+                PLOG(ERROR) << "Failed to exec";
+            }
+        } else if (getMountFlags() & MountFlags::kPrimary) {
             if (execl(kFusePath, kFusePath,
                     "-u", "1023", // AID_MEDIA_RW
                     "-g", "1023", // AID_MEDIA_RW

@@ -36,7 +36,7 @@ namespace android {
 namespace vold {
 
 VolumeBase::VolumeBase(Type type) :
-        mType(type), mFlags(0), mUser(-1), mCreated(false), mState(
+        mType(type), mMountFlags(0), mMountUserId(-1), mCreated(false), mState(
                 State::kUnmounted), mSilent(false) {
 }
 
@@ -49,23 +49,33 @@ void VolumeBase::setState(State state) {
     notifyEvent(ResponseCode::VolumeStateChanged, StringPrintf("%d", mState));
 }
 
-status_t VolumeBase::setFlags(int flags) {
-    if (mState != State::kUnmounted) {
-        LOG(WARNING) << getId() << " flags change requires state unmounted";
+status_t VolumeBase::setDiskId(const std::string& diskId) {
+    if (mCreated) {
+        LOG(WARNING) << getId() << " diskId change requires destroyed";
         return -EBUSY;
     }
 
-    mFlags = flags;
+    mDiskId = diskId;
     return OK;
 }
 
-status_t VolumeBase::setUser(userid_t user) {
-    if (mState != State::kUnmounted) {
-        LOG(WARNING) << getId() << " user change requires state unmounted";
+status_t VolumeBase::setMountFlags(int mountFlags) {
+    if ((mState != State::kUnmounted) && (mState != State::kUnmountable)) {
+        LOG(WARNING) << getId() << " flags change requires state unmounted or unmountable";
         return -EBUSY;
     }
 
-    mUser = user;
+    mMountFlags = mountFlags;
+    return OK;
+}
+
+status_t VolumeBase::setMountUserId(userid_t mountUserId) {
+    if ((mState != State::kUnmounted) && (mState != State::kUnmountable)) {
+        LOG(WARNING) << getId() << " user change requires state unmounted or unmountable";
+        return -EBUSY;
+    }
+
+    mMountUserId = mountUserId;
     return OK;
 }
 
@@ -90,8 +100,8 @@ status_t VolumeBase::setId(const std::string& id) {
 }
 
 status_t VolumeBase::setPath(const std::string& path) {
-    if (mState != State::kMounting) {
-        LOG(WARNING) << getId() << " path change requires state mounting";
+    if (mState != State::kChecking) {
+        LOG(WARNING) << getId() << " path change requires state checking";
         return -EBUSY;
     }
 
@@ -134,7 +144,7 @@ status_t VolumeBase::create() {
 
     mCreated = true;
     status_t res = doCreate();
-    notifyEvent(ResponseCode::VolumeCreated, StringPrintf("%d", mType));
+    notifyEvent(ResponseCode::VolumeCreated, StringPrintf("%d %s", mType, mDiskId.c_str()));
     setState(State::kUnmounted);
     return res;
 }
@@ -148,9 +158,11 @@ status_t VolumeBase::destroy() {
 
     if (mState == State::kMounted) {
         unmount();
+        setState(State::kBadRemoval);
+    } else {
+        setState(State::kRemoved);
     }
 
-    setState(State::kRemoved);
     notifyEvent(ResponseCode::VolumeDestroyed);
     status_t res = doDestroy();
     mCreated = false;
@@ -167,7 +179,7 @@ status_t VolumeBase::mount() {
         return -EBUSY;
     }
 
-    setState(State::kMounting);
+    setState(State::kChecking);
     status_t res = doMount();
     if (res == OK) {
         setState(State::kMounted);
@@ -184,7 +196,7 @@ status_t VolumeBase::unmount() {
         return -EBUSY;
     }
 
-    setState(State::kUnmounting);
+    setState(State::kEjecting);
 
     for (auto vol : mVolumes) {
         if (vol->destroy()) {

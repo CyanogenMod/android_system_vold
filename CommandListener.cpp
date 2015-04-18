@@ -148,6 +148,9 @@ int CommandListener::VolumeCmd::runCommand(SocketClient *cli,
     } else if (cmd == "shutdown") {
         return sendGenericOkFail(cli, vm->shutdown());
 
+    } else if (cmd == "debug") {
+        return sendGenericOkFail(cli, vm->setDebug(true));
+
     } else if (cmd == "partition" && argc > 3) {
         // partition [diskId] [public|private|mixed] [ratio]
         std::string id(argv[2]);
@@ -191,15 +194,15 @@ int CommandListener::VolumeCmd::runCommand(SocketClient *cli,
             return cli->sendMsg(ResponseCode::CommandSyntaxError, "Unknown volume", false);
         }
 
-        int flags = (argc > 3) ? atoi(argv[3]) : 0;
-        userid_t user = (argc > 4) ? atoi(argv[4]) : -1;
+        int mountFlags = (argc > 3) ? atoi(argv[3]) : 0;
+        userid_t mountUserId = (argc > 4) ? atoi(argv[4]) : -1;
 
-        if (flags & android::vold::VolumeBase::Flags::kPrimary) {
+        if (mountFlags & android::vold::VolumeBase::MountFlags::kPrimary) {
             vm->setPrimary(vol);
         }
 
-        vol->setFlags(flags);
-        vol->setUser(user);
+        vol->setMountFlags(mountFlags);
+        vol->setMountUserId(mountUserId);
 
         return sendGenericOkFail(cli, vol->mount());
 

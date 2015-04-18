@@ -36,6 +36,8 @@
 #include <sys/stat.h>
 #include <sys/mount.h>
 
+#define ENTIRE_DEVICE_FALLBACK 0
+
 using android::base::ReadFileToString;
 using android::base::WriteStringToFile;
 using android::base::StringPrintf;
@@ -125,8 +127,8 @@ void Disk::createPublicVolume(dev_t device) {
     }
 
     mVolumes.push_back(vol);
+    vol->setDiskId(getId());
     vol->create();
-    notifyEvent(ResponseCode::DiskVolumeCreated, vol->getId());
 }
 
 void Disk::createPrivateVolume(dev_t device, const std::string& partGuid) {
@@ -157,14 +159,13 @@ void Disk::createPrivateVolume(dev_t device, const std::string& partGuid) {
     }
 
     mVolumes.push_back(vol);
+    vol->setDiskId(getId());
     vol->create();
-    notifyEvent(ResponseCode::DiskVolumeCreated, vol->getId());
 }
 
 void Disk::destroyAllVolumes() {
     for (auto vol : mVolumes) {
         vol->destroy();
-        notifyEvent(ResponseCode::DiskVolumeDestroyed, vol->getId());
     }
     mVolumes.clear();
 }
@@ -295,10 +296,18 @@ status_t Disk::readPartitions() {
         }
     }
 
+#if ENTIRE_DEVICE_FALLBACK
     // Ugly last ditch effort, treat entire disk as partition
     if (table == Table::kUnknown || !foundParts) {
+        // TODO: use blkid to confirm filesystem before doing this
         LOG(WARNING) << mId << " has unknown partition table; trying entire device";
         createPublicVolume(mDevice);
+    }
+#endif
+
+    // Well this is embarrassing, we can't handle the disk
+    if (mVolumes.size() == 0) {
+        notifyEvent(ResponseCode::DiskUnsupported);
     }
 
     mJustPartitioned = false;
