@@ -50,7 +50,22 @@ static const char* kSgdiskToken = " \t\n";
 
 static const char* kSysfsMmcMaxMinors = "/sys/module/mmcblk/parameters/perdev_minors";
 
-static const unsigned int kMajorBlockScsi = 8;
+static const unsigned int kMajorBlockScsiA = 8;
+static const unsigned int kMajorBlockScsiB = 65;
+static const unsigned int kMajorBlockScsiC = 66;
+static const unsigned int kMajorBlockScsiD = 67;
+static const unsigned int kMajorBlockScsiE = 68;
+static const unsigned int kMajorBlockScsiF = 69;
+static const unsigned int kMajorBlockScsiG = 70;
+static const unsigned int kMajorBlockScsiH = 71;
+static const unsigned int kMajorBlockScsiI = 128;
+static const unsigned int kMajorBlockScsiJ = 129;
+static const unsigned int kMajorBlockScsiK = 130;
+static const unsigned int kMajorBlockScsiL = 131;
+static const unsigned int kMajorBlockScsiM = 132;
+static const unsigned int kMajorBlockScsiN = 133;
+static const unsigned int kMajorBlockScsiO = 134;
+static const unsigned int kMajorBlockScsiP = 135;
 static const unsigned int kMajorBlockMmc = 179;
 
 static const char* kGptBasicData = "EBD0A0A2-B9E5-4433-87C0-68B6B72699C7";
@@ -183,7 +198,10 @@ status_t Disk::readMetadata() {
     }
 
     switch (major(mDevice)) {
-    case kMajorBlockScsi: {
+    case kMajorBlockScsiA: case kMajorBlockScsiB: case kMajorBlockScsiC: case kMajorBlockScsiD:
+    case kMajorBlockScsiE: case kMajorBlockScsiF: case kMajorBlockScsiG: case kMajorBlockScsiH:
+    case kMajorBlockScsiI: case kMajorBlockScsiJ: case kMajorBlockScsiK: case kMajorBlockScsiL:
+    case kMajorBlockScsiM: case kMajorBlockScsiN: case kMajorBlockScsiO: case kMajorBlockScsiP: {
         std::string path(mSysPath + "/device/vendor");
         std::string tmp;
         if (!ReadFileToString(path, &tmp)) {
@@ -460,7 +478,10 @@ void Disk::notifyEvent(int event, const std::string& value) {
 int Disk::getMaxMinors() {
     // Figure out maximum partition devices supported
     switch (major(mDevice)) {
-    case kMajorBlockScsi: {
+    case kMajorBlockScsiA: case kMajorBlockScsiB: case kMajorBlockScsiC: case kMajorBlockScsiD:
+    case kMajorBlockScsiE: case kMajorBlockScsiF: case kMajorBlockScsiG: case kMajorBlockScsiH:
+    case kMajorBlockScsiI: case kMajorBlockScsiJ: case kMajorBlockScsiK: case kMajorBlockScsiL:
+    case kMajorBlockScsiM: case kMajorBlockScsiN: case kMajorBlockScsiO: case kMajorBlockScsiP: {
         // Per Documentation/devices.txt this is static
         return 15;
     }

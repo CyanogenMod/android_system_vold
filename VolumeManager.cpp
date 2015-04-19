@@ -88,7 +88,6 @@ const char *VolumeManager::LOOPDIR           = "/mnt/obb";
 
 static const char* kUserMountPath = "/mnt/user";
 
-static const unsigned int kMajorBlockScsi = 8;
 static const unsigned int kMajorBlockMmc = 179;
 
 /* writes superblock at end of file or device given by name */
