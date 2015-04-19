@@ -305,10 +305,7 @@ status_t Disk::readPartitions() {
     }
 #endif
 
-    // Well this is embarrassing, we can't handle the disk
-    if (mVolumes.size() == 0) {
-        notifyEvent(ResponseCode::DiskUnsupported);
-    }
+    notifyEvent(ResponseCode::DiskScanned);
 
     mJustPartitioned = false;
     return OK;
