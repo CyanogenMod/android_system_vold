@@ -42,8 +42,6 @@ static int process_config(VolumeManager *vm);
 static void coldboot(const char *path);
 static void parse_args(int argc, char** argv);
 
-//#define DEBUG_FSTAB "/data/local/tmp/fstab.debug"
-
 struct fstab *fstab;
 
 struct selabel_handle *sehandle;
@@ -226,12 +224,6 @@ static int process_config(VolumeManager *vm) {
             }
             if (fs_mgr_is_noemulatedsd(&fstab->recs[i])) {
                 flags |= android::vold::Disk::Flags::kDefaultPrimary;
-            }
-
-            if (property_get_bool("vold.force_adoptable", false)
-                    || property_get_bool("persist.vold.force_adoptable", false)) {
-                LOG(DEBUG) << "Forcing " << sysPattern << " to be adoptable";
-                flags |= android::vold::Disk::Flags::kAdoptable;
             }
 
             vm->addDiskSource(std::shared_ptr<VolumeManager::DiskSource>(

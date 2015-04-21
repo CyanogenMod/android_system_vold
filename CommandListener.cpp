@@ -138,6 +138,7 @@ int CommandListener::VolumeCmd::runCommand(SocketClient *cli,
     }
 
     VolumeManager *vm = VolumeManager::Instance();
+    std::lock_guard<std::mutex> lock(vm->getLock());
 
     // TODO: tease out methods not directly related to volumes
 

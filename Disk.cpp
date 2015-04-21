@@ -242,8 +242,6 @@ status_t Disk::readMetadata() {
 }
 
 status_t Disk::readPartitions() {
-    std::lock_guard<std::mutex> lock(mLock);
-
     int8_t maxMinors = getMaxMinors();
     if (maxMinors < 0) {
         return -ENOTSUP;
@@ -337,8 +335,6 @@ status_t Disk::unmountAll() {
 }
 
 status_t Disk::partitionPublic() {
-    std::lock_guard<std::mutex> lock(mLock);
-
     // TODO: improve this code
     destroyAllVolumes();
     mJustPartitioned = true;
@@ -385,8 +381,6 @@ status_t Disk::partitionPrivate() {
 }
 
 status_t Disk::partitionMixed(int8_t ratio) {
-    std::lock_guard<std::mutex> lock(mLock);
-
     int res;
 
     destroyAllVolumes();

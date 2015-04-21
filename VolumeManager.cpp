@@ -257,6 +257,7 @@ int VolumeManager::start() {
 
     // Assume that we always have an emulated volume on internal
     // storage; the framework will decide if it should be mounted.
+    CHECK(mInternalEmulated == nullptr);
     mInternalEmulated = std::shared_ptr<android::vold::VolumeBase>(
             new android::vold::EmulatedVolume("/data/media"));
     mInternalEmulated->create();
@@ -265,12 +266,15 @@ int VolumeManager::start() {
 }
 
 int VolumeManager::stop() {
+    CHECK(mInternalEmulated != nullptr);
     mInternalEmulated->destroy();
     mInternalEmulated = nullptr;
     return 0;
 }
 
 void VolumeManager::handleBlockEvent(NetlinkEvent *evt) {
+    std::lock_guard<std::mutex> lock(mLock);
+
     if (mDebug) {
         LOG(VERBOSE) << "----------------";
         LOG(VERBOSE) << "handleBlockEvent with action " << (int) evt->getAction();
@@ -433,6 +437,8 @@ int VolumeManager::shutdown() {
 }
 
 int VolumeManager::unmountAll() {
+    std::lock_guard<std::mutex> lock(mLock);
+
     // First, try gracefully unmounting all known devices
     if (mInternalEmulated != nullptr) {
         mInternalEmulated->unmount();

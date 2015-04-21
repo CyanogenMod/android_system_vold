@@ -23,8 +23,9 @@
 
 #ifdef __cplusplus
 
-#include <string>
 #include <list>
+#include <mutex>
+#include <string>
 
 #include <cutils/multiuser.h>
 #include <utils/List.h>
@@ -81,6 +82,9 @@ private:
 
 public:
     virtual ~VolumeManager();
+
+    // TODO: pipe all requests through VM to avoid exposing this lock
+    std::mutex& getLock() { return mLock; }
 
     int start();
     int stop();
@@ -185,6 +189,8 @@ private:
     bool isLegalAsecId(const char *id) const;
 
     int linkPrimary(userid_t userId);
+
+    std::mutex mLock;
 
     std::list<std::shared_ptr<DiskSource>> mDiskSources;
     std::list<std::shared_ptr<android::vold::Disk>> mDisks;
