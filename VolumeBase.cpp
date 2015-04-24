@@ -110,6 +110,17 @@ status_t VolumeBase::setPath(const std::string& path) {
     return OK;
 }
 
+status_t VolumeBase::setInternalPath(const std::string& internalPath) {
+    if (mState != State::kChecking) {
+        LOG(WARNING) << getId() << " internal path change requires state checking";
+        return -EBUSY;
+    }
+
+    mInternalPath = internalPath;
+    notifyEvent(ResponseCode::VolumeInternalPathChanged, mInternalPath);
+    return OK;
+}
+
 void VolumeBase::notifyEvent(int event) {
     if (mSilent) return;
     VolumeManager::Instance()->getBroadcaster()->sendBroadcast(event,

@@ -41,6 +41,7 @@
 #include "Devmapper.h"
 #include "cryptfs.h"
 #include "fstrim.h"
+#include "MoveTask.h"
 
 #define DUMP_ARGS 0
 
@@ -226,6 +227,17 @@ int CommandListener::VolumeCmd::runCommand(SocketClient *cli,
         }
 
         return sendGenericOkFail(cli, vol->format());
+
+    } else if (cmd == "move_storage" && argc > 3) {
+        // move_storage [fromVolId] [toVolId]
+        auto fromVol = vm->findVolume(std::string(argv[2]));
+        auto toVol = vm->findVolume(std::string(argv[3]));
+        if (fromVol == nullptr || toVol == nullptr) {
+            return cli->sendMsg(ResponseCode::CommandSyntaxError, "Unknown volume", false);
+        }
+
+        (new android::vold::MoveTask(fromVol, toVol))->start();
+        return sendGenericOkFail(cli, 0);
     }
 
     return cli->sendMsg(ResponseCode::CommandSyntaxError, nullptr, false);

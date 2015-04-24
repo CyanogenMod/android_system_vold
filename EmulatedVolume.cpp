@@ -60,8 +60,10 @@ status_t EmulatedVolume::doMount() {
     }
 
     setPath(mFusePath);
+    setInternalPath(mRawPath);
 
     if (!(mFusePid = fork())) {
+        // TODO: protect when not mounted as visible
         if (execl(kFusePath, kFusePath,
                 "-u", "1023", // AID_MEDIA_RW
                 "-g", "1023", // AID_MEDIA_RW

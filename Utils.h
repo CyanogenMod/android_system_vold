@@ -69,12 +69,17 @@ status_t ForkExecvp(const std::vector<std::string>& args,
 status_t ForkExecvp(const std::vector<std::string>& args,
         std::vector<std::string>& output, security_context_t context);
 
+pid_t ForkExecvpAsync(const std::vector<std::string>& args);
+
 status_t ReadRandomBytes(size_t bytes, std::string& out);
 
 /* Converts hex string to raw bytes, ignoring [ :-] */
 status_t HexToStr(const std::string& hex, std::string& str);
 /* Converts raw bytes to hex string */
 status_t StrToHex(const std::string& str, std::string& hex);
+
+uint64_t GetFreeBytes(const std::string& path);
+uint64_t GetTreeBytes(const std::string& path);
 
 }  // namespace vold
 }  // namespace android

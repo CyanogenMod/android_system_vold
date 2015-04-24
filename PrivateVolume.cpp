@@ -101,7 +101,10 @@ status_t PrivateVolume::doMount() {
         return -EIO;
     }
 
-    if (Ext4::check(mDmDevPath.c_str(), mPath.c_str())) {
+    int res = Ext4::check(mDmDevPath.c_str(), mPath.c_str());
+    if (res == 0 || res == 1) {
+        LOG(DEBUG) << getId() << " passed filesystem check";
+    } else {
         PLOG(ERROR) << getId() << " failed filesystem check";
         return -EIO;
     }

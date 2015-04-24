@@ -25,6 +25,7 @@
 #include <logwrap/logwrap.h>
 
 #include <mutex>
+#include <dirent.h>
 #include <fcntl.h>
 #include <linux/fs.h>
 #include <stdlib.h>
@@ -32,6 +33,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
+#include <sys/statvfs.h>
 
 #ifndef UMOUNT_NOFOLLOW
 #define UMOUNT_NOFOLLOW    0x00000008  /* Don't follow symlink on umount */
@@ -41,10 +43,6 @@ using android::base::StringPrintf;
 
 namespace android {
 namespace vold {
-
-/* Since we use setexeccon(), we need to carefully lock around any
- * code that calls exec() to avoid crossing the streams. */
-static std::mutex sExecLock;
 
 security_context_t sBlkidContext = nullptr;
 security_context_t sBlkidUntrustedContext = nullptr;
@@ -224,19 +222,16 @@ status_t ForkExecvp(const std::vector<std::string>& args, security_context_t con
         }
     }
 
-    status_t res = OK;
-    {
-        std::lock_guard<std::mutex> lock(sExecLock);
-        if (setexeccon(context)) {
-            LOG(ERROR) << "Failed to setexeccon";
-            abort();
-        }
-        res = android_fork_execvp(argc, argv, NULL, false, true);
-        if (setexeccon(nullptr)) {
-            LOG(ERROR) << "Failed to setexeccon";
-            abort();
-        }
+    if (setexeccon(context)) {
+        LOG(ERROR) << "Failed to setexeccon";
+        abort();
     }
+    status_t res = android_fork_execvp(argc, argv, NULL, false, true);
+    if (setexeccon(nullptr)) {
+        LOG(ERROR) << "Failed to setexeccon";
+        abort();
+    }
+
     free(argv);
     return res;
 }
@@ -259,18 +254,14 @@ status_t ForkExecvp(const std::vector<std::string>& args,
     }
     output.clear();
 
-    FILE* fp = nullptr;
-    {
-        std::lock_guard<std::mutex> lock(sExecLock);
-        if (setexeccon(context)) {
-            LOG(ERROR) << "Failed to setexeccon";
-            abort();
-        }
-        fp = popen(cmd.c_str(), "r");
-        if (setexeccon(nullptr)) {
-            LOG(ERROR) << "Failed to setexeccon";
-            abort();
-        }
+    if (setexeccon(context)) {
+        LOG(ERROR) << "Failed to setexeccon";
+        abort();
+    }
+    FILE* fp = popen(cmd.c_str(), "r");
+    if (setexeccon(nullptr)) {
+        LOG(ERROR) << "Failed to setexeccon";
+        abort();
     }
 
     if (!fp) {
@@ -288,6 +279,39 @@ status_t ForkExecvp(const std::vector<std::string>& args,
     }
 
     return OK;
+}
+
+pid_t ForkExecvpAsync(const std::vector<std::string>& args) {
+    size_t argc = args.size();
+    char** argv = (char**) calloc(argc + 1, sizeof(char*));
+    for (size_t i = 0; i < argc; i++) {
+        argv[i] = (char*) args[i].c_str();
+        if (i == 0) {
+            LOG(VERBOSE) << args[i];
+        } else {
+            LOG(VERBOSE) << "    " << args[i];
+        }
+    }
+
+    pid_t pid = fork();
+    if (pid == 0) {
+        close(STDIN_FILENO);
+        close(STDOUT_FILENO);
+        close(STDERR_FILENO);
+
+        if (execvp(argv[0], argv)) {
+            PLOG(ERROR) << "Failed to exec";
+        }
+
+        _exit(1);
+    }
+
+    if (pid == -1) {
+        PLOG(ERROR) << "Failed to exec";
+    }
+
+    free(argv);
+    return pid;
 }
 
 status_t ReadRandomBytes(size_t bytes, std::string& out) {
@@ -361,6 +385,82 @@ status_t StrToHex(const std::string& str, std::string& hex) {
         hex.push_back(kLookup[str[i] & 0x0F]);
     }
     return OK;
+}
+
+uint64_t GetFreeBytes(const std::string& path) {
+    struct statvfs sb;
+    if (statvfs(path.c_str(), &sb) == 0) {
+        return sb.f_bfree * sb.f_bsize;
+    } else {
+        return -1;
+    }
+}
+
+// TODO: borrowed from frameworks/native/libs/diskusage/ which should
+// eventually be migrated into system/
+static int64_t stat_size(struct stat *s) {
+    int64_t blksize = s->st_blksize;
+    // count actual blocks used instead of nominal file size
+    int64_t size = s->st_blocks * 512;
+
+    if (blksize) {
+        /* round up to filesystem block size */
+        size = (size + blksize - 1) & (~(blksize - 1));
+    }
+
+    return size;
+}
+
+// TODO: borrowed from frameworks/native/libs/diskusage/ which should
+// eventually be migrated into system/
+int64_t calculate_dir_size(int dfd) {
+    int64_t size = 0;
+    struct stat s;
+    DIR *d;
+    struct dirent *de;
+
+    d = fdopendir(dfd);
+    if (d == NULL) {
+        close(dfd);
+        return 0;
+    }
+
+    while ((de = readdir(d))) {
+        const char *name = de->d_name;
+        if (fstatat(dfd, name, &s, AT_SYMLINK_NOFOLLOW) == 0) {
+            size += stat_size(&s);
+        }
+        if (de->d_type == DT_DIR) {
+            int subfd;
+
+            /* always skip "." and ".." */
+            if (name[0] == '.') {
+                if (name[1] == 0)
+                    continue;
+                if ((name[1] == '.') && (name[2] == 0))
+                    continue;
+            }
+
+            subfd = openat(dfd, name, O_RDONLY | O_DIRECTORY);
+            if (subfd >= 0) {
+                size += calculate_dir_size(subfd);
+            }
+        }
+    }
+    closedir(d);
+    return size;
+}
+
+uint64_t GetTreeBytes(const std::string& path) {
+    int dirfd = open(path.c_str(), O_DIRECTORY, O_RDONLY);
+    if (dirfd < 0) {
+        PLOG(WARNING) << "Failed to open " << path;
+        return -1;
+    } else {
+        uint64_t res = calculate_dir_size(dirfd);
+        close(dirfd);
+        return res;
+    }
 }
 
 }  // namespace vold

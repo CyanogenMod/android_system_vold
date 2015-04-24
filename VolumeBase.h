@@ -81,6 +81,7 @@ public:
     userid_t getMountUserId() { return mMountUserId; }
     State getState() { return mState; }
     const std::string& getPath() { return mPath; }
+    const std::string& getInternalPath() { return mInternalPath; }
 
     status_t setDiskId(const std::string& diskId);
     status_t setMountFlags(int mountFlags);
@@ -109,6 +110,7 @@ protected:
 
     status_t setId(const std::string& id);
     status_t setPath(const std::string& path);
+    status_t setInternalPath(const std::string& internalPath);
 
     void notifyEvent(int msg);
     void notifyEvent(int msg, const std::string& value);
@@ -130,6 +132,8 @@ private:
     State mState;
     /* Path to mounted volume */
     std::string mPath;
+    /* Path to internal backing storage */
+    std::string mInternalPath;
     /* Flag indicating that volume should emit no events */
     bool mSilent;
 

@@ -22,6 +22,7 @@ common_src_files := \
 	PrivateVolume.cpp \
 	EmulatedVolume.cpp \
 	Utils.cpp \
+	MoveTask.cpp \
 
 common_c_includes := \
 	system/extras/ext4_utils \

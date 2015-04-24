@@ -78,7 +78,10 @@ public:
     static const int VolumeFsUuidChanged = 653;
     static const int VolumeFsLabelChanged = 654;
     static const int VolumePathChanged = 655;
+    static const int VolumeInternalPathChanged = 656;
     static const int VolumeDestroyed = 659;
+
+    static const int MoveStatus = 660;
 
     static int convertFromErrno();
 };
