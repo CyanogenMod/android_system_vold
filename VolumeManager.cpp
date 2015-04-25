@@ -1438,6 +1438,11 @@ int VolumeManager::mountObb(const char *img, const char *key, int ownerGid) {
         }
     }
 
+    /*
+     * Wait for the device mapper node to be created.
+     */
+    waitForDevMapper(dmDevice);
+
     if (Fat::doMount(dmDevice, mountPoint, true, false, true, 0, ownerGid,
                      0227, false)) {
         SLOGE("Image mount failed (%s)", strerror(errno));
