@@ -221,12 +221,20 @@ extern "C" {
   int cryptfs_setup_ext_volume(const char* label, const char* real_blkdev,
           const unsigned char* key, int keysize, char* out_crypto_blkdev);
   int cryptfs_revert_ext_volume(const char* label);
+  int cryptfs_enable_file();
   int cryptfs_getfield(const char *fieldname, char *value, int len);
   int cryptfs_setfield(const char *fieldname, const char *value);
   int cryptfs_mount_default_encrypted(void);
   int cryptfs_get_password_type(void);
   const char* cryptfs_get_password(void);
   void cryptfs_clear_password(void);
+
+  // Functions for file encryption to use to inherit our encryption logic
+  int cryptfs_create_default_ftr(struct crypt_mnt_ftr* ftr, int key_length);
+  int cryptfs_get_master_key(struct crypt_mnt_ftr* ftr, const char* password,
+                             unsigned char* master_key);
+  int cryptfs_set_password(struct crypt_mnt_ftr* ftr, const char* password,
+                           const unsigned char* master_key);
 #ifdef __cplusplus
 }
 #endif
