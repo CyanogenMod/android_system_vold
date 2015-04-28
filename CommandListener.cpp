@@ -638,14 +638,6 @@ int CommandListener::CryptfsCmd::runCommand(SocketClient *cli,
                 Process::killProcessesWithOpenFiles(DATA_MNT_POINT, SIGKILL);
             }
         }
-    } else if (!strcmp(argv[1], "enablefilecrypto")) {
-        const char* syntax = "Usage: cryptfs enablefilecrypto";
-        if (argc != 2) {
-            cli->sendMsg(ResponseCode::CommandSyntaxError, syntax, false);
-            return 0;
-        }
-        dumpArgs(argc, argv, -1);
-        rc = cryptfs_enable_file();
     } else if (!strcmp(argv[1], "changepw")) {
         const char* syntax = "Usage: cryptfs changepw "
                              "default|password|pin|pattern [newpasswd]";
