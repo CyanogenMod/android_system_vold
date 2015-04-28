@@ -15,7 +15,6 @@ common_src_files := \
 	Devmapper.cpp \
 	ResponseCode.cpp \
 	CheckBattery.cpp \
-	Ext4Crypt.cpp \
 	VoldUtil.c \
 	fstrim.c \
 	cryptfs.c
