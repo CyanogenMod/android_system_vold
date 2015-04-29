@@ -235,6 +235,7 @@ extern "C" {
   int cryptfs_enable(char *flag, int type, char *passwd, int allow_reboot);
   int cryptfs_changepw(int type, const char *newpw);
   int cryptfs_enable_default(char *flag, int allow_reboot);
+  int cryptfs_enable_file();
   int cryptfs_setup_volume(const char *label, int major, int minor,
                            char *crypto_dev_path, unsigned int max_pathlen,
                            int *new_major, int *new_minor);
@@ -245,6 +246,13 @@ extern "C" {
   int cryptfs_get_password_type(void);
   const char* cryptfs_get_password(void);
   void cryptfs_clear_password(void);
+
+  // Functions for file encryption to use to inherit our encryption logic
+  int cryptfs_create_default_ftr(struct crypt_mnt_ftr* ftr, int key_length);
+  int cryptfs_get_master_key(struct crypt_mnt_ftr* ftr, const char* password,
+                             unsigned char* master_key);
+  int cryptfs_set_password(struct crypt_mnt_ftr* ftr, const char* password,
+                           const unsigned char* master_key);
 #ifdef __cplusplus
 }
 #endif

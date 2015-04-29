@@ -53,7 +53,8 @@
 #include "VolumeManager.h"
 #include "VoldUtil.h"
 #include "crypto_scrypt.h"
-#include "ext4_crypt.h"
+#include "Ext4Crypt.h"
+#include "ext4_crypt_init_extensions.h"
 #include "ext4_utils.h"
 #include "f2fs_sparseblock.h"
 #include "CheckBattery.h"
@@ -1310,7 +1311,7 @@ static int encrypt_master_key(const char *passwd, const unsigned char *salt,
 
     /* Encrypt the master key */
     if (! EVP_EncryptUpdate(&e_ctx, encrypted_master_key, &encrypted_len,
-                              decrypted_master_key, KEY_LEN_BYTES)) {
+                            decrypted_master_key, KEY_LEN_BYTES)) {
         SLOGE("EVP_EncryptUpdate failed\n");
         return -1;
     }
@@ -1345,7 +1346,7 @@ static int encrypt_master_key(const char *passwd, const unsigned char *salt,
     return 0;
 }
 
-static int decrypt_master_key_aux(char *passwd, unsigned char *salt,
+static int decrypt_master_key_aux(const char *passwd, unsigned char *salt,
                                   unsigned char *encrypted_master_key,
                                   unsigned char *decrypted_master_key,
                                   kdf_func kdf, void *kdf_params,
@@ -1410,7 +1411,7 @@ static void get_kdf_func(struct crypt_mnt_ftr *ftr, kdf_func *kdf, void** kdf_pa
     }
 }
 
-static int decrypt_master_key(char *passwd, unsigned char *decrypted_master_key,
+static int decrypt_master_key(const char *passwd, unsigned char *decrypted_master_key,
                               struct crypt_mnt_ftr *crypt_ftr,
                               unsigned char** intermediate_key,
                               size_t* intermediate_key_size)
@@ -3803,4 +3804,47 @@ void cryptfs_clear_password()
         password = 0;
         password_expiry_time = 0;
     }
+}
+
+int cryptfs_enable_file()
+{
+    return e4crypt_enable(DATA_MNT_POINT);
+}
+
+int cryptfs_create_default_ftr(struct crypt_mnt_ftr* crypt_ftr, __attribute__((unused))int key_length)
+{
+    if (cryptfs_init_crypt_mnt_ftr(crypt_ftr)) {
+        SLOGE("Failed to initialize crypt_ftr");
+        return -1;
+    }
+
+    if (create_encrypted_random_key(DEFAULT_PASSWORD, crypt_ftr->master_key,
+                                    crypt_ftr->salt, crypt_ftr)) {
+        SLOGE("Cannot create encrypted master key\n");
+        return -1;
+    }
+
+    //crypt_ftr->keysize = key_length / 8;
+    return 0;
+}
+
+int cryptfs_get_master_key(struct crypt_mnt_ftr* ftr, const char* password,
+                           unsigned char* master_key)
+{
+    int rc;
+
+    // ext4enc:TODO check intermediate_key to see if this is valid key
+    unsigned char* intermediate_key = 0;
+    size_t intermediate_key_size = 0;
+    rc = decrypt_master_key(password, master_key, ftr, &intermediate_key,
+                            &intermediate_key_size);
+
+    return rc;
+}
+
+int cryptfs_set_password(struct crypt_mnt_ftr* ftr, const char* password,
+                         const unsigned char* master_key)
+{
+    return encrypt_master_key(password, ftr->salt, master_key, ftr->master_key,
+                              ftr);
 }
