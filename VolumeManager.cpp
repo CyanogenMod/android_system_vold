@@ -379,6 +379,7 @@ int VolumeManager::linkPrimary(userid_t userId) {
             SLOGW("Failed to unlink %s: %s", target.c_str(), strerror(errno));
         }
     }
+    LOG(DEBUG) << "Linking " << source << " to " << target;
     if (TEMP_FAILURE_RETRY(symlink(source.c_str(), target.c_str()))) {
         SLOGW("Failed to link %s to %s: %s", source.c_str(), target.c_str(),
                 strerror(errno));

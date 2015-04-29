@@ -199,14 +199,14 @@ int CommandListener::VolumeCmd::runCommand(SocketClient *cli,
         int mountFlags = (argc > 3) ? atoi(argv[3]) : 0;
         userid_t mountUserId = (argc > 4) ? atoi(argv[4]) : -1;
 
-        if (mountFlags & android::vold::VolumeBase::MountFlags::kPrimary) {
-            vm->setPrimary(vol);
-        }
-
         vol->setMountFlags(mountFlags);
         vol->setMountUserId(mountUserId);
 
-        return sendGenericOkFail(cli, vol->mount());
+        int res = vol->mount();
+        if (mountFlags & android::vold::VolumeBase::MountFlags::kPrimary) {
+            vm->setPrimary(vol);
+        }
+        return sendGenericOkFail(cli, res);
 
     } else if (cmd == "unmount" && argc > 2) {
         // unmount [volId]
