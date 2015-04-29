@@ -84,6 +84,10 @@ int main(int argc, char** argv) {
         exit(1);
     }
 
+    if (property_get_bool("vold.debug", false)) {
+        vm->setDebug(true);
+    }
+
     cl = new CommandListener();
     vm->setBroadcaster((SocketListener *) cl);
     nm->setBroadcaster((SocketListener *) cl);
