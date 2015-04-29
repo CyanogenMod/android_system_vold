@@ -260,6 +260,7 @@ status_t Disk::readPartitions() {
     status_t res = ForkExecvp(cmd, output);
     if (res != OK) {
         LOG(WARNING) << "sgdisk failed to scan " << mDevPath;
+        notifyEvent(ResponseCode::DiskScanned);
         mJustPartitioned = false;
         return res;
     }
@@ -322,7 +323,6 @@ status_t Disk::readPartitions() {
 #endif
 
     notifyEvent(ResponseCode::DiskScanned);
-
     mJustPartitioned = false;
     return OK;
 }
