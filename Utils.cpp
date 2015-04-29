@@ -381,7 +381,7 @@ static const char* kLookup = "0123456789abcdef";
 status_t StrToHex(const std::string& str, std::string& hex) {
     hex.clear();
     for (size_t i = 0; i < str.size(); i++) {
-        hex.push_back(kLookup[str[i] >> 4]);
+        hex.push_back(kLookup[(str[i] & 0xF0) >> 4]);
         hex.push_back(kLookup[str[i] & 0x0F]);
     }
     return OK;
