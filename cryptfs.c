@@ -3833,13 +3833,36 @@ int cryptfs_get_master_key(struct crypt_mnt_ftr* ftr, const char* password,
 {
     int rc;
 
-    // ext4enc:TODO check intermediate_key to see if this is valid key
     unsigned char* intermediate_key = 0;
     size_t intermediate_key_size = 0;
+
+    if (password == 0 || *password == 0) {
+        password = DEFAULT_PASSWORD;
+    }
+
     rc = decrypt_master_key(password, master_key, ftr, &intermediate_key,
                             &intermediate_key_size);
 
-    return rc;
+    int N = 1 << ftr->N_factor;
+    int r = 1 << ftr->r_factor;
+    int p = 1 << ftr->p_factor;
+
+    unsigned char scrypted_intermediate_key[sizeof(ftr->scrypted_intermediate_key)];
+
+    rc = crypto_scrypt(intermediate_key, intermediate_key_size,
+                       ftr->salt, sizeof(ftr->salt), N, r, p,
+                       scrypted_intermediate_key,
+                       sizeof(scrypted_intermediate_key));
+
+    free(intermediate_key);
+
+    if (rc) {
+        SLOGE("Can't calculate intermediate key");
+        return rc;
+    }
+
+    return memcmp(scrypted_intermediate_key, ftr->scrypted_intermediate_key,
+                  intermediate_key_size);
 }
 
 int cryptfs_set_password(struct crypt_mnt_ftr* ftr, const char* password,
