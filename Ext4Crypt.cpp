@@ -46,14 +46,6 @@ namespace {
         uint32_t size;
     };
 
-    // ext4enc:TODO Get from somewhere good
-    struct ext4_encryption_policy {
-        char version;
-        char contents_encryption_mode;
-        char filenames_encryption_mode;
-        char master_key_descriptor[EXT4_KEY_DESCRIPTOR_SIZE];
-    } __attribute__((__packed__));
-
     namespace tag {
         const char* magic = "magic";
         const char* major_version = "major_version";
@@ -439,4 +431,29 @@ int e4crypt_get_password_type(const char* path)
     SLOGI("e4crypt_get_password_type");
     return GetPropsOrAltProps(path).GetChild(properties::key)
       .Get<int>(tag::crypt_type, CRYPT_TYPE_DEFAULT);
+}
+
+int e4crypt_get_field(const char* path, const char* fieldname,
+                      char* value, size_t len)
+{
+    auto v = GetPropsOrAltProps(path).GetChild(properties::props)
+      .Get<std::string>(fieldname);
+
+    if (v == "") {
+        return CRYPTO_GETFIELD_ERROR_NO_FIELD;
+    }
+
+    if (v.length() >= len) {
+        return CRYPTO_GETFIELD_ERROR_BUF_TOO_SMALL;
+    }
+
+    strlcpy(value, v.c_str(), len);
+    return 0;
+}
+
+int e4crypt_set_field(const char* path, const char* fieldname,
+                      const char* value)
+{
+    return GetPropsOrAltProps(path).GetChild(properties::props)
+        .Set(fieldname, std::string(value)) ? 0 : -1;
 }
