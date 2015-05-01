@@ -3491,6 +3491,10 @@ static int persist_count_keys(const char *fieldname)
 /* Return the value of the specified field. */
 int cryptfs_getfield(const char *fieldname, char *value, int len)
 {
+    if (e4crypt_crypto_complete(DATA_MNT_POINT) == 0) {
+        return e4crypt_get_field(DATA_MNT_POINT, fieldname, value, len);
+    }
+
     char temp_value[PROPERTY_VALUE_MAX];
     /* CRYPTO_GETFIELD_OK is success,
      * CRYPTO_GETFIELD_ERROR_NO_FIELD is value not set,
@@ -3552,6 +3556,10 @@ out:
 /* Set the value of the specified field. */
 int cryptfs_setfield(const char *fieldname, const char *value)
 {
+    if (e4crypt_crypto_complete(DATA_MNT_POINT) == 0) {
+        return e4crypt_set_field(DATA_MNT_POINT, fieldname, value);
+    }
+
     char encrypted_state[PROPERTY_VALUE_MAX];
     /* 0 is success, negative values are error */
     int rc = CRYPTO_SETFIELD_ERROR_OTHER;
