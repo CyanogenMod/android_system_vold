@@ -359,13 +359,6 @@ int e4crypt_check_passwd(const char* path, const char* password)
     SLOGI("Added key %d (%s) to keyring %d in process %d",
           key_id, ref.c_str(), device_keyring, getpid());
 
-    // ext4enc:TODO set correct permissions
-    long result = keyctl_setperm(key_id, 0x3f3f3f3f);
-    if (result) {
-        SLOGE("KEYCTL_SETPERM failed with error %ld", result);
-        return -1;
-    }
-
     // Save reference to key so we can set policy later
     if (!props.Set(properties::ref, raw_ref)) {
         SLOGE("Cannot save key reference");
