@@ -217,8 +217,7 @@ int e4crypt_change_password(const char* path, int crypt_type,
                             const char* password)
 {
     SLOGI("e4crypt_change_password");
-
-    UnencryptedProperties key_props = GetProps(path).GetChild(properties::key);
+    auto key_props = GetProps(path).GetChild(properties::key);
 
     crypt_mnt_ftr ftr;
     if (get_crypt_ftr_and_key(ftr, key_props)) {
@@ -259,8 +258,7 @@ int e4crypt_change_password(const char* path, int crypt_type,
 int e4crypt_crypto_complete(const char* path)
 {
     SLOGI("ext4 crypto complete called on %s", path);
-    UnencryptedProperties key_props
-        = GetPropsOrAltProps(path).GetChild(properties::key);
+    auto key_props = GetPropsOrAltProps(path).GetChild(properties::key);
     if (key_props.Get<std::string>(tag::master_key).empty()) {
         SLOGI("No master key, so not ext4enc");
         return -1;
@@ -289,12 +287,8 @@ static std::string generate_key_ref(const char* key, int length)
 int e4crypt_check_passwd(const char* path, const char* password)
 {
     SLOGI("e4crypt_check_password");
-
-    // ext4enc:TODO once we have password checking, fix this to be
-    // GetKeyOrAltKey
-    UnencryptedProperties props = *password ? GetAltProps(path)
-                                            : GetProps(path);
-    UnencryptedProperties key_props = props.GetChild(properties::key);
+    auto props = GetPropsOrAltProps(path);
+    auto key_props = props.GetChild(properties::key);
 
     crypt_mnt_ftr ftr;
     if (get_crypt_ftr_and_key(ftr, key_props)) {
