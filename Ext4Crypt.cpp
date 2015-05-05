@@ -105,6 +105,7 @@ static int get_crypt_ftr_and_key(crypt_mnt_ftr& crypt_ftr,
     crypt_ftr.magic = props.Get<int>(tag::magic);
     crypt_ftr.major_version = props.Get<int>(tag::major_version);
     crypt_ftr.minor_version = props.Get<int>(tag::minor_version);
+    crypt_ftr.ftr_size = sizeof(crypt_ftr);
     crypt_ftr.flags = props.Get<int>(tag::flags);
     crypt_ftr.crypt_type = props.Get<int>(tag::crypt_type);
     crypt_ftr.failed_decrypt_count = props.Get<int>(tag::failed_decrypt_count);
@@ -187,6 +188,11 @@ int e4crypt_enable(const char* path)
             return -1;
         }
 
+        // Scrub fields not used by ext4enc
+        ftr.persist_data_offset[0] = 0;
+        ftr.persist_data_offset[1] = 0;
+        ftr.persist_data_size = 0;
+
         if (put_crypt_ftr_and_key(ftr, key_props)) {
             SLOGE("Failed to write crypto footer");
             return -1;
@@ -200,8 +206,7 @@ int e4crypt_enable(const char* path)
 
         if (memcmp(&ftr, &ftr2, sizeof(ftr)) != 0) {
             SLOGE("Crypto footer not correctly written");
-            // ex4enc:TODO why is this failing?
-            //return -1;
+            return -1;
         }
     }
 
