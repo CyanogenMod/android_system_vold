@@ -26,6 +26,7 @@
  * partition.
  */
 
+#include <stdbool.h>
 #include <cutils/properties.h>
 
 /* The current cryptfs version */
@@ -224,6 +225,8 @@ struct volume_info {
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+  int wait_and_unmount(const char *mountpoint, bool kill);
 
   typedef int (*kdf_func)(const char *passwd, const unsigned char *salt,
                           unsigned char *ikey, void *params);
