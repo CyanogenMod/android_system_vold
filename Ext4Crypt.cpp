@@ -69,6 +69,8 @@ namespace {
     }
 }
 
+static std::string e4crypt_install_key(const unsigned char *key_bytes);
+
 static int put_crypt_ftr_and_key(const crypt_mnt_ftr& crypt_ftr,
                                  UnencryptedProperties& props)
 {
@@ -328,8 +330,24 @@ int e4crypt_check_passwd(const char* path, const char* password)
                                          sizeof(master_key)),
                              password,
                              now.tv_sec + password_max_age_seconds};
+    auto raw_ref = e4crypt_install_key(master_key);
+    if (raw_ref.empty()) {
+        return -1;
+    }
 
-    // Install password into global keyring
+    // Save reference to key so we can set policy later
+    if (!props.Set(properties::ref, raw_ref)) {
+        SLOGE("Cannot save key reference");
+        return -1;
+    }
+
+    return 0;
+}
+
+// Install password into global keyring
+// Return raw key reference for use in policy
+static std::string e4crypt_install_key(const unsigned char *key_bytes)
+{
     // ext4enc:TODO Currently raw key is required to be of length
     // sizeof(ext4_key.raw) == EXT4_MAX_KEY_SIZE, so zero pad to
     // this length. Change when kernel bug is fixed.
@@ -339,7 +357,7 @@ int e4crypt_check_passwd(const char* path, const char* password)
     memset(ext4_key.raw, 0, sizeof(ext4_key.raw));
     static_assert(key_length / 8 <= sizeof(ext4_key.raw),
                   "Key too long!");
-    memcpy(ext4_key.raw, master_key, key_length / 8);
+    memcpy(ext4_key.raw, key_bytes, key_length / 8);
 
     // Get raw keyref - used to make keyname and to pass to ioctl
     auto raw_ref = generate_key_ref(ext4_key.raw, ext4_key.size);
@@ -365,19 +383,13 @@ int e4crypt_check_passwd(const char* path, const char* password)
     if (key_id == -1) {
         SLOGE("Failed to insert key into keyring with error %s",
               strerror(errno));
-        return -1;
+        return std::string();
     }
 
     SLOGI("Added key %d (%s) to keyring %d in process %d",
           key_id, ref.c_str(), device_keyring, getpid());
 
-    // Save reference to key so we can set policy later
-    if (!props.Set(properties::ref, raw_ref)) {
-        SLOGE("Cannot save key reference");
-        return -1;
-    }
-
-    return 0;
+    return raw_ref;
 }
 
 int e4crypt_restart(const char* path)
