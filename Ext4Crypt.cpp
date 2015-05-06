@@ -25,10 +25,14 @@ namespace {
     static_assert(key_length % 8 == 0,
                   "Key length must be multiple of 8 bits");
 
+    // How long do we store passwords for?
+    const int password_max_age_seconds = 60;
+
     // How is device encrypted
     struct keys {
         std::string master_key;
         std::string password;
+        time_t expiry_time;
     };
     std::map<std::string, keys> s_key_store;
 
@@ -318,9 +322,12 @@ int e4crypt_check_passwd(const char* path, const char* password)
         }
     }
 
+    struct timespec now;
+    clock_gettime(CLOCK_BOOTTIME, &now);
     s_key_store[path] = keys{std::string(reinterpret_cast<char*>(master_key),
                                          sizeof(master_key)),
-                             password};
+                             password,
+                             now.tv_sec + password_max_age_seconds};
 
     // Install password into global keyring
     // ext4enc:TODO Currently raw key is required to be of length
@@ -403,24 +410,43 @@ int e4crypt_restart(const char* path)
     return 0;
 }
 
-const char* e4crypt_get_password(const char* path)
-{
-    SLOGI("e4crypt_get_password");
-
-    // ext4enc:TODO scrub password after timeout
-    auto i = s_key_store.find(path);
-    if (i == s_key_store.end()) {
-        return 0;
-    } else {
-        return i->second.password.c_str();
-    }
-}
-
 int e4crypt_get_password_type(const char* path)
 {
     SLOGI("e4crypt_get_password_type");
     return GetPropsOrAltProps(path).GetChild(properties::key)
       .Get<int>(tag::crypt_type, CRYPT_TYPE_DEFAULT);
+}
+
+const char* e4crypt_get_password(const char* path)
+{
+    SLOGI("e4crypt_get_password");
+
+    auto i = s_key_store.find(path);
+    if (i == s_key_store.end()) {
+        return 0;
+    }
+
+    struct timespec now;
+    clock_gettime(CLOCK_BOOTTIME, &now);
+    if (i->second.expiry_time < now.tv_sec) {
+        e4crypt_clear_password(path);
+        return 0;
+    }
+
+    return i->second.password.c_str();
+}
+
+void e4crypt_clear_password(const char* path)
+{
+    SLOGI("e4crypt_clear_password");
+
+    auto i = s_key_store.find(path);
+    if (i == s_key_store.end()) {
+        return;
+    }
+
+    memset(&i->second.password[0], 0, i->second.password.size());
+    i->second.password = std::string();
 }
 
 int e4crypt_get_field(const char* path, const char* fieldname,

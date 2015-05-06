@@ -3718,6 +3718,10 @@ const char* cryptfs_get_password()
 
 void cryptfs_clear_password()
 {
+    if (e4crypt_crypto_complete(DATA_MNT_POINT) == 0) {
+        e4crypt_clear_password(DATA_MNT_POINT);
+    }
+
     if (password) {
         size_t len = strlen(password);
         memset(password, 0, len);
