@@ -100,7 +100,7 @@ static int do_cmd(int sock, int argc, char **argv) {
 }
 
 static int do_monitor(int sock, int stop_after_cmd) {
-    char *buffer = malloc(4096);
+    char *buffer = (char *) malloc(4096);
 
     if (!stop_after_cmd)
         printf("[Connected to Vold]\n");
