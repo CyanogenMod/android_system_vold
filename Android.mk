@@ -98,7 +98,7 @@ include $(CLEAR_VARS)
 
 LOCAL_ADDITIONAL_DEPENDENCIES := $(LOCAL_PATH)/Android.mk
 LOCAL_CLANG := true
-LOCAL_SRC_FILES:= vdc.c
+LOCAL_SRC_FILES:= vdc.cpp
 LOCAL_MODULE:= vdc
 LOCAL_SHARED_LIBRARIES := libcutils
 LOCAL_CFLAGS := $(vold_cflags)
