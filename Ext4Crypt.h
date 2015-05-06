@@ -18,5 +18,7 @@ int e4crypt_get_field(const char* path, const char* fieldname,
                       char* value, size_t len);
 int e4crypt_set_field(const char* path, const char* fieldname,
                       const char* value);
+int e4crypt_set_user_crypto_policies(const char *path);
+int e4crypt_create_new_user_dir(const char *user_handle, const char *path);
 
 __END_DECLS
