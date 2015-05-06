@@ -7,17 +7,24 @@
 #include <sstream>
 
 #include <errno.h>
+#include <dirent.h>
 #include <sys/mount.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
 #include <cutils/properties.h>
 #include <openssl/sha.h>
 
 #include "unencrypted_properties.h"
 #include "key_control.h"
 #include "cryptfs.h"
+#include "ext4_crypt_init_extensions.h"
 
 #define LOG_TAG "Ext4Crypt"
 #include "cutils/log.h"
 #include <cutils/klog.h>
+#include <base/file.h>
+#include <base/stringprintf.h>
 
 namespace {
     // Key length in bits
@@ -69,7 +76,7 @@ namespace {
     }
 }
 
-static std::string e4crypt_install_key(const unsigned char *key_bytes);
+static std::string e4crypt_install_key(const std::string &key);
 
 static int put_crypt_ftr_and_key(const crypt_mnt_ftr& crypt_ftr,
                                  UnencryptedProperties& props)
@@ -242,10 +249,10 @@ int e4crypt_change_password(const char* path, int crypt_type,
         return -1;
     }
 
-    const unsigned char* master_key
+    const unsigned char* master_key_bytes
         = reinterpret_cast<const unsigned char*>(&mki->second.master_key[0]);
 
-    if (cryptfs_set_password(&ftr, password, master_key)) {
+    if (cryptfs_set_password(&ftr, password, master_key_bytes)) {
         SLOGE("Failed to set password");
         return -1;
     }
@@ -307,8 +314,8 @@ int e4crypt_check_passwd(const char* path, const char* password)
         return -1;
     }
 
-    unsigned char master_key[key_length / 8];
-    if (cryptfs_get_master_key (&ftr, password, master_key)){
+    unsigned char master_key_bytes[key_length / 8];
+    if (cryptfs_get_master_key (&ftr, password, master_key_bytes)){
         SLOGI("Incorrect password");
         ftr.failed_decrypt_count++;
         if (put_crypt_ftr_and_key(ftr, key_props)) {
@@ -323,12 +330,12 @@ int e4crypt_check_passwd(const char* path, const char* password)
             SLOGW("Failed to reset failed_decrypt_count");
         }
     }
+    std::string master_key(reinterpret_cast<char*>(master_key_bytes),
+                           sizeof(master_key_bytes));
 
     struct timespec now;
     clock_gettime(CLOCK_BOOTTIME, &now);
-    s_key_store[path] = keys{std::string(reinterpret_cast<char*>(master_key),
-                                         sizeof(master_key)),
-                             password,
+    s_key_store[path] = keys{master_key, password,
                              now.tv_sec + password_max_age_seconds};
     auto raw_ref = e4crypt_install_key(master_key);
     if (raw_ref.empty()) {
@@ -346,7 +353,7 @@ int e4crypt_check_passwd(const char* path, const char* password)
 
 // Install password into global keyring
 // Return raw key reference for use in policy
-static std::string e4crypt_install_key(const unsigned char *key_bytes)
+static std::string e4crypt_install_key(const std::string &key)
 {
     // ext4enc:TODO Currently raw key is required to be of length
     // sizeof(ext4_key.raw) == EXT4_MAX_KEY_SIZE, so zero pad to
@@ -357,7 +364,7 @@ static std::string e4crypt_install_key(const unsigned char *key_bytes)
     memset(ext4_key.raw, 0, sizeof(ext4_key.raw));
     static_assert(key_length / 8 <= sizeof(ext4_key.raw),
                   "Key too long!");
-    memcpy(ext4_key.raw, key_bytes, key_length / 8);
+    memcpy(ext4_key.raw, &key[0], key.size());
 
     // Get raw keyref - used to make keyname and to pass to ioctl
     auto raw_ref = generate_key_ref(ext4_key.raw, ext4_key.size);
@@ -383,7 +390,7 @@ static std::string e4crypt_install_key(const unsigned char *key_bytes)
     if (key_id == -1) {
         SLOGE("Failed to insert key into keyring with error %s",
               strerror(errno));
-        return std::string();
+        return "";
     }
 
     SLOGI("Added key %d (%s) to keyring %d in process %d",
@@ -484,4 +491,124 @@ int e4crypt_set_field(const char* path, const char* fieldname,
 {
     return GetPropsOrAltProps(path).GetChild(properties::props)
         .Set(fieldname, std::string(value)) ? 0 : -1;
+}
+
+// ext4enc:TODO this can't be the only place keys are read from /dev/urandom
+// we should unite those places.
+static std::string e4crypt_get_user_key(
+    const char *mount_path,
+    const char *user_handle,
+    bool create_if_absent)
+{
+    // ext4enc:TODO get the path properly
+    auto key_dir = android::base::StringPrintf("%s/misc/vold/user_keys",
+        mount_path);
+    if (mkdir(key_dir.c_str(), 0700) < 0 && errno != EEXIST) {
+        SLOGE("Unable to create %s (%s)", key_dir.c_str(), strerror(errno));
+        return "";
+    }
+    auto key_path = key_dir + "/" + user_handle;
+    std::string content;
+    if (android::base::ReadFileToString(key_path, &content)) {
+        if (content.size() != key_length/8) {
+            SLOGE("Wrong size key %zu in  %s", content.size(), key_path.c_str());
+            return "";
+        }
+        return content;
+    }
+    if (!create_if_absent) {
+        SLOGE("No key found in %s", key_path.c_str());
+        return "";
+    }
+    std::ifstream urandom("/dev/urandom");
+    if (!urandom) {
+        SLOGE("Unable to open /dev/urandom (%s)", strerror(errno));
+        return "";
+    }
+    char key_bytes[key_length / 8];
+    errno = 0;
+    urandom.read(key_bytes, sizeof(key_bytes));
+    if (!urandom) {
+        SLOGE("Unable to read key from /dev/urandom (%s)", strerror(errno));
+        return "";
+    }
+    std::string user_key(key_bytes, sizeof(key_bytes));
+    if (!android::base::WriteStringToFile(user_key, key_path)) {
+        SLOGE("Unable to write key to %s (%s)",
+                key_path.c_str(), strerror(errno));
+        return "";
+    }
+    return user_key;
+}
+
+static int e4crypt_set_user_policy(const char *mount_path, const char *user_handle,
+                            const char *path, bool create_if_absent)
+{
+    SLOGD("e4crypt_set_user_policy for %s", user_handle);
+    auto user_key = e4crypt_get_user_key(mount_path, user_handle,
+        create_if_absent);
+    if (user_key.empty()) {
+        return -1;
+    }
+    auto raw_ref = e4crypt_install_key(user_key);
+    if (raw_ref.empty()) {
+        return -1;
+    }
+    return do_policy_set(path, raw_ref.c_str(), raw_ref.size());
+}
+
+int e4crypt_create_new_user_dir(const char *user_handle, const char *path) {
+    SLOGD("e4crypt_create_new_user_dir(\"%s\", \"%s\")", user_handle, path);
+    if (mkdir(path, S_IRWXU | S_IRWXG | S_IXOTH) < 0) {
+        return -1;
+    }
+    if (chmod(path, S_IRWXU | S_IRWXG | S_IXOTH) < 0) {
+        return -1;
+    }
+    if (e4crypt_crypto_complete(DATA_MNT_POINT) == 0) {
+        // ext4enc:TODO handle errors from this.
+        e4crypt_set_user_policy(DATA_MNT_POINT, user_handle, path, true);
+    }
+    return 0;
+}
+
+static bool is_numeric(const char *name) {
+    for (const char *p = name; *p != '\0'; p++) {
+        if (!isdigit(*p))
+            return false;
+    }
+    return true;
+}
+
+int e4crypt_set_user_crypto_policies(const char *dir)
+{
+    if (e4crypt_crypto_complete(DATA_MNT_POINT) != 0) {
+        return 0;
+    }
+    SLOGD("e4crypt_set_user_crypto_policies");
+    std::unique_ptr<DIR, int(*)(DIR*)> dirp(opendir(dir), closedir);
+    if (!dirp) {
+        SLOGE("Unable to read directory %s, error %s\n",
+            dir, strerror(errno));
+        return -1;
+    }
+    for (;;) {
+        struct dirent *result = readdir(dirp.get());
+        if (!result) {
+            // ext4enc:TODO check errno
+            break;
+        }
+        if (result->d_type != DT_DIR || !is_numeric(result->d_name)) {
+            continue; // skips user 0, which is a symlink
+        }
+        auto user_dir = std::string() + dir + "/" + result->d_name;
+        // ext4enc:TODO don't hardcode /data
+        if (e4crypt_set_user_policy("/data", result->d_name,
+                user_dir.c_str(), false)) {
+            // ext4enc:TODO If this function fails, stop the boot: we must
+            // deliver on promised encryption.
+            SLOGE("Unable to set policy on %s\n", user_dir.c_str());
+        }
+    }
+    return 0;
 }

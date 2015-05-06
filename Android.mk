@@ -43,7 +43,8 @@ common_shared_libraries := \
 	libselinux \
 	libutils \
 	libhardware \
-	libsoftkeymaster
+	libsoftkeymaster \
+	libbase
 
 common_static_libraries := \
 	libfs_mgr \
