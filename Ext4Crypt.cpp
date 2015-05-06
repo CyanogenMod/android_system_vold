@@ -381,16 +381,14 @@ int e4crypt_restart(const char* path)
 
     std::string tmp_path = std::string() + path + "/tmp_mnt";
 
-    // ext4enc:TODO add retry logic
-    rc = umount(tmp_path.c_str());
+    rc = wait_and_unmount(tmp_path.c_str(), true);
     if (rc) {
         SLOGE("umount %s failed with rc %d, msg %s",
               tmp_path.c_str(), rc, strerror(errno));
         return rc;
     }
 
-    // ext4enc:TODO add retry logic
-    rc = umount(path);
+    rc = wait_and_unmount(path, true);
     if (rc) {
         SLOGE("umount %s failed with rc %d, msg %s",
               path, rc, strerror(errno));

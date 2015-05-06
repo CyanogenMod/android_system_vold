@@ -1426,7 +1426,7 @@ static int create_encrypted_random_key(char *passwd, unsigned char *master_key, 
     return encrypt_master_key(passwd, salt, key_buf, master_key, crypt_ftr);
 }
 
-static int wait_and_unmount(char *mountpoint, bool kill)
+int wait_and_unmount(const char *mountpoint, bool kill)
 {
     int i, err, rc;
 #define WAIT_UNMOUNT_COUNT 20
