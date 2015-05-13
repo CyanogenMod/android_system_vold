@@ -59,8 +59,8 @@ status_t EmulatedVolume::doMount() {
         return -errno;
     }
 
-    setPath(mFusePath);
     setInternalPath(mRawPath);
+    setPath(mFusePath);
 
     if (!(mFusePid = fork())) {
         // TODO: protect when not mounted as visible
