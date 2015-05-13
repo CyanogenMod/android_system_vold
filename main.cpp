@@ -194,6 +194,7 @@ static void coldboot(const char *path) {
 }
 
 static int process_config(VolumeManager *vm) {
+    bool has_adoptable = false;
     char hardware[PROPERTY_VALUE_MAX];
     property_get("ro.hardware", hardware, "");
     std::string fstab_filename(StringPrintf("/fstab.%s", hardware));
@@ -225,6 +226,7 @@ static int process_config(VolumeManager *vm) {
 
             if (fs_mgr_is_encryptable(&fstab->recs[i])) {
                 flags |= android::vold::Disk::Flags::kAdoptable;
+                has_adoptable = true;
             }
             if (fs_mgr_is_noemulatedsd(&fstab->recs[i])) {
                 flags |= android::vold::Disk::Flags::kDefaultPrimary;
@@ -234,6 +236,6 @@ static int process_config(VolumeManager *vm) {
                     new VolumeManager::DiskSource(sysPattern, nickname, flags)));
         }
     }
-
+    property_set("vold.has_adoptable", has_adoptable ? "1" : "0");
     return 0;
 }
