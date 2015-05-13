@@ -49,7 +49,7 @@ common_shared_libraries := \
 	libutils \
 	libhardware \
 	libsoftkeymaster \
-	libbase \
+	libbase
 
 common_static_libraries := \
 	libfs_mgr \
