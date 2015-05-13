@@ -107,6 +107,7 @@ status_t PublicVolume::doMount() {
 
     mRawPath = StringPrintf("/mnt/media_rw/%s", stableName.c_str());
     mFusePath = StringPrintf("/storage/%s", stableName.c_str());
+    setInternalPath(mRawPath);
     setPath(mFusePath);
 
     if (fs_prepare_dir(mRawPath.c_str(), 0700, AID_ROOT, AID_ROOT)) {
