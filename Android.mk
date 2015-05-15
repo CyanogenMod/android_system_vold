@@ -23,6 +23,7 @@ common_src_files := \
 	EmulatedVolume.cpp \
 	Utils.cpp \
 	MoveTask.cpp \
+	Benchmark.cpp \
 
 common_c_includes := \
 	system/extras/ext4_utils \

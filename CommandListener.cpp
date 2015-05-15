@@ -25,8 +25,13 @@
 #include <fs_mgr.h>
 #include <stdio.h>
 #include <string.h>
+#include <stdint.h>
+#include <inttypes.h>
 
 #define LOG_TAG "VoldCmdListener"
+
+#include <base/stringprintf.h>
+#include <cutils/fs.h>
 #include <cutils/log.h>
 
 #include <sysutils/SocketClient.h>
@@ -238,6 +243,13 @@ int CommandListener::VolumeCmd::runCommand(SocketClient *cli,
 
         (new android::vold::MoveTask(fromVol, toVol))->start();
         return sendGenericOkFail(cli, 0);
+
+    } else if (cmd == "benchmark" && argc > 2) {
+        // benchmark [volId]
+        std::string id(argv[2]);
+        nsecs_t res = vm->benchmarkVolume(id);
+        return cli->sendMsg(ResponseCode::CommandOkay,
+                android::base::StringPrintf("%" PRId64, res).c_str(), false);
     }
 
     return cli->sendMsg(ResponseCode::CommandSyntaxError, nullptr, false);

@@ -45,6 +45,7 @@
 
 #include <private/android_filesystem_config.h>
 
+#include "Benchmark.h"
 #include "EmulatedVolume.h"
 #include "VolumeManager.h"
 #include "NetlinkManager.h"
@@ -365,6 +366,43 @@ std::shared_ptr<android::vold::VolumeBase> VolumeManager::findVolume(const std::
         }
     }
     return nullptr;
+}
+
+nsecs_t VolumeManager::benchmarkVolume(const std::string& id) {
+    std::string path;
+    std::string sysPath;
+    auto vol = findVolume(id);
+    if (vol != nullptr) {
+        if (vol->getState() == android::vold::VolumeBase::State::kMounted) {
+            path = vol->getPath();
+            auto disk = findDisk(vol->getDiskId());
+            if (disk != nullptr) {
+                sysPath = disk->getSysPath();
+            }
+        }
+    } else {
+        path = "/data";
+    }
+
+    if (path.empty()) {
+        LOG(WARNING) << "Failed to find volume for " << id;
+        return -1;
+    }
+
+    path += "/misc";
+    if (android::vold::PrepareDir(path, 01771, AID_SYSTEM, AID_MISC)) {
+        return -1;
+    }
+    path += "/vold";
+    if (android::vold::PrepareDir(path, 0700, AID_ROOT, AID_ROOT)) {
+        return -1;
+    }
+    path += "/bench";
+    if (android::vold::PrepareDir(path, 0700, AID_ROOT, AID_ROOT)) {
+        return -1;
+    }
+
+    return android::vold::Benchmark(path, sysPath);
 }
 
 int VolumeManager::linkPrimary(userid_t userId) {

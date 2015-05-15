@@ -82,6 +82,7 @@ public:
     static const int VolumeDestroyed = 659;
 
     static const int MoveStatus = 660;
+    static const int BenchmarkResult = 661;
 
     static int convertFromErrno();
 };

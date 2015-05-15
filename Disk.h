@@ -49,6 +49,8 @@ public:
         kSd = 1 << 2,
         /* Flag that disk is USB disk */
         kUsb = 1 << 3,
+        /* Flag that disk is EMMC internal */
+        kEmmc = 1 << 4,
     };
 
     const std::string& getId() { return mId; }

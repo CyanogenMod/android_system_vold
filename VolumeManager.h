@@ -29,6 +29,7 @@
 
 #include <cutils/multiuser.h>
 #include <utils/List.h>
+#include <utils/Timers.h>
 #include <sysutils/SocketListener.h>
 #include <sysutils/NetlinkEvent.h>
 
@@ -114,6 +115,8 @@ public:
 
     std::shared_ptr<android::vold::Disk> findDisk(const std::string& id);
     std::shared_ptr<android::vold::VolumeBase> findVolume(const std::string& id);
+
+    nsecs_t benchmarkVolume(const std::string& id);
 
     int startUser(userid_t userId);
     int cleanupUser(userid_t userId);
