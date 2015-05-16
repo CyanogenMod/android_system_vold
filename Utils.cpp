@@ -328,7 +328,7 @@ status_t ReadRandomBytes(size_t bytes, std::string& out) {
         out.append(buf, n);
         bytes -= n;
     }
-    TEMP_FAILURE_RETRY(close(fd));
+    close(fd);
 
     if (bytes == 0) {
         return OK;
