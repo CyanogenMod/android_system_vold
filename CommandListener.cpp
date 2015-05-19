@@ -784,6 +784,16 @@ int CommandListener::CryptfsCmd::runCommand(SocketClient *cli,
         SLOGD("cryptfs createnewuserdir");
         dumpArgs(argc, argv, -1);
         rc = e4crypt_create_new_user_dir(argv[2], argv[3]);
+    } else if (!strcmp(argv[1], "deleteuserkey")) {
+        if (argc != 3) {
+            cli->sendMsg(ResponseCode::CommandSyntaxError,
+                "Usage: cryptfs deleteuserkey <userHandle>", false);
+            return 0;
+        }
+        // ext4enc:TODO: send a CommandSyntaxError if argv[2] not an integer
+        SLOGD("cryptfs deleteuserkey");
+        dumpArgs(argc, argv, -1);
+        rc = e4crypt_delete_user_key(argv[2]);
     } else {
         dumpArgs(argc, argv, -1);
         cli->sendMsg(ResponseCode::CommandSyntaxError, "Unknown cryptfs cmd", false);
