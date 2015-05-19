@@ -228,7 +228,8 @@ static int process_config(VolumeManager *vm) {
                 flags |= android::vold::Disk::Flags::kAdoptable;
                 has_adoptable = true;
             }
-            if (fs_mgr_is_noemulatedsd(&fstab->recs[i])) {
+            if (fs_mgr_is_noemulatedsd(&fstab->recs[i])
+                    || property_get_bool("vold.debug.default_primary", false)) {
                 flags |= android::vold::Disk::Flags::kDefaultPrimary;
             }
 
