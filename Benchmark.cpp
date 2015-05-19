@@ -25,6 +25,7 @@
 
 #include <sys/time.h>
 #include <sys/resource.h>
+#include <unistd.h>
 
 using android::base::ReadFileToString;
 using android::base::WriteStringToFile;
@@ -72,10 +73,13 @@ nsecs_t Benchmark(const std::string& path, const std::string& sysPath) {
         return -1;
     }
 
+    sync();
+
     LOG(INFO) << "Benchmarking " << path;
     nsecs_t start = systemTime(SYSTEM_TIME_BOOTTIME);
 
     BenchmarkCreate();
+    sync();
     nsecs_t create = systemTime(SYSTEM_TIME_BOOTTIME);
 
     if (!WriteStringToFile("3", "/proc/sys/vm/drop_caches")) {
@@ -84,9 +88,11 @@ nsecs_t Benchmark(const std::string& path, const std::string& sysPath) {
     nsecs_t drop = systemTime(SYSTEM_TIME_BOOTTIME);
 
     BenchmarkRun();
+    sync();
     nsecs_t run = systemTime(SYSTEM_TIME_BOOTTIME);
 
     BenchmarkDestroy();
+    sync();
     nsecs_t destroy = systemTime(SYSTEM_TIME_BOOTTIME);
 
     nsecs_t create_d = create - start;
@@ -108,8 +114,7 @@ nsecs_t Benchmark(const std::string& path, const std::string& sysPath) {
             + ",si=" + simpleRead(sysPath + "/size")
             + ",ve=" + simpleRead(sysPath + "/device/vendor")
             + ",mo=" + simpleRead(sysPath + "/device/model")
-            + ",csd=" + simpleRead(sysPath + "/device/csd")
-            + ",scr=" + simpleRead(sysPath + "/device/scr");
+            + ",csd=" + simpleRead(sysPath + "/device/csd");
 
     // Scrub CRC and serial number out of CID
     std::string cid = simpleRead(sysPath + "/device/cid");
