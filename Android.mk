@@ -65,7 +65,11 @@ common_static_libraries := \
 	libminshacrypt \
 	libbatteryservice \
 	libext2_blkid \
-	libext2_uuid_static
+	libext2_uuid_static \
+	liblz4-static \
+	libsparse_static \
+	libz
+
 
 ifneq ($(BOARD_VOLD_MAX_PARTITIONS),)
 common_cflags += -DVOLD_MAX_PARTITIONS=$(BOARD_VOLD_MAX_PARTITIONS)
