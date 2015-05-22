@@ -14,22 +14,27 @@
  * limitations under the License.
  */
 
-#ifndef _FAT_H
-#define _FAT_H
+#ifndef ANDROID_VOLD_VFAT_H
+#define ANDROID_VOLD_VFAT_H
 
-#include <unistd.h>
+#include <utils/Errors.h>
 
-class Fat {
-public:
-    static int check(const char *fsPath);
-    static int doMount(const char *fsPath, const char *mountPoint,
-                       bool ro, bool remount, bool executable,
-                       int ownerUid, int ownerGid, int permMask,
-                       bool createLost);
-    static int format(const char *fsPath, unsigned int numSectors, bool wipe);
+#include <string>
 
-private:
-    static void wipe(const char *fsPath, unsigned int numSectors);
-};
+namespace android {
+namespace vold {
+namespace vfat {
+
+bool IsSupported();
+
+status_t Check(const std::string& source);
+status_t Mount(const std::string& source, const std::string& target, bool ro,
+        bool remount, bool executable, int ownerUid, int ownerGid, int permMask,
+        bool createLost);
+status_t Format(const std::string& source, unsigned int numSectors);
+
+}  // namespace vfat
+}  // namespace vold
+}  // namespace android
 
 #endif

@@ -222,15 +222,16 @@ int CommandListener::VolumeCmd::runCommand(SocketClient *cli,
 
         return sendGenericOkFail(cli, vol->unmount());
 
-    } else if (cmd == "format" && argc > 2) {
-        // format [volId]
+    } else if (cmd == "format" && argc > 3) {
+        // format [volId] [fsType|auto]
         std::string id(argv[2]);
+        std::string fsType(argv[3]);
         auto vol = vm->findVolume(id);
         if (vol == nullptr) {
             return cli->sendMsg(ResponseCode::CommandSyntaxError, "Unknown volume", false);
         }
 
-        return sendGenericOkFail(cli, vol->format());
+        return sendGenericOkFail(cli, vol->format(fsType));
 
     } else if (cmd == "move_storage" && argc > 3) {
         // move_storage [fromVolId] [toVolId]

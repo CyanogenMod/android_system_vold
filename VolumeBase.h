@@ -97,7 +97,7 @@ public:
     status_t destroy();
     status_t mount();
     status_t unmount();
-    status_t format();
+    status_t format(const std::string& fsType);
 
 protected:
     explicit VolumeBase(Type type);
@@ -106,7 +106,7 @@ protected:
     virtual status_t doDestroy();
     virtual status_t doMount() = 0;
     virtual status_t doUnmount() = 0;
-    virtual status_t doFormat();
+    virtual status_t doFormat(const std::string& fsType);
 
     status_t setId(const std::string& id);
     status_t setPath(const std::string& path);

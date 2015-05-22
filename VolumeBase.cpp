@@ -222,7 +222,7 @@ status_t VolumeBase::unmount() {
     return res;
 }
 
-status_t VolumeBase::format() {
+status_t VolumeBase::format(const std::string& fsType) {
     if (mState == State::kMounted) {
         unmount();
     }
@@ -233,12 +233,12 @@ status_t VolumeBase::format() {
     }
 
     setState(State::kFormatting);
-    status_t res = doFormat();
+    status_t res = doFormat(fsType);
     setState(State::kUnmounted);
     return res;
 }
 
-status_t VolumeBase::doFormat() {
+status_t VolumeBase::doFormat(const std::string& fsType) {
     return -ENOTSUP;
 }
 

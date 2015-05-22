@@ -14,18 +14,28 @@
  * limitations under the License.
  */
 
-#ifndef _EXT4_H
-#define _EXT4_H
+#ifndef ANDROID_VOLD_EXT4_H
+#define ANDROID_VOLD_EXT4_H
 
-#include <unistd.h>
+#include <utils/Errors.h>
 
-class Ext4 {
-public:
-    static int check(const char *fsPath, const char *mountPoint);
-    static int doMount(const char *fsPath, const char *mountPoint, bool ro, bool remount,
-            bool executable);
-    static int format(const char *fsPath, unsigned int numSectors, const char *mountpoint);
-    static int resize(const char *fsPath, unsigned int numSectors);
-};
+#include <string>
+
+namespace android {
+namespace vold {
+namespace ext4 {
+
+bool IsSupported();
+
+status_t Check(const std::string& source, const std::string& target);
+status_t Mount(const std::string& source, const std::string& target, bool ro,
+        bool remount, bool executable);
+status_t Format(const std::string& source, unsigned int numSectors,
+        const std::string& target);
+status_t Resize(const std::string& source, unsigned int numSectors);
+
+}  // namespace ext4
+}  // namespace vold
+}  // namespace android
 
 #endif
