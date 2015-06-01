@@ -187,7 +187,7 @@ static status_t BenchmarkRun() {
             fd, f, handle = extract_file(e, e.args[0])
             if handle in active:
                 active.remove(handle)
-                print >>bench, 'TEMP_FAILURE_RETRY(close(%s));' % (handle)
+                print >>bench, 'close(%s);' % (handle)
 
         elif e.call == "lseek":
             fd, f, handle = extract_file(e, e.args[0])
@@ -255,7 +255,7 @@ static status_t BenchmarkRun() {
                 nread += 1
 
     for handle in active:
-        print >>bench, 'TEMP_FAILURE_RETRY(close(%s));' % (handle)
+        print >>bench, 'close(%s);' % (handle)
 
     print >>bench, """
 free(buf);
