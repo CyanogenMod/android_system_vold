@@ -61,6 +61,7 @@
 #include "Process.h"
 
 #include <hardware/keymaster0.h>
+#include <hardware/keymaster1.h>
 
 #define UNUSED __attribute__((unused))
 
@@ -88,6 +89,8 @@
 #define RSA_KEY_SIZE 2048
 #define RSA_KEY_SIZE_BYTES (RSA_KEY_SIZE / 8)
 #define RSA_EXPONENT 0x10001
+#define KEYMASTER_CRYPTFS_RATE_LIMIT 1  // Maximum one try per second
+#define KEYMASTER_CRYPTFS_APP_ID "vold cryptfs"
 
 #define RETRY_MOUNT_ATTEMPTS 10
 #define RETRY_MOUNT_DELAY_SECONDS 1
@@ -99,7 +102,8 @@ static char *saved_mount_point;
 static int  master_key_saved = 0;
 static struct crypt_persist_data *persist_data = NULL;
 
-static int keymaster_init(keymaster0_device_t **keymaster_dev)
+static int keymaster_init(keymaster0_device_t **keymaster0_dev,
+                          keymaster1_device_t **keymaster1_dev)
 {
     int rc;
 
@@ -107,50 +111,74 @@ static int keymaster_init(keymaster0_device_t **keymaster_dev)
     rc = hw_get_module_by_class(KEYSTORE_HARDWARE_MODULE_ID, NULL, &mod);
     if (rc) {
         ALOGE("could not find any keystore module");
-        goto out;
+        goto err;
     }
 
-    rc = keymaster0_open(mod, keymaster_dev);
+    SLOGI("keymaster module name is %s", mod->name);
+    SLOGI("keymaster version is %d", mod->module_api_version);
+
+    *keymaster0_dev = NULL;
+    *keymaster1_dev = NULL;
+    if (mod->module_api_version == KEYMASTER_MODULE_API_VERSION_1_0) {
+        SLOGI("Found keymaster1 module, using keymaster1 API.");
+        rc = keymaster1_open(mod, keymaster1_dev);
+    } else {
+        SLOGI("Found keymaster0 module, using keymaster0 API.");
+        rc = keymaster0_open(mod, keymaster0_dev);
+    }
+
     if (rc) {
         ALOGE("could not open keymaster device in %s (%s)",
-            KEYSTORE_HARDWARE_MODULE_ID, strerror(-rc));
-        goto out;
+              KEYSTORE_HARDWARE_MODULE_ID, strerror(-rc));
+        goto err;
     }
 
     return 0;
 
-out:
-    *keymaster_dev = NULL;
+err:
+    *keymaster0_dev = NULL;
+    *keymaster1_dev = NULL;
     return rc;
 }
 
 /* Should we use keymaster? */
 static int keymaster_check_compatibility()
 {
-    keymaster0_device_t *keymaster_dev = 0;
+    keymaster0_device_t *keymaster0_dev = 0;
+    keymaster1_device_t *keymaster1_dev = 0;
     int rc = 0;
 
-    if (keymaster_init(&keymaster_dev)) {
+    if (keymaster_init(&keymaster0_dev, &keymaster1_dev)) {
         SLOGE("Failed to init keymaster");
         rc = -1;
         goto out;
     }
 
-    SLOGI("keymaster version is %d", keymaster_dev->common.module->module_api_version);
+    if (keymaster1_dev) {
+        rc = 1;
+        goto out;
+    }
 
-    if (keymaster_dev->common.module->module_api_version
+    // TODO(swillden): Check to see if there's any reason to require v0.3.  I think v0.1 and v0.2
+    // should work.
+    if (keymaster0_dev->common.module->module_api_version
             < KEYMASTER_MODULE_API_VERSION_0_3) {
         rc = 0;
         goto out;
     }
 
-    if (!(keymaster_dev->flags & KEYMASTER_SOFTWARE_ONLY) &&
-        (keymaster_dev->flags & KEYMASTER_BLOBS_ARE_STANDALONE)) {
+    if (!(keymaster0_dev->flags & KEYMASTER_SOFTWARE_ONLY) &&
+        (keymaster0_dev->flags & KEYMASTER_BLOBS_ARE_STANDALONE)) {
         rc = 1;
     }
 
 out:
-    keymaster0_close(keymaster_dev);
+    if (keymaster1_dev) {
+        keymaster1_close(keymaster1_dev);
+    }
+    if (keymaster0_dev) {
+        keymaster0_close(keymaster0_dev);
+    }
     return rc;
 }
 
@@ -158,24 +186,72 @@ out:
 static int keymaster_create_key(struct crypt_mnt_ftr *ftr)
 {
     uint8_t* key = 0;
-    keymaster0_device_t *keymaster_dev = 0;
+    keymaster0_device_t *keymaster0_dev = 0;
+    keymaster1_device_t *keymaster1_dev = 0;
 
-    if (keymaster_init(&keymaster_dev)) {
+    if (keymaster_init(&keymaster0_dev, &keymaster1_dev)) {
         SLOGE("Failed to init keymaster");
         return -1;
     }
 
     int rc = 0;
+    size_t key_size = 0;
+    if (keymaster1_dev) {
+        keymaster_key_param_t params[] = {
+            /* Algorithm & size specifications.  Stick with RSA for now.  Switch to AES later. */
+            keymaster_param_enum(KM_TAG_ALGORITHM, KM_ALGORITHM_RSA),
+            keymaster_param_int(KM_TAG_KEY_SIZE, RSA_KEY_SIZE),
+            keymaster_param_long(KM_TAG_RSA_PUBLIC_EXPONENT, RSA_EXPONENT),
 
-    keymaster_rsa_keygen_params_t params;
-    memset(&params, '\0', sizeof(params));
-    params.public_exponent = RSA_EXPONENT;
-    params.modulus_size = RSA_KEY_SIZE;
+            /* Padding & digest specifications.  We'll use none/none, but add better options
+             * just in case we want to use them later.  Actual selection is done at operation
+             * time, but restricted to options specified at keygen. */
+            keymaster_param_enum(KM_TAG_PADDING, KM_PAD_NONE),
+            keymaster_param_enum(KM_TAG_PADDING, KM_PAD_RSA_PKCS1_1_5_SIGN),
+            keymaster_param_enum(KM_TAG_DIGEST, KM_DIGEST_NONE),
+            keymaster_param_enum(KM_TAG_DIGEST, KM_DIGEST_SHA_2_256),
 
-    size_t key_size;
-    if (keymaster_dev->generate_keypair(keymaster_dev, TYPE_RSA, &params,
-                                        &key, &key_size)) {
-        SLOGE("Failed to generate keypair");
+            /* Require that the key be usable in standalone mode.  File system isn't available. */
+            keymaster_param_enum(KM_TAG_BLOB_USAGE_REQUIREMENTS, KM_BLOB_STANDALONE),
+
+            /* No auth requirements, because cryptfs is not yet integrated with gatekeeper. */
+            keymaster_param_bool(KM_TAG_NO_AUTH_REQUIRED),
+
+            /* Set app ID to a value keystore will never use */
+            keymaster_param_blob(KM_TAG_APPLICATION_ID, (uint8_t*)KEYMASTER_CRYPTFS_APP_ID,
+                                 sizeof(KEYMASTER_CRYPTFS_APP_ID)),
+
+            /* Rate-limit key usage attempts, to rate-limit brute force */
+            keymaster_param_int(KM_TAG_MIN_SECONDS_BETWEEN_OPS, KEYMASTER_CRYPTFS_RATE_LIMIT),
+        };
+        keymaster_key_param_set_t param_set = { params, sizeof(params)/sizeof(*params) };
+        keymaster_key_blob_t key_blob;
+        keymaster_error_t error = keymaster1_dev->generate_key(keymaster1_dev, &param_set,
+                                                               &key_blob,
+                                                               NULL /* characteristics */);
+        if (error != KM_ERROR_OK) {
+            SLOGE("Failed to generate keymaster1 key, error %d", error);
+            rc = -1;
+            goto out;
+        }
+
+        key = (uint8_t*)key_blob.key_material;
+        key_size = key_blob.key_material_size;
+    }
+    else if (keymaster0_dev) {
+        keymaster_rsa_keygen_params_t params;
+        memset(&params, '\0', sizeof(params));
+        params.public_exponent = RSA_EXPONENT;
+        params.modulus_size = RSA_KEY_SIZE;
+
+        if (keymaster0_dev->generate_keypair(keymaster0_dev, TYPE_RSA, &params,
+                                             &key, &key_size)) {
+            SLOGE("Failed to generate keypair");
+            rc = -1;
+            goto out;
+        }
+    } else {
+        SLOGE("Cryptfs bug: keymaster_init succeeded but didn't initialize a device");
         rc = -1;
         goto out;
     }
@@ -190,7 +266,10 @@ static int keymaster_create_key(struct crypt_mnt_ftr *ftr)
     ftr->keymaster_blob_size = key_size;
 
 out:
-    keymaster0_close(keymaster_dev);
+    if (keymaster0_dev)
+        keymaster0_close(keymaster0_dev);
+    if (keymaster1_dev)
+        keymaster1_close(keymaster1_dev);
     free(key);
     return rc;
 }
@@ -203,19 +282,13 @@ static int keymaster_sign_object(struct crypt_mnt_ftr *ftr,
                                  size_t *signature_size)
 {
     int rc = 0;
-    keymaster0_device_t *keymaster_dev = 0;
-    if (keymaster_init(&keymaster_dev)) {
+    keymaster0_device_t *keymaster0_dev = 0;
+    keymaster1_device_t *keymaster1_dev = 0;
+    if (keymaster_init(&keymaster0_dev, &keymaster1_dev)) {
         SLOGE("Failed to init keymaster");
-        return -1;
+        rc = -1;
+        goto out;
     }
-
-    /* We currently set the digest type to DIGEST_NONE because it's the
-     * only supported value for keymaster. A similar issue exists with
-     * PADDING_NONE. Long term both of these should likely change.
-     */
-    keymaster_rsa_sign_params_t params;
-    params.digest_type = DIGEST_NONE;
-    params.padding_type = PADDING_NONE;
 
     unsigned char to_sign[RSA_KEY_SIZE_BYTES];
     size_t to_sign_size = sizeof(to_sign);
@@ -241,30 +314,98 @@ static int keymaster_sign_object(struct crypt_mnt_ftr *ftr,
             // is zero.  We could have zero-padded to the left instead, but
             // this approach is slightly more robust against changes in
             // object size.  However, it's still broken (but not unusably
-            // so) because we really should be using a proper RSA padding
-            // function, such as OAEP.
-            //
-            // TODO(paullawrence): When keymaster 0.4 is available, change
-            // this to use the padding options it provides.
+            // so) because we really should be using a proper deterministic
+            // RSA padding function, such as PKCS1.
             memcpy(to_sign + 1, object, min(RSA_KEY_SIZE_BYTES - 1, object_size));
             SLOGI("Signing safely-padded object");
             break;
         default:
             SLOGE("Unknown KDF type %d", ftr->kdf_type);
-            return -1;
+            rc = -1;
+            goto out;
     }
 
-    rc = keymaster_dev->sign_data(keymaster_dev,
-                                  &params,
-                                  ftr->keymaster_blob,
-                                  ftr->keymaster_blob_size,
-                                  to_sign,
-                                  to_sign_size,
-                                  signature,
-                                  signature_size);
+    if (keymaster0_dev) {
+        keymaster_rsa_sign_params_t params;
+        params.digest_type = DIGEST_NONE;
+        params.padding_type = PADDING_NONE;
 
-    keymaster0_close(keymaster_dev);
-    return rc;
+        rc = keymaster0_dev->sign_data(keymaster0_dev,
+                                      &params,
+                                      ftr->keymaster_blob,
+                                      ftr->keymaster_blob_size,
+                                      to_sign,
+                                      to_sign_size,
+                                      signature,
+                                      signature_size);
+        goto out;
+    } else if (keymaster1_dev) {
+        keymaster_key_blob_t key = { ftr->keymaster_blob, ftr->keymaster_blob_size };
+        keymaster_key_param_t params[] = {
+            keymaster_param_enum(KM_TAG_PADDING, KM_PAD_NONE),
+            keymaster_param_enum(KM_TAG_DIGEST, KM_DIGEST_NONE),
+        };
+        keymaster_key_param_set_t param_set = { params, sizeof(params)/sizeof(*params) };
+        keymaster_operation_handle_t op_handle;
+        keymaster_error_t error = keymaster1_dev->begin(keymaster1_dev, KM_PURPOSE_SIGN, &key,
+                                                        &param_set, NULL /* out_params */,
+                                                        &op_handle);
+        if (error == KM_ERROR_VERIFICATION_FAILED) {
+            // Key usage has been rate-limited.  Wait a bit and try again.
+            sleep(KEYMASTER_CRYPTFS_RATE_LIMIT);
+            error = keymaster1_dev->begin(keymaster1_dev, KM_PURPOSE_SIGN, &key,
+                                          &param_set, NULL /* out_params */,
+                                          &op_handle);
+        }
+        if (error != KM_ERROR_OK) {
+            SLOGE("Error starting keymaster signature transaction: %d", error);
+            rc = -1;
+            goto out;
+        }
+
+        keymaster_blob_t input = { to_sign, to_sign_size };
+        size_t input_consumed;
+        error = keymaster1_dev->update(keymaster1_dev, op_handle, NULL /* in_params */,
+                                       &input, &input_consumed, NULL /* out_params */,
+                                       NULL /* output */);
+        if (error != KM_ERROR_OK) {
+            SLOGE("Error sending data to keymaster signature transaction: %d", error);
+            rc = -1;
+            goto out;
+        }
+        if (input_consumed != to_sign_size) {
+            // This should never happen.  If it does, it's a bug in the keymaster implementation.
+            SLOGE("Keymaster update() did not consume all data.");
+            keymaster1_dev->abort(keymaster1_dev, op_handle);
+            rc = -1;
+            goto out;
+        }
+
+        keymaster_blob_t tmp_sig;
+        error = keymaster1_dev->finish(keymaster1_dev, op_handle, NULL /* in_params */,
+                                       NULL /* verify signature */, NULL /* out_params */,
+                                       &tmp_sig);
+        if (error != KM_ERROR_OK) {
+            SLOGE("Error finishing keymaster signature transaction: %d", error);
+            rc = -1;
+            goto out;
+        }
+
+        *signature = (uint8_t*)tmp_sig.data;
+        *signature_size = tmp_sig.data_length;
+    } else {
+        SLOGE("Cryptfs bug: keymaster_init succeded but didn't initialize a device.");
+        rc = -1;
+        goto out;
+    }
+
+    out:
+        if (keymaster1_dev)
+            keymaster1_close(keymaster1_dev);
+        if (keymaster0_dev)
+            keymaster0_close(keymaster0_dev);
+
+        return rc;
 }
 
 /* Store password when userdata is successfully decrypted and mounted.
