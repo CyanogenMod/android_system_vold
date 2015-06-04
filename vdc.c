@@ -61,7 +61,7 @@ int main(int argc, char **argv) {
             fprintf(stderr, "Error connecting (%s)\n", strerror(errno));
             exit(4);
         } else {
-            sleep(1);
+            usleep(10000);
         }
     }
 
