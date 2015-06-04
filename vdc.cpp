@@ -54,7 +54,12 @@ int main(int argc, char **argv) {
         exit(5);
     }
 
-    while ((sock = socket_local_client("vold",
+    const char* sockname = "vold";
+    if (!strcmp(argv[1], "cryptfs")) {
+        sockname = "cryptd";
+    }
+
+    while ((sock = socket_local_client(sockname,
                                  ANDROID_SOCKET_NAMESPACE_RESERVED,
                                  SOCK_STREAM)) < 0) {
         if(!wait_for_socket) {
@@ -74,6 +79,7 @@ int main(int argc, char **argv) {
 
 static int do_cmd(int sock, int argc, char **argv) {
     char final_cmd[255] = "0 "; /* 0 is a (now required) sequence number */
+
     int i;
     size_t ret;
 
@@ -166,4 +172,3 @@ static void usage(char *progname) {
     fprintf(stderr,
             "Usage: %s [--wait] <monitor>|<cmd> [arg1] [arg2...]\n", progname);
  }
-

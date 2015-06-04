@@ -17,6 +17,7 @@
 #include "Disk.h"
 #include "VolumeManager.h"
 #include "CommandListener.h"
+#include "CryptCommandListener.h"
 #include "NetlinkManager.h"
 #include "cryptfs.h"
 #include "sehandle.h"
@@ -56,6 +57,7 @@ int main(int argc, char** argv) {
 
     VolumeManager *vm;
     CommandListener *cl;
+    CryptCommandListener *ccl;
     NetlinkManager *nm;
 
     parse_args(argc, argv);
@@ -67,6 +69,7 @@ int main(int argc, char** argv) {
 
     // Quickly throw a CLOEXEC on the socket we just inherited from init
     fcntl(android_get_control_socket("vold"), F_SETFD, FD_CLOEXEC);
+    fcntl(android_get_control_socket("cryptd"), F_SETFD, FD_CLOEXEC);
 
     mkdir("/dev/block/vold", 0755);
 
@@ -89,6 +92,7 @@ int main(int argc, char** argv) {
     }
 
     cl = new CommandListener();
+    ccl = new CryptCommandListener();
     vm->setBroadcaster((SocketListener *) cl);
     nm->setBroadcaster((SocketListener *) cl);
 
@@ -114,6 +118,11 @@ int main(int argc, char** argv) {
      */
     if (cl->startListener()) {
         PLOG(ERROR) << "Unable to start CommandListener";
+        exit(1);
+    }
+
+    if (ccl->startListener()) {
+        PLOG(ERROR) << "Unable to start CryptCommandListener";
         exit(1);
     }
 
