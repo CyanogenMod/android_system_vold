@@ -3,6 +3,7 @@ LOCAL_PATH:= $(call my-dir)
 common_src_files := \
 	VolumeManager.cpp \
 	CommandListener.cpp \
+	CryptCommandListener.cpp \
 	VoldCommand.cpp \
 	NetlinkManager.cpp \
 	NetlinkHandler.cpp \
