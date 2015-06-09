@@ -14,7 +14,8 @@
  * limitations under the License.
  */
 
-#include "Ext4.h"
+#include "fs/Ext4.h"
+#include "fs/F2fs.h"
 #include "PrivateVolume.h"
 #include "EmulatedVolume.h"
 #include "Utils.h"
@@ -39,6 +40,8 @@ using android::base::StringPrintf;
 
 namespace android {
 namespace vold {
+
+static const unsigned int kMajorBlockMmc = 179;
 
 PrivateVolume::PrivateVolume(dev_t device, const std::string& keyRaw) :
         VolumeBase(Type::kPrivate), mRawDevice(device), mKeyRaw(keyRaw) {
@@ -101,16 +104,36 @@ status_t PrivateVolume::doMount() {
         return -EIO;
     }
 
-    int res = Ext4::check(mDmDevPath.c_str(), mPath.c_str());
-    if (res == 0 || res == 1) {
-        LOG(DEBUG) << getId() << " passed filesystem check";
-    } else {
-        PLOG(ERROR) << getId() << " failed filesystem check";
-        return -EIO;
-    }
+    if (mFsType == "ext4") {
+        int res = ext4::Check(mDmDevPath, mPath);
+        if (res == 0 || res == 1) {
+            LOG(DEBUG) << getId() << " passed filesystem check";
+        } else {
+            PLOG(ERROR) << getId() << " failed filesystem check";
+            return -EIO;
+        }
 
-    if (Ext4::doMount(mDmDevPath.c_str(), mPath.c_str(), false, false, true)) {
-        PLOG(ERROR) << getId() << " failed to mount";
+        if (ext4::Mount(mDmDevPath, mPath, false, false, true)) {
+            PLOG(ERROR) << getId() << " failed to mount";
+            return -EIO;
+        }
+
+    } else if (mFsType == "f2fs") {
+        int res = f2fs::Check(mDmDevPath);
+        if (res == 0) {
+            LOG(DEBUG) << getId() << " passed filesystem check";
+        } else {
+            PLOG(ERROR) << getId() << " failed filesystem check";
+            return -EIO;
+        }
+
+        if (f2fs::Mount(mDmDevPath, mPath)) {
+            PLOG(ERROR) << getId() << " failed to mount";
+            return -EIO;
+        }
+
+    } else {
+        LOG(ERROR) << getId() << " unsupported filesystem " << mFsType;
         return -EIO;
     }
 
@@ -123,6 +146,8 @@ status_t PrivateVolume::doMount() {
         PLOG(ERROR) << getId() << " failed to prepare";
         return -EIO;
     }
+
+    // TODO: restorecon all the things!
 
     // Create a new emulated volume stacked above us, it will automatically
     // be destroyed during unmount
@@ -145,11 +170,33 @@ status_t PrivateVolume::doUnmount() {
     return OK;
 }
 
-status_t PrivateVolume::doFormat() {
-    // TODO: change mountpoint once we have selinux labels
-    if (Ext4::format(mDmDevPath.c_str(), 0, "/data")) {
-        PLOG(ERROR) << getId() << " failed to format";
-        return -EIO;
+status_t PrivateVolume::doFormat(const std::string& fsType) {
+    std::string resolvedFsType = fsType;
+    if (fsType == "auto") {
+        // For now, assume that all MMC devices are flash-based SD cards, and
+        // give everyone else ext4 because sysfs rotational isn't reliable.
+        if ((major(mRawDevice) == kMajorBlockMmc) && f2fs::IsSupported()) {
+            resolvedFsType = "f2fs";
+        } else {
+            resolvedFsType = "ext4";
+        }
+        LOG(DEBUG) << "Resolved auto to " << resolvedFsType;
+    }
+
+    if (resolvedFsType == "ext4") {
+        // TODO: change reported mountpoint once we have better selinux support
+        if (ext4::Format(mDmDevPath, 0, "/data")) {
+            PLOG(ERROR) << getId() << " failed to format";
+            return -EIO;
+        }
+    } else if (resolvedFsType == "f2fs") {
+        if (f2fs::Format(mDmDevPath)) {
+            PLOG(ERROR) << getId() << " failed to format";
+            return -EIO;
+        }
+    } else {
+        LOG(ERROR) << getId() << " unsupported filesystem " << fsType;
+        return -EINVAL;
     }
 
     return OK;

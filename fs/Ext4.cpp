@@ -50,16 +50,26 @@
 
 using android::base::StringPrintf;
 
+namespace android {
+namespace vold {
+namespace ext4 {
+
 static const char* kResizefsPath = "/system/bin/resize2fs";
 static const char* kMkfsPath = "/system/bin/make_ext4fs";
 static const char* kFsckPath = "/system/bin/e2fsck";
 
-int Ext4::check(const char *fsPath, const char *mountPoint) {
+bool IsSupported() {
+    return access(kMkfsPath, X_OK) == 0
+            && access(kFsckPath, X_OK) == 0
+            && IsFilesystemSupported("ext4");
+}
+
+status_t Check(const std::string& source, const std::string& target) {
     // The following is shamelessly borrowed from fs_mgr.c, so it should be
     // kept in sync with any changes over there.
 
-    char* blk_device = (char*) fsPath;
-    char* target = (char*) mountPoint;
+    const char* c_source = source.c_str();
+    const char* c_target = target.c_str();
 
     int status;
     int ret;
@@ -79,17 +89,17 @@ int Ext4::check(const char *fsPath, const char *mountPoint) {
      * filesytsem due to an error, e2fsck is still run to do a full check
      * fix the filesystem.
      */
-    ret = mount(blk_device, target, "ext4", tmpmnt_flags, tmpmnt_opts);
+    ret = mount(c_source, c_target, "ext4", tmpmnt_flags, tmpmnt_opts);
     if (!ret) {
         int i;
         for (i = 0; i < 5; i++) {
             // Try to umount 5 times before continuing on.
             // Should we try rebooting if all attempts fail?
-            int result = umount(target);
+            int result = umount(c_target);
             if (result == 0) {
                 break;
             }
-            ALOGW("%s(): umount(%s)=%d: %s\n", __func__, target, result, strerror(errno));
+            ALOGW("%s(): umount(%s)=%d: %s\n", __func__, c_target, result, strerror(errno));
             sleep(1);
         }
     }
@@ -100,26 +110,29 @@ int Ext4::check(const char *fsPath, const char *mountPoint) {
      */
     if (access(kFsckPath, X_OK)) {
         ALOGD("Not running %s on %s (executable not in system image)\n",
-                kFsckPath, blk_device);
+                kFsckPath, c_source);
     } else {
-        ALOGD("Running %s on %s\n", kFsckPath, blk_device);
+        ALOGD("Running %s on %s\n", kFsckPath, c_source);
 
         std::vector<std::string> cmd;
         cmd.push_back(kFsckPath);
         cmd.push_back("-y");
-        cmd.push_back(blk_device);
+        cmd.push_back(c_source);
 
-        // Ext4 devices are currently always trusted
-        return android::vold::ForkExecvp(cmd, android::vold::sFsckContext);
+        // ext4 devices are currently always trusted
+        return ForkExecvp(cmd, sFsckContext);
     }
 
     return 0;
 }
 
-int Ext4::doMount(const char *fsPath, const char *mountPoint, bool ro, bool remount,
-        bool executable) {
+status_t Mount(const std::string& source, const std::string& target, bool ro,
+        bool remount, bool executable) {
     int rc;
     unsigned long flags;
+
+    const char* c_source = source.c_str();
+    const char* c_target = target.c_str();
 
     flags = MS_NOATIME | MS_NODEV | MS_NOSUID | MS_DIRSYNC;
 
@@ -127,34 +140,35 @@ int Ext4::doMount(const char *fsPath, const char *mountPoint, bool ro, bool remo
     flags |= (ro ? MS_RDONLY : 0);
     flags |= (remount ? MS_REMOUNT : 0);
 
-    rc = mount(fsPath, mountPoint, "ext4", flags, NULL);
+    rc = mount(c_source, c_target, "ext4", flags, NULL);
 
     if (rc && errno == EROFS) {
-        SLOGE("%s appears to be a read only filesystem - retrying mount RO", fsPath);
+        SLOGE("%s appears to be a read only filesystem - retrying mount RO", c_source);
         flags |= MS_RDONLY;
-        rc = mount(fsPath, mountPoint, "ext4", flags, NULL);
+        rc = mount(c_source, c_target, "ext4", flags, NULL);
     }
 
     return rc;
 }
 
-int Ext4::resize(const char *fspath, unsigned int numSectors) {
+status_t Resize(const std::string& source, unsigned int numSectors) {
     std::vector<std::string> cmd;
     cmd.push_back(kResizefsPath);
     cmd.push_back("-f");
-    cmd.push_back(fspath);
+    cmd.push_back(source);
     cmd.push_back(StringPrintf("%u", numSectors));
 
-    return android::vold::ForkExecvp(cmd);
+    return ForkExecvp(cmd);
 }
 
-int Ext4::format(const char *fsPath, unsigned int numSectors, const char *mountpoint) {
+status_t Format(const std::string& source, unsigned int numSectors,
+        const std::string& target) {
     std::vector<std::string> cmd;
     cmd.push_back(kMkfsPath);
     cmd.push_back("-J");
 
     cmd.push_back("-a");
-    cmd.push_back(mountpoint);
+    cmd.push_back(target);
 
     if (numSectors) {
         cmd.push_back("-l");
@@ -163,7 +177,11 @@ int Ext4::format(const char *fsPath, unsigned int numSectors, const char *mountp
 
     // Always generate a real UUID
     cmd.push_back("-u");
-    cmd.push_back(fsPath);
+    cmd.push_back(source);
 
-    return android::vold::ForkExecvp(cmd);
+    return ForkExecvp(cmd);
 }
+
+}  // namespace ext4
+}  // namespace vold
+}  // namespace android

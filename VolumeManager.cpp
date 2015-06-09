@@ -51,8 +51,8 @@
 #include "NetlinkManager.h"
 #include "ResponseCode.h"
 #include "Loop.h"
-#include "Ext4.h"
-#include "Fat.h"
+#include "fs/Ext4.h"
+#include "fs/Vfat.h"
 #include "Utils.h"
 #include "Devmapper.h"
 #include "Process.h"
@@ -725,9 +725,9 @@ int VolumeManager::createAsec(const char *id, unsigned int numSectors, const cha
         }
 
         if (usingExt4) {
-            formatStatus = Ext4::format(dmDevice, numImgSectors, mountPoint);
+            formatStatus = android::vold::ext4::Format(dmDevice, numImgSectors, mountPoint);
         } else {
-            formatStatus = Fat::format(dmDevice, numImgSectors, 0);
+            formatStatus = android::vold::vfat::Format(dmDevice, numImgSectors);
         }
 
         if (formatStatus < 0) {
@@ -754,10 +754,11 @@ int VolumeManager::createAsec(const char *id, unsigned int numSectors, const cha
 
         int mountStatus;
         if (usingExt4) {
-            mountStatus = Ext4::doMount(dmDevice, mountPoint, false, false, false);
+            mountStatus = android::vold::ext4::Mount(dmDevice, mountPoint,
+                    false, false, false);
         } else {
-            mountStatus = Fat::doMount(dmDevice, mountPoint, false, false, false, ownerUid, 0, 0000,
-                    false);
+            mountStatus = android::vold::vfat::Mount(dmDevice, mountPoint,
+                    false, false, false, ownerUid, 0, 0000, false);
         }
 
         if (mountStatus) {
@@ -916,7 +917,7 @@ int VolumeManager::resizeAsec(const char *id, unsigned numSectors, const char *k
      */
     waitForDevMapper(dmDevice);
 
-    if (Ext4::resize(dmDevice, numImgSectors)) {
+    if (android::vold::ext4::Resize(dmDevice, numImgSectors)) {
         SLOGE("Unable to resize %s (%s)", id, strerror(errno));
         if (cleanupDm) {
             Devmapper::destroy(idHash);
@@ -973,9 +974,11 @@ int VolumeManager::finalizeAsec(const char *id) {
 
     int result = 0;
     if (sb.c_opts & ASEC_SB_C_OPTS_EXT4) {
-        result = Ext4::doMount(loopDevice, mountPoint, true, true, true);
+        result = android::vold::ext4::Mount(loopDevice, mountPoint,
+                true, true, true);
     } else {
-        result = Fat::doMount(loopDevice, mountPoint, true, true, true, 0, 0, 0227, false);
+        result = android::vold::vfat::Mount(loopDevice, mountPoint,
+                true, true, true, 0, 0, 0227, false);
     }
 
     if (result) {
@@ -1039,7 +1042,7 @@ int VolumeManager::fixupAsecPermissions(const char *id, gid_t gid, const char* f
         return 0;
     }
 
-    int ret = Ext4::doMount(loopDevice, mountPoint,
+    int ret = android::vold::ext4::Mount(loopDevice, mountPoint,
             false /* read-only */,
             true  /* remount */,
             false /* executable */);
@@ -1101,7 +1104,7 @@ int VolumeManager::fixupAsecPermissions(const char *id, gid_t gid, const char* f
         result |= -1;
     }
 
-    result |= Ext4::doMount(loopDevice, mountPoint,
+    result |= android::vold::ext4::Mount(loopDevice, mountPoint,
             true /* read-only */,
             true /* remount */,
             true /* execute */);
@@ -1537,9 +1540,11 @@ int VolumeManager::mountAsec(const char *id, const char *key, int ownerUid, bool
 
     int result;
     if (sb.c_opts & ASEC_SB_C_OPTS_EXT4) {
-        result = Ext4::doMount(dmDevice, mountPoint, readOnly, false, readOnly);
+        result = android::vold::ext4::Mount(dmDevice, mountPoint,
+                readOnly, false, readOnly);
     } else {
-        result = Fat::doMount(dmDevice, mountPoint, readOnly, false, readOnly, ownerUid, 0, 0222, false);
+        result = android::vold::vfat::Mount(dmDevice, mountPoint,
+                readOnly, false, readOnly, ownerUid, 0, 0222, false);
     }
 
     if (result) {
@@ -1628,8 +1633,8 @@ int VolumeManager::mountObb(const char *img, const char *key, int ownerGid) {
      */
     waitForDevMapper(dmDevice);
 
-    if (Fat::doMount(dmDevice, mountPoint, true, false, true, 0, ownerGid,
-                     0227, false)) {
+    if (android::vold::vfat::Mount(dmDevice, mountPoint,
+            true, false, true, 0, ownerGid, 0227, false)) {
         SLOGE("Image mount failed (%s)", strerror(errno));
         if (cleanupDm) {
             Devmapper::destroy(idHash);

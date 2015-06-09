@@ -136,7 +136,7 @@ void Disk::createPublicVolume(dev_t device) {
         LOG(DEBUG) << "Device just partitioned; silently formatting";
         vol->setSilent(true);
         vol->create();
-        vol->format();
+        vol->format("auto");
         vol->destroy();
         vol->setSilent(false);
     }
@@ -168,7 +168,7 @@ void Disk::createPrivateVolume(dev_t device, const std::string& partGuid) {
         LOG(DEBUG) << "Device just partitioned; silently formatting";
         vol->setSilent(true);
         vol->create();
-        vol->format();
+        vol->format("auto");
         vol->destroy();
         vol->setSilent(false);
     }

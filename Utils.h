@@ -81,6 +81,11 @@ status_t StrToHex(const std::string& str, std::string& hex);
 uint64_t GetFreeBytes(const std::string& path);
 uint64_t GetTreeBytes(const std::string& path);
 
+bool IsFilesystemSupported(const std::string& fsType);
+
+/* Wipes contents of block device at given path */
+status_t WipeBlockDevice(const std::string& path);
+
 }  // namespace vold
 }  // namespace android
 

@@ -8,8 +8,9 @@ common_src_files := \
 	NetlinkManager.cpp \
 	NetlinkHandler.cpp \
 	Process.cpp \
-	Ext4.cpp \
-	Fat.cpp \
+	fs/Ext4.cpp \
+	fs/F2fs.cpp \
+	fs/Vfat.cpp \
 	Loop.cpp \
 	Devmapper.cpp \
 	ResponseCode.cpp \

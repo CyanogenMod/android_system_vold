@@ -45,16 +45,26 @@
 
 #include <logwrap/logwrap.h>
 
-#include "Fat.h"
+#include "Vfat.h"
 #include "Utils.h"
 #include "VoldUtil.h"
 
 using android::base::StringPrintf;
 
+namespace android {
+namespace vold {
+namespace vfat {
+
 static const char* kMkfsPath = "/system/bin/newfs_msdos";
 static const char* kFsckPath = "/system/bin/fsck_msdos";
 
-int Fat::check(const char *fsPath) {
+bool IsSupported() {
+    return access(kMkfsPath, X_OK) == 0
+            && access(kFsckPath, X_OK) == 0
+            && IsFilesystemSupported("vfat");
+}
+
+status_t Check(const std::string& source) {
     if (access(kFsckPath, X_OK)) {
         SLOGW("Skipping fs checks\n");
         return 0;
@@ -67,10 +77,10 @@ int Fat::check(const char *fsPath) {
         cmd.push_back(kFsckPath);
         cmd.push_back("-p");
         cmd.push_back("-f");
-        cmd.push_back(fsPath);
+        cmd.push_back(source);
 
         // Fat devices are currently always untrusted
-        rc = android::vold::ForkExecvp(cmd, android::vold::sFsckUntrustedContext);
+        rc = ForkExecvp(cmd, sFsckUntrustedContext);
 
         if (rc < 0) {
             SLOGE("Filesystem check failed due to logwrap error");
@@ -108,12 +118,15 @@ int Fat::check(const char *fsPath) {
     return 0;
 }
 
-int Fat::doMount(const char *fsPath, const char *mountPoint,
-                 bool ro, bool remount, bool executable,
-                 int ownerUid, int ownerGid, int permMask, bool createLost) {
+status_t Mount(const std::string& source, const std::string& target, bool ro,
+        bool remount, bool executable, int ownerUid, int ownerGid, int permMask,
+        bool createLost) {
     int rc;
     unsigned long flags;
     char mountData[255];
+
+    const char* c_source = source.c_str();
+    const char* c_target = target.c_str();
 
     flags = MS_NODEV | MS_NOSUID | MS_DIRSYNC;
 
@@ -139,17 +152,17 @@ int Fat::doMount(const char *fsPath, const char *mountPoint,
             "utf8,uid=%d,gid=%d,fmask=%o,dmask=%o,shortname=mixed",
             ownerUid, ownerGid, permMask, permMask);
 
-    rc = mount(fsPath, mountPoint, "vfat", flags, mountData);
+    rc = mount(c_source, c_target, "vfat", flags, mountData);
 
     if (rc && errno == EROFS) {
-        SLOGE("%s appears to be a read only filesystem - retrying mount RO", fsPath);
+        SLOGE("%s appears to be a read only filesystem - retrying mount RO", c_source);
         flags |= MS_RDONLY;
-        rc = mount(fsPath, mountPoint, "vfat", flags, mountData);
+        rc = mount(c_source, c_target, "vfat", flags, mountData);
     }
 
     if (rc == 0 && createLost) {
         char *lost_path;
-        asprintf(&lost_path, "%s/LOST.DIR", mountPoint);
+        asprintf(&lost_path, "%s/LOST.DIR", c_target);
         if (access(lost_path, F_OK)) {
             /*
              * Create a LOST.DIR in the root so we have somewhere to put
@@ -165,11 +178,7 @@ int Fat::doMount(const char *fsPath, const char *mountPoint,
     return rc;
 }
 
-int Fat::format(const char *fsPath, unsigned int numSectors, bool wipe) {
-    if (wipe) {
-        Fat::wipe(fsPath, numSectors);
-    }
-
+status_t Format(const std::string& source, unsigned int numSectors) {
     std::vector<std::string> cmd;
     cmd.push_back(kMkfsPath);
     cmd.push_back("-F");
@@ -185,9 +194,9 @@ int Fat::format(const char *fsPath, unsigned int numSectors, bool wipe) {
         cmd.push_back(StringPrintf("%u", numSectors));
     }
 
-    cmd.push_back(fsPath);
+    cmd.push_back(source);
 
-    int rc = android::vold::ForkExecvp(cmd);
+    int rc = ForkExecvp(cmd);
     if (rc < 0) {
         SLOGE("Filesystem format failed due to logwrap error");
         errno = EIO;
@@ -205,36 +214,6 @@ int Fat::format(const char *fsPath, unsigned int numSectors, bool wipe) {
     return 0;
 }
 
-void Fat::wipe(const char *fsPath, unsigned int numSectors) {
-    unsigned long long range[2];
-
-    int fd = open(fsPath, O_RDWR | O_CLOEXEC);
-    if (fd == -1) {
-        SLOGE("Fat wipe failed to open device %s", fsPath);
-        return;
-    }
-
-    if (numSectors == 0) {
-        unsigned long nr_sec;
-        get_blkdev_size(fd, &nr_sec);
-        if (nr_sec > UINT32_MAX) {
-            SLOGE("Too many sectors for FAT: %ld", nr_sec);
-            close(fd);
-            return;
-        }
-        numSectors = nr_sec;
-    }
-    if (numSectors == 0) {
-        SLOGE("Fat wipe failed to determine size of %s", fsPath);
-        close(fd);
-        return;
-    }
-    range[0] = 0;
-    range[1] = (unsigned long long)numSectors * 512;
-    if (ioctl(fd, BLKDISCARD, &range) < 0) {
-        SLOGE("Fat wipe failed to discard blocks on %s", fsPath);
-    } else {
-        SLOGI("Fat wipe %d sectors on %s succeeded", numSectors, fsPath);
-    }
-    close(fd);
-}
+}  // namespace vfat
+}  // namespace vold
+}  // namespace android

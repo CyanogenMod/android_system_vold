@@ -18,6 +18,7 @@
 #include "Utils.h"
 #include "Process.h"
 
+#include <base/file.h>
 #include <base/logging.h>
 #include <base/stringprintf.h>
 #include <cutils/fs.h>
@@ -39,6 +40,7 @@
 #define UMOUNT_NOFOLLOW    0x00000008  /* Don't follow symlink on umount */
 #endif
 
+using android::base::ReadFileToString;
 using android::base::StringPrintf;
 
 namespace android {
@@ -50,6 +52,8 @@ security_context_t sFsckContext = nullptr;
 security_context_t sFsckUntrustedContext = nullptr;
 
 static const char* kBlkidPath = "/system/bin/blkid";
+
+static const char* kProcFilesystems = "/proc/filesystems";
 
 status_t CreateDeviceNode(const std::string& path, dev_t dev) {
     const char* cpath = path.c_str();
@@ -461,6 +465,48 @@ uint64_t GetTreeBytes(const std::string& path) {
         close(dirfd);
         return res;
     }
+}
+
+bool IsFilesystemSupported(const std::string& fsType) {
+    std::string supported;
+    if (!ReadFileToString(kProcFilesystems, &supported)) {
+        PLOG(ERROR) << "Failed to read supported filesystems";
+        return false;
+    }
+    return supported.find(fsType + "\n") != std::string::npos;
+}
+
+status_t WipeBlockDevice(const std::string& path) {
+    status_t res = -1;
+    const char* c_path = path.c_str();
+    unsigned long nr_sec = 0;
+    unsigned long long range[2];
+
+    int fd = TEMP_FAILURE_RETRY(open(c_path, O_RDWR | O_CLOEXEC));
+    if (fd == -1) {
+        PLOG(ERROR) << "Failed to open " << path;
+        goto done;
+    }
+
+    if ((ioctl(fd, BLKGETSIZE, nr_sec)) == -1) {
+        PLOG(ERROR) << "Failed to determine size of " << path;
+        goto done;
+    }
+
+    range[0] = 0;
+    range[1] = (unsigned long long) nr_sec * 512;
+
+    LOG(INFO) << "About to discard " << range[1] << " on " << path;
+    if (ioctl(fd, BLKDISCARD, &range) == 0) {
+        LOG(INFO) << "Discard success on " << path;
+        res = 0;
+    } else {
+        PLOG(ERROR) << "Discard failure on " << path;
+    }
+
+done:
+    close(fd);
+    return res;
 }
 
 }  // namespace vold
