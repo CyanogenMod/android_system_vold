@@ -47,7 +47,7 @@ protected:
     status_t doDestroy() override;
     status_t doMount() override;
     status_t doUnmount() override;
-    status_t doFormat() override;
+    status_t doFormat(const std::string& fsType) override;
 
     status_t readMetadata();
     status_t initAsecStage();

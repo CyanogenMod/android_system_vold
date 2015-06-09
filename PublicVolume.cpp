@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-#include "Fat.h"
+#include "fs/Vfat.h"
 #include "PublicVolume.h"
 #include "Utils.h"
 #include "VolumeManager.h"
@@ -94,7 +94,7 @@ status_t PublicVolume::doMount() {
     // TODO: expand to support mounting other filesystems
     readMetadata();
 
-    if (Fat::check(mDevPath.c_str())) {
+    if (vfat::Check(mDevPath)) {
         LOG(ERROR) << getId() << " failed filesystem check";
         return -EIO;
     }
@@ -119,7 +119,7 @@ status_t PublicVolume::doMount() {
         return -errno;
     }
 
-    if (Fat::doMount(mDevPath.c_str(), mRawPath.c_str(), false, false, false,
+    if (vfat::Mount(mDevPath, mRawPath, false, false, false,
             AID_MEDIA_RW, AID_MEDIA_RW, 0007, true)) {
         PLOG(ERROR) << getId() << " failed to mount " << mDevPath;
         return -EIO;
@@ -200,11 +200,20 @@ status_t PublicVolume::doUnmount() {
     return OK;
 }
 
-status_t PublicVolume::doFormat() {
-    if (Fat::format(mDevPath.c_str(), 0, true)) {
-        LOG(ERROR) << getId() << " failed to format";
-        return -errno;
+status_t PublicVolume::doFormat(const std::string& fsType) {
+    if (fsType == "vfat" || fsType == "auto") {
+        if (WipeBlockDevice(mDevPath) != OK) {
+            LOG(WARNING) << getId() << " failed to wipe";
+        }
+        if (vfat::Format(mDevPath, 0)) {
+            LOG(ERROR) << getId() << " failed to format";
+            return -errno;
+        }
+    } else {
+        LOG(ERROR) << "Unsupported filesystem " << fsType;
+        return -EINVAL;
     }
+
     return OK;
 }
 
