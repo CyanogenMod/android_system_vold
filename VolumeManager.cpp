@@ -426,28 +426,38 @@ int VolumeManager::linkPrimary(userid_t userId) {
     return 0;
 }
 
-int VolumeManager::startUser(userid_t userId) {
+int VolumeManager::onUserAdded(userid_t userId, int userSerialNumber) {
+    mAddedUsers[userId] = userSerialNumber;
+    return 0;
+}
+
+int VolumeManager::onUserRemoved(userid_t userId) {
+    mAddedUsers.erase(userId);
+    return 0;
+}
+
+int VolumeManager::onUserStarted(userid_t userId) {
     // Note that sometimes the system will spin up processes from Zygote
     // before actually starting the user, so we're okay if Zygote
     // already created this directory.
     std::string path(StringPrintf("%s/%d", kUserMountPath, userId));
     fs_prepare_dir(path.c_str(), 0755, AID_ROOT, AID_ROOT);
 
-    mUsers.push_back(userId);
+    mStartedUsers.insert(userId);
     if (mPrimary) {
         linkPrimary(userId);
     }
     return 0;
 }
 
-int VolumeManager::cleanupUser(userid_t userId) {
-    mUsers.remove(userId);
+int VolumeManager::onUserStopped(userid_t userId) {
+    mStartedUsers.erase(userId);
     return 0;
 }
 
 int VolumeManager::setPrimary(const std::shared_ptr<android::vold::VolumeBase>& vol) {
     mPrimary = vol;
-    for (userid_t userId : mUsers) {
+    for (userid_t userId : mStartedUsers) {
         linkPrimary(userId);
     }
     return 0;
@@ -462,7 +472,8 @@ int VolumeManager::reset() {
         disk->destroy();
         disk->create();
     }
-    mUsers.clear();
+    mAddedUsers.clear();
+    mStartedUsers.clear();
     return 0;
 }
 
