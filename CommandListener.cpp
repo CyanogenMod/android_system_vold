@@ -184,13 +184,21 @@ int CommandListener::VolumeCmd::runCommand(SocketClient *cli,
         // mkdirs [path]
         return sendGenericOkFail(cli, vm->mkdirs(argv[2]));
 
-    } else if (cmd == "start_user" && argc > 2) {
-        // start_user [user]
-        return sendGenericOkFail(cli, vm->startUser(atoi(argv[2])));
+    } else if (cmd == "user_added" && argc > 3) {
+        // user_added [user] [serial]
+        return sendGenericOkFail(cli, vm->onUserAdded(atoi(argv[2]), atoi(argv[3])));
 
-    } else if (cmd == "cleanup_user" && argc > 2) {
-        // cleanup_user [user]
-        return sendGenericOkFail(cli, vm->cleanupUser(atoi(argv[2])));
+    } else if (cmd == "user_removed" && argc > 2) {
+        // user_removed [user]
+        return sendGenericOkFail(cli, vm->onUserRemoved(atoi(argv[2])));
+
+    } else if (cmd == "user_started" && argc > 2) {
+        // user_started [user]
+        return sendGenericOkFail(cli, vm->onUserStarted(atoi(argv[2])));
+
+    } else if (cmd == "user_stopped" && argc > 2) {
+        // user_stopped [user]
+        return sendGenericOkFail(cli, vm->onUserStopped(atoi(argv[2])));
 
     } else if (cmd == "mount" && argc > 2) {
         // mount [volId] [flags] [user]

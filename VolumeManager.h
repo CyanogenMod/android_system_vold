@@ -26,6 +26,8 @@
 #include <list>
 #include <mutex>
 #include <string>
+#include <unordered_map>
+#include <unordered_set>
 
 #include <cutils/multiuser.h>
 #include <utils/List.h>
@@ -118,8 +120,10 @@ public:
 
     nsecs_t benchmarkVolume(const std::string& id);
 
-    int startUser(userid_t userId);
-    int cleanupUser(userid_t userId);
+    int onUserAdded(userid_t userId, int userSerialNumber);
+    int onUserRemoved(userid_t userId);
+    int onUserStarted(userid_t userId);
+    int onUserStopped(userid_t userId);
 
     int setPrimary(const std::shared_ptr<android::vold::VolumeBase>& vol);
 
@@ -198,7 +202,8 @@ private:
     std::list<std::shared_ptr<DiskSource>> mDiskSources;
     std::list<std::shared_ptr<android::vold::Disk>> mDisks;
 
-    std::list<userid_t> mUsers;
+    std::unordered_map<userid_t, int> mAddedUsers;
+    std::unordered_set<userid_t> mStartedUsers;
 
     std::shared_ptr<android::vold::VolumeBase> mInternalEmulated;
     std::shared_ptr<android::vold::VolumeBase> mPrimary;
