@@ -44,8 +44,6 @@
 #include "Process.h"
 #include "Loop.h"
 #include "Devmapper.h"
-#include "Ext4Crypt.h"
-#include "cryptfs.h"
 #include "fstrim.h"
 #include "MoveTask.h"
 
