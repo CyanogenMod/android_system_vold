@@ -1413,7 +1413,7 @@ int wait_and_unmount(const char *mountpoint, bool kill)
     return rc;
 }
 
-#define DATA_PREP_TIMEOUT 200
+#define DATA_PREP_TIMEOUT 1000
 static int prep_data_fs(void)
 {
     int i;
@@ -1431,7 +1431,7 @@ static int prep_data_fs(void)
         if (*p == '1') {
             break;
         } else {
-            usleep(250000);
+            usleep(50000);
         }
     }
     if (i == DATA_PREP_TIMEOUT) {
