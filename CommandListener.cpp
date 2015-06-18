@@ -258,6 +258,11 @@ int CommandListener::VolumeCmd::runCommand(SocketClient *cli,
         nsecs_t res = vm->benchmarkVolume(id);
         return cli->sendMsg(ResponseCode::CommandOkay,
                 android::base::StringPrintf("%" PRId64, res).c_str(), false);
+
+    } else if (cmd == "forget_partition" && argc > 2) {
+        // forget_partition [partGuid]
+        std::string partGuid(argv[2]);
+        return sendGenericOkFail(cli, vm->forgetPartition(partGuid));
     }
 
     return cli->sendMsg(ResponseCode::CommandSyntaxError, nullptr, false);

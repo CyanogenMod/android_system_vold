@@ -120,6 +120,8 @@ public:
 
     nsecs_t benchmarkVolume(const std::string& id);
 
+    int forgetPartition(const std::string& partGuid);
+
     int onUserAdded(userid_t userId, int userSerialNumber);
     int onUserRemoved(userid_t userId);
     int onUserStarted(userid_t userId);
