@@ -350,7 +350,7 @@ static int keymaster_sign_object(struct crypt_mnt_ftr *ftr,
         keymaster_error_t error = keymaster1_dev->begin(keymaster1_dev, KM_PURPOSE_SIGN, &key,
                                                         &param_set, NULL /* out_params */,
                                                         &op_handle);
-        if (error == KM_ERROR_VERIFICATION_FAILED) {
+        if (error == KM_ERROR_KEY_RATE_LIMIT_EXCEEDED) {
             // Key usage has been rate-limited.  Wait a bit and try again.
             sleep(KEYMASTER_CRYPTFS_RATE_LIMIT);
             error = keymaster1_dev->begin(keymaster1_dev, KM_PURPOSE_SIGN, &key,
