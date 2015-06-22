@@ -18,7 +18,6 @@
 
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 #include <errno.h>
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -183,11 +182,9 @@ static int read_file_as_string_atomically(const std::string &path, std::string &
     }
 }
 
-// Search a string representing result from /proc/mounts
+// Search a string representing the contents of /proc/mounts
 // for the mount point of a particular file by prefix matching
-// and return the corresponding block device as a
-// pointer into the mounts string.
-// This destroys the mounts string.
+// and return the corresponding block device.
 static int find_block_device_for_path(
     const std::string &mounts,
     const std::string &path,
@@ -201,19 +198,18 @@ static int find_block_device_for_path(
         if (line_end == mounts.end()) {
             break;
         }
-        auto device_end = std::find(line_begin, line_end, ' ');;
+        auto device_end = std::find(line_begin, line_end, ' ');
         if (device_end == line_end) {
             break;
         }
-        auto mountpoint_begin = device_end +1;
+        auto mountpoint_begin = device_end + 1;
         auto mountpoint_end = std::find(mountpoint_begin, line_end, ' ');
         if (mountpoint_end == line_end) {
             break;
         }
         if (std::find(line_begin, mountpoint_end, '\\') != mountpoint_end) {
-            // We don't correctly handle escape sequences
-            // and we don't expect to encounter any
-            // so fail if we do.
+            // We don't correctly handle escape sequences, and we don't expect
+            // to encounter any, so fail if we do.
             break;
         }
         size_t mountpoint_len = mountpoint_end - mountpoint_begin;
@@ -224,12 +220,12 @@ static int find_block_device_for_path(
             block_device = std::string(line_begin, device_end);
             best_prefix = mountpoint_len;
         }
-        line_begin = line_end +1;
+        line_begin = line_end + 1;
     }
     // All of the "break"s above are fatal parse errors.
     if (line_begin != mounts.end()) {
-        SLOGE("Unable to parse line in %s: %s",
-            path.c_str(), std::string(line_begin, line_end).c_str());
+        auto bad_line = std::string(line_begin, line_end);
+        SLOGE("Unable to parse line in %s: %s", path.c_str(), bad_line.c_str());
         return -1;
     }
     if (best_prefix == 0) {
