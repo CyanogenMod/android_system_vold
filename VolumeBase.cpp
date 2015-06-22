@@ -59,6 +59,16 @@ status_t VolumeBase::setDiskId(const std::string& diskId) {
     return OK;
 }
 
+status_t VolumeBase::setPartGuid(const std::string& partGuid) {
+    if (mCreated) {
+        LOG(WARNING) << getId() << " partGuid change requires destroyed";
+        return -EBUSY;
+    }
+
+    mPartGuid = partGuid;
+    return OK;
+}
+
 status_t VolumeBase::setMountFlags(int mountFlags) {
     if ((mState != State::kUnmounted) && (mState != State::kUnmountable)) {
         LOG(WARNING) << getId() << " flags change requires state unmounted or unmountable";
@@ -155,7 +165,8 @@ status_t VolumeBase::create() {
 
     mCreated = true;
     status_t res = doCreate();
-    notifyEvent(ResponseCode::VolumeCreated, StringPrintf("%d %s", mType, mDiskId.c_str()));
+    notifyEvent(ResponseCode::VolumeCreated,
+            StringPrintf("%d \"%s\" \"%s\"", mType, mDiskId.c_str(), mPartGuid.c_str()));
     setState(State::kUnmounted);
     return res;
 }

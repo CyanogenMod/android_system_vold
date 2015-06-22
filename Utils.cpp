@@ -52,6 +52,7 @@ security_context_t sFsckContext = nullptr;
 security_context_t sFsckUntrustedContext = nullptr;
 
 static const char* kBlkidPath = "/system/bin/blkid";
+static const char* kKeyPath = "/data/misc/vold";
 
 static const char* kProcFilesystems = "/proc/filesystems";
 
@@ -391,6 +392,14 @@ status_t StrToHex(const std::string& str, std::string& hex) {
     return OK;
 }
 
+status_t NormalizeHex(const std::string& in, std::string& out) {
+    std::string tmp;
+    if (HexToStr(in, tmp)) {
+        return -EINVAL;
+    }
+    return StrToHex(tmp, out);
+}
+
 uint64_t GetFreeBytes(const std::string& path) {
     struct statvfs sb;
     if (statvfs(path.c_str(), &sb) == 0) {
@@ -507,6 +516,10 @@ status_t WipeBlockDevice(const std::string& path) {
 done:
     close(fd);
     return res;
+}
+
+std::string BuildKeyPath(const std::string& partGuid) {
+    return StringPrintf("%s/expand_%s.key", kKeyPath, partGuid.c_str());
 }
 
 }  // namespace vold

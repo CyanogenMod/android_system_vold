@@ -72,8 +72,6 @@ static const char* kGptBasicData = "EBD0A0A2-B9E5-4433-87C0-68B6B72699C7";
 static const char* kGptAndroidMeta = "19A710A2-B3CA-11E4-B026-10604B889DCF";
 static const char* kGptAndroidExpand = "193D1EA4-B3CA-11E4-B075-10604B889DCF";
 
-static const char* kKeyPath = "/data/misc/vold";
-
 enum class Table {
     kUnknown,
     kMbr,
@@ -126,10 +124,6 @@ status_t Disk::destroy() {
     return OK;
 }
 
-static std::string BuildKeyPath(const std::string& partGuid) {
-    return StringPrintf("%s/expand_%s.key", kKeyPath, partGuid.c_str());
-}
-
 void Disk::createPublicVolume(dev_t device) {
     auto vol = std::shared_ptr<VolumeBase>(new PublicVolume(device));
     if (mJustPartitioned) {
@@ -147,13 +141,11 @@ void Disk::createPublicVolume(dev_t device) {
 }
 
 void Disk::createPrivateVolume(dev_t device, const std::string& partGuid) {
-    std::string tmp;
     std::string normalizedGuid;
-    if (HexToStr(partGuid, tmp)) {
+    if (NormalizeHex(partGuid, normalizedGuid)) {
         LOG(WARNING) << "Invalid GUID " << partGuid;
         return;
     }
-    StrToHex(tmp, normalizedGuid);
 
     std::string keyRaw;
     if (!ReadFileToString(BuildKeyPath(normalizedGuid), &keyRaw)) {
@@ -175,6 +167,7 @@ void Disk::createPrivateVolume(dev_t device, const std::string& partGuid) {
 
     mVolumes.push_back(vol);
     vol->setDiskId(getId());
+    vol->setPartGuid(partGuid);
     vol->create();
 }
 

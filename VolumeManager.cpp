@@ -59,6 +59,7 @@
 #include "Asec.h"
 #include "VoldUtil.h"
 #include "cryptfs.h"
+#include "fstrim.h"
 
 #define MASS_STORAGE_FILE_PATH  "/sys/class/android_usb/android0/f_mass_storage/lun/file"
 
@@ -403,6 +404,22 @@ nsecs_t VolumeManager::benchmarkVolume(const std::string& id) {
     }
 
     return android::vold::Benchmark(path, sysPath);
+}
+
+int VolumeManager::forgetPartition(const std::string& partGuid) {
+    std::string normalizedGuid;
+    if (android::vold::NormalizeHex(partGuid, normalizedGuid)) {
+        LOG(WARNING) << "Invalid GUID " << partGuid;
+        return -1;
+    }
+
+    std::string keyPath = android::vold::BuildKeyPath(normalizedGuid);
+    if (unlink(keyPath.c_str()) != 0) {
+        LOG(ERROR) << "Failed to unlink " << keyPath;
+        return -1;
+    }
+
+    return 0;
 }
 
 int VolumeManager::linkPrimary(userid_t userId) {
