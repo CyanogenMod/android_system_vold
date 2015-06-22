@@ -76,6 +76,7 @@ public:
 
     const std::string& getId() { return mId; }
     const std::string& getDiskId() { return mDiskId; }
+    const std::string& getPartGuid() { return mPartGuid; }
     Type getType() { return mType; }
     int getMountFlags() { return mMountFlags; }
     userid_t getMountUserId() { return mMountUserId; }
@@ -84,6 +85,7 @@ public:
     const std::string& getInternalPath() { return mInternalPath; }
 
     status_t setDiskId(const std::string& diskId);
+    status_t setPartGuid(const std::string& partGuid);
     status_t setMountFlags(int mountFlags);
     status_t setMountUserId(userid_t mountUserId);
     status_t setSilent(bool silent);
@@ -120,6 +122,8 @@ private:
     std::string mId;
     /* ID that uniquely references parent disk while alive */
     std::string mDiskId;
+    /* Partition GUID of this volume */
+    std::string mPartGuid;
     /* Volume type */
     Type mType;
     /* Flags used when mounting this volume */

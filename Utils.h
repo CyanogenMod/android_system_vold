@@ -77,6 +77,8 @@ status_t ReadRandomBytes(size_t bytes, std::string& out);
 status_t HexToStr(const std::string& hex, std::string& str);
 /* Converts raw bytes to hex string */
 status_t StrToHex(const std::string& str, std::string& hex);
+/* Normalize given hex string into consistent format */
+status_t NormalizeHex(const std::string& in, std::string& out);
 
 uint64_t GetFreeBytes(const std::string& path);
 uint64_t GetTreeBytes(const std::string& path);
@@ -85,6 +87,8 @@ bool IsFilesystemSupported(const std::string& fsType);
 
 /* Wipes contents of block device at given path */
 status_t WipeBlockDevice(const std::string& path);
+
+std::string BuildKeyPath(const std::string& partGuid);
 
 }  // namespace vold
 }  // namespace android
