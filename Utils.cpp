@@ -522,5 +522,15 @@ std::string BuildKeyPath(const std::string& partGuid) {
     return StringPrintf("%s/expand_%s.key", kKeyPath, partGuid.c_str());
 }
 
+dev_t GetDevice(const std::string& path) {
+    struct stat sb;
+    if (stat(path.c_str(), &sb)) {
+        PLOG(WARNING) << "Failed to stat " << path;
+        return 0;
+    } else {
+        return sb.st_dev;
+    }
+}
+
 }  // namespace vold
 }  // namespace android

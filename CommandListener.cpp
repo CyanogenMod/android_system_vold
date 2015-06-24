@@ -263,6 +263,12 @@ int CommandListener::VolumeCmd::runCommand(SocketClient *cli,
         // forget_partition [partGuid]
         std::string partGuid(argv[2]);
         return sendGenericOkFail(cli, vm->forgetPartition(partGuid));
+
+    } else if (cmd == "remount_uid" && argc > 3) {
+        // remount_uid [uid] [none|default|read|write]
+        uid_t uid = atoi(argv[2]);
+        std::string mode(argv[3]);
+        return sendGenericOkFail(cli, vm->remountUid(uid, mode));
     }
 
     return cli->sendMsg(ResponseCode::CommandSyntaxError, nullptr, false);

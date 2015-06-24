@@ -90,6 +90,8 @@ status_t WipeBlockDevice(const std::string& path);
 
 std::string BuildKeyPath(const std::string& partGuid);
 
+dev_t GetDevice(const std::string& path);
+
 }  // namespace vold
 }  // namespace android
 
