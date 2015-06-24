@@ -90,7 +90,6 @@
 #define RSA_KEY_SIZE_BYTES (RSA_KEY_SIZE / 8)
 #define RSA_EXPONENT 0x10001
 #define KEYMASTER_CRYPTFS_RATE_LIMIT 1  // Maximum one try per second
-#define KEYMASTER_CRYPTFS_APP_ID "vold cryptfs"
 
 #define RETRY_MOUNT_ATTEMPTS 10
 #define RETRY_MOUNT_DELAY_SECONDS 1
@@ -203,23 +202,18 @@ static int keymaster_create_key(struct crypt_mnt_ftr *ftr)
             keymaster_param_int(KM_TAG_KEY_SIZE, RSA_KEY_SIZE),
             keymaster_param_long(KM_TAG_RSA_PUBLIC_EXPONENT, RSA_EXPONENT),
 
-            /* Padding & digest specifications.  We'll use none/none, but add better options
-             * just in case we want to use them later.  Actual selection is done at operation
-             * time, but restricted to options specified at keygen. */
+	    /* The only allowed purpose for this key is signing. */
+	    keymaster_param_enum(KM_TAG_PURPOSE, KM_PURPOSE_SIGN),
+
+            /* Padding & digest specifications. */
             keymaster_param_enum(KM_TAG_PADDING, KM_PAD_NONE),
-            keymaster_param_enum(KM_TAG_PADDING, KM_PAD_RSA_PKCS1_1_5_SIGN),
             keymaster_param_enum(KM_TAG_DIGEST, KM_DIGEST_NONE),
-            keymaster_param_enum(KM_TAG_DIGEST, KM_DIGEST_SHA_2_256),
 
             /* Require that the key be usable in standalone mode.  File system isn't available. */
             keymaster_param_enum(KM_TAG_BLOB_USAGE_REQUIREMENTS, KM_BLOB_STANDALONE),
 
             /* No auth requirements, because cryptfs is not yet integrated with gatekeeper. */
             keymaster_param_bool(KM_TAG_NO_AUTH_REQUIRED),
-
-            /* Set app ID to a value keystore will never use */
-            keymaster_param_blob(KM_TAG_APPLICATION_ID, (uint8_t*)KEYMASTER_CRYPTFS_APP_ID,
-                                 sizeof(KEYMASTER_CRYPTFS_APP_ID)),
 
             /* Rate-limit key usage attempts, to rate-limit brute force */
             keymaster_param_int(KM_TAG_MIN_SECONDS_BETWEEN_OPS, KEYMASTER_CRYPTFS_RATE_LIMIT),
