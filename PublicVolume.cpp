@@ -94,6 +94,11 @@ status_t PublicVolume::doMount() {
     // TODO: expand to support mounting other filesystems
     readMetadata();
 
+    if (mFsType != "vfat") {
+        LOG(ERROR) << getId() << " unsupported filesystem " << mFsType;
+        return -EIO;
+    }
+
     if (vfat::Check(mDevPath)) {
         LOG(ERROR) << getId() << " failed filesystem check";
         return -EIO;
