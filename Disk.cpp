@@ -36,8 +36,6 @@
 #include <sys/stat.h>
 #include <sys/mount.h>
 
-#define ENTIRE_DEVICE_FALLBACK 0
-
 using android::base::ReadFileToString;
 using android::base::WriteStringToFile;
 using android::base::StringPrintf;
@@ -306,14 +304,18 @@ status_t Disk::readPartitions() {
         }
     }
 
-#if ENTIRE_DEVICE_FALLBACK
     // Ugly last ditch effort, treat entire disk as partition
     if (table == Table::kUnknown || !foundParts) {
-        // TODO: use blkid to confirm filesystem before doing this
         LOG(WARNING) << mId << " has unknown partition table; trying entire device";
-        createPublicVolume(mDevice);
+
+        std::string fsType;
+        std::string unused;
+        if (ReadMetadataUntrusted(mDevPath, fsType, unused, unused) == OK) {
+            createPublicVolume(mDevice);
+        } else {
+            LOG(WARNING) << mId << " failed to identify, giving up";
+        }
     }
-#endif
 
     notifyEvent(ResponseCode::DiskScanned);
     mJustPartitioned = false;
