@@ -22,6 +22,7 @@
 #include <base/stringprintf.h>
 #include <base/logging.h>
 #include <private/android_filesystem_config.h>
+#include <hardware_legacy/power.h>
 
 #include <dirent.h>
 #include <sys/wait.h>
@@ -39,6 +40,8 @@ static const int kMoveFailedInternalError = -6;
 
 static const char* kCpPath = "/system/bin/cp";
 static const char* kRmPath = "/system/bin/rm";
+
+static const char* kWakeLock = "MoveTask";
 
 MoveTask::MoveTask(const std::shared_ptr<VolumeBase>& from,
         const std::shared_ptr<VolumeBase>& to) :
@@ -168,6 +171,8 @@ static void bringOnline(const std::shared_ptr<VolumeBase>& vol) {
 }
 
 void MoveTask::run() {
+    acquire_wake_lock(PARTIAL_WAKE_LOCK, kWakeLock);
+
     std::string fromPath;
     std::string toPath;
 
@@ -205,11 +210,13 @@ void MoveTask::run() {
     }
 
     notifyProgress(kMoveSucceeded);
+    release_wake_lock(kWakeLock);
     return;
 fail:
     bringOnline(mFrom);
     bringOnline(mTo);
     notifyProgress(kMoveFailedInternalError);
+    release_wake_lock(kWakeLock);
     return;
 }
 

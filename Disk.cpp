@@ -105,6 +105,15 @@ std::shared_ptr<VolumeBase> Disk::findVolume(const std::string& id) {
     return nullptr;
 }
 
+void Disk::listVolumes(VolumeBase::Type type, std::list<std::string>& list) {
+    for (auto vol : mVolumes) {
+        if (vol->getType() == type) {
+            list.push_back(vol->getId());
+        }
+        // TODO: consider looking at stacked volumes
+    }
+}
+
 status_t Disk::create() {
     CHECK(!mCreated);
     mCreated = true;
@@ -229,6 +238,7 @@ status_t Disk::readMetadata() {
 
     notifyEvent(ResponseCode::DiskSizeChanged, StringPrintf("%" PRId64, mSize));
     notifyEvent(ResponseCode::DiskLabelChanged, mLabel);
+    notifyEvent(ResponseCode::DiskSysPathChanged, mSysPath);
     return OK;
 }
 

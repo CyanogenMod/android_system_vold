@@ -17,7 +17,6 @@ common_src_files := \
 	CheckBattery.cpp \
 	Ext4Crypt.cpp \
 	VoldUtil.c \
-	fstrim.c \
 	cryptfs.c \
 	Disk.cpp \
 	VolumeBase.cpp \
@@ -27,6 +26,7 @@ common_src_files := \
 	Utils.cpp \
 	MoveTask.cpp \
 	Benchmark.cpp \
+	TrimTask.cpp \
 
 common_c_includes := \
 	system/extras/ext4_utils \

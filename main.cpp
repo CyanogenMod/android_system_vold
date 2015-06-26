@@ -208,25 +208,15 @@ static void coldboot(const char *path) {
 }
 
 static int process_config(VolumeManager *vm) {
-    bool has_adoptable = false;
-    char hardware[PROPERTY_VALUE_MAX];
-    property_get("ro.hardware", hardware, "");
-    std::string fstab_filename(StringPrintf("/fstab.%s", hardware));
-
-#ifdef DEBUG_FSTAB
-    if (access(DEBUG_FSTAB, R_OK) == 0) {
-        LOG(DEBUG) << "Found debug fstab; switching!";
-        fstab_filename = DEBUG_FSTAB;
-    }
-#endif
-
-    fstab = fs_mgr_read_fstab(fstab_filename.c_str());
+    std::string path(android::vold::DefaultFstabPath());
+    fstab = fs_mgr_read_fstab(path.c_str());
     if (!fstab) {
-        PLOG(ERROR) << "Failed to open " << fstab_filename;
+        PLOG(ERROR) << "Failed to open default fstab " << path;
         return -1;
     }
 
     /* Loop through entries looking for ones that vold manages */
+    bool has_adoptable = false;
     for (int i = 0; i < fstab->num_entries; i++) {
         if (fs_mgr_is_voldmanaged(&fstab->recs[i])) {
             if (fs_mgr_is_nonremovable(&fstab->recs[i])) {
