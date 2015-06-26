@@ -39,37 +39,45 @@ static const char* kFusePath = "/system/bin/sdcard";
 EmulatedVolume::EmulatedVolume(const std::string& rawPath) :
         VolumeBase(Type::kEmulated), mFusePid(0) {
     setId("emulated");
-    mFusePath = "/storage/emulated";
     mRawPath = rawPath;
+    mLabel = "emulated";
 }
 
 EmulatedVolume::EmulatedVolume(const std::string& rawPath, dev_t device,
         const std::string& fsUuid) : VolumeBase(Type::kEmulated), mFusePid(0) {
     setId(StringPrintf("emulated:%u,%u", major(device), minor(device)));
-    mFusePath = StringPrintf("/storage/%s", fsUuid.c_str());
     mRawPath = rawPath;
+    mLabel = fsUuid;
 }
 
 EmulatedVolume::~EmulatedVolume() {
 }
 
 status_t EmulatedVolume::doMount() {
-    if (fs_prepare_dir(mFusePath.c_str(), 0700, AID_ROOT, AID_ROOT)) {
-        PLOG(ERROR) << getId() << " failed to create mount point " << mFusePath;
+    mFuseDefault = StringPrintf("/mnt/runtime_default/%s", mLabel.c_str());
+    mFuseRead = StringPrintf("/mnt/runtime_read/%s", mLabel.c_str());
+    mFuseWrite = StringPrintf("/mnt/runtime_write/%s", mLabel.c_str());
+
+    setInternalPath(mRawPath);
+    setPath(StringPrintf("/storage/%s", mLabel.c_str()));
+
+    if (fs_prepare_dir(mFuseDefault.c_str(), 0700, AID_ROOT, AID_ROOT) ||
+            fs_prepare_dir(mFuseRead.c_str(), 0700, AID_ROOT, AID_ROOT) ||
+            fs_prepare_dir(mFuseWrite.c_str(), 0700, AID_ROOT, AID_ROOT)) {
+        PLOG(ERROR) << getId() << " failed to create mount points";
         return -errno;
     }
 
-    setInternalPath(mRawPath);
-    setPath(mFusePath);
+    dev_t before = GetDevice(mFuseWrite);
 
     if (!(mFusePid = fork())) {
-        // TODO: protect when not mounted as visible
         if (execl(kFusePath, kFusePath,
                 "-u", "1023", // AID_MEDIA_RW
                 "-g", "1023", // AID_MEDIA_RW
-                "-l",
+                "-m",
+                "-w",
                 mRawPath.c_str(),
-                mFusePath.c_str(),
+                mLabel.c_str(),
                 NULL)) {
             PLOG(ERROR) << "Failed to exec";
         }
@@ -83,6 +91,11 @@ status_t EmulatedVolume::doMount() {
         return -errno;
     }
 
+    while (before == GetDevice(mFuseWrite)) {
+        LOG(VERBOSE) << "Waiting for FUSE to spin up...";
+        usleep(50000); // 50ms
+    }
+
     return OK;
 }
 
@@ -93,13 +106,17 @@ status_t EmulatedVolume::doUnmount() {
         mFusePid = 0;
     }
 
-    ForceUnmount(mFusePath);
-    ForceUnmount(mRawPath);
+    ForceUnmount(mFuseDefault);
+    ForceUnmount(mFuseRead);
+    ForceUnmount(mFuseWrite);
 
-    if (TEMP_FAILURE_RETRY(rmdir(mFusePath.c_str()))) {
-        PLOG(ERROR) << getId() << " failed to rmdir mount point " << mFusePath;
-        return -errno;
-    }
+    rmdir(mFuseDefault.c_str());
+    rmdir(mFuseRead.c_str());
+    rmdir(mFuseWrite.c_str());
+
+    mFuseDefault.clear();
+    mFuseRead.clear();
+    mFuseWrite.clear();
 
     return OK;
 }

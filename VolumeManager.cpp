@@ -26,6 +26,7 @@
 #include <sys/mount.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
 #include <linux/kdev_t.h>
@@ -477,6 +478,108 @@ int VolumeManager::setPrimary(const std::shared_ptr<android::vold::VolumeBase>& 
     for (userid_t userId : mStartedUsers) {
         linkPrimary(userId);
     }
+    return 0;
+}
+
+int VolumeManager::remountUid(uid_t uid, const std::string& mode) {
+    LOG(DEBUG) << "Remounting " << uid << " as mode " << mode;
+
+    DIR* dir;
+    struct dirent* de;
+    char rootName[PATH_MAX];
+    char pidName[PATH_MAX];
+    int pidFd;
+    int nsFd;
+    struct stat sb;
+    pid_t child;
+
+    if (!(dir = opendir("/proc"))) {
+        PLOG(ERROR) << "Failed to opendir";
+        return -1;
+    }
+
+    // Figure out root namespace to compare against below
+    if (readlinkat(dirfd(dir), "1/ns/mnt", rootName, PATH_MAX) == -1) {
+        PLOG(ERROR) << "Failed to readlink";
+        closedir(dir);
+        return -1;
+    }
+
+    // Poke through all running PIDs look for apps running as UID
+    while ((de = readdir(dir))) {
+        pidFd = -1;
+        nsFd = -1;
+
+        pidFd = openat(dirfd(dir), de->d_name, O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+        if (pidFd < 0) {
+            goto next;
+        }
+        if (fstat(pidFd, &sb) != 0) {
+            PLOG(WARNING) << "Failed to stat " << de->d_name;
+            goto next;
+        }
+        if (sb.st_uid != uid) {
+            goto next;
+        }
+
+        // Matches so far, but refuse to touch if in root namespace
+        LOG(DEBUG) << "Found matching PID " << de->d_name;
+        if (readlinkat(pidFd, "ns/mnt", pidName, PATH_MAX) == -1) {
+            PLOG(WARNING) << "Failed to read namespace for " << de->d_name;
+            goto next;
+        }
+        if (!strcmp(rootName, pidName)) {
+            LOG(WARNING) << "Skipping due to root namespace";
+            goto next;
+        }
+
+        // We purposefully leave the namespace open across the fork
+        nsFd = openat(pidFd, "ns/mnt", O_RDONLY);
+        if (nsFd < 0) {
+            PLOG(WARNING) << "Failed to open namespace";
+            goto next;
+        }
+
+        if (!(child = fork())) {
+            if (setns(nsFd, CLONE_NEWNS) != 0) {
+                PLOG(ERROR) << "Failed to setns";
+                _exit(1);
+            }
+
+            // Unmount current view and replace with requested view
+            umount2("/storage", MNT_FORCE);
+
+            std::string storageSource;
+            if (mode == "default") {
+                storageSource = "/mnt/runtime_default";
+            } else if (mode == "read") {
+                storageSource = "/mnt/runtime_read";
+            } else if (mode == "write") {
+                storageSource = "/mnt/runtime_write";
+            } else {
+                // Sane default of no storage visible
+                _exit(0);
+            }
+            if (TEMP_FAILURE_RETRY(mount(storageSource.c_str(), "/storage",
+                    NULL, MS_BIND | MS_REC | MS_SLAVE, NULL)) == -1) {
+                PLOG(WARNING) << "Failed to mount " << storageSource;
+                return false;
+            }
+            _exit(0);
+        }
+
+        if (child == -1) {
+            PLOG(ERROR) << "Failed to fork";
+            goto next;
+        } else {
+            TEMP_FAILURE_RETRY(waitpid(child, nullptr, 0));
+        }
+
+next:
+        close(nsFd);
+        close(pidFd);
+    }
+    closedir(dir);
     return 0;
 }
 

@@ -111,16 +111,19 @@ status_t PublicVolume::doMount() {
     }
 
     mRawPath = StringPrintf("/mnt/media_rw/%s", stableName.c_str());
-    mFusePath = StringPrintf("/storage/%s", stableName.c_str());
-    setInternalPath(mRawPath);
-    setPath(mFusePath);
 
-    if (fs_prepare_dir(mRawPath.c_str(), 0700, AID_ROOT, AID_ROOT)) {
-        PLOG(ERROR) << getId() << " failed to create mount point " << mRawPath;
-        return -errno;
-    }
-    if (fs_prepare_dir(mFusePath.c_str(), 0700, AID_ROOT, AID_ROOT)) {
-        PLOG(ERROR) << getId() << " failed to create mount point " << mFusePath;
+    mFuseDefault = StringPrintf("/mnt/runtime_default/%s", stableName.c_str());
+    mFuseRead = StringPrintf("/mnt/runtime_read/%s", stableName.c_str());
+    mFuseWrite = StringPrintf("/mnt/runtime_write/%s", stableName.c_str());
+
+    setInternalPath(mRawPath);
+    setPath(StringPrintf("/storage/%s", stableName.c_str()));
+
+    if (fs_prepare_dir(mRawPath.c_str(), 0700, AID_ROOT, AID_ROOT) ||
+            fs_prepare_dir(mFuseDefault.c_str(), 0700, AID_ROOT, AID_ROOT) ||
+            fs_prepare_dir(mFuseRead.c_str(), 0700, AID_ROOT, AID_ROOT) ||
+            fs_prepare_dir(mFuseWrite.c_str(), 0700, AID_ROOT, AID_ROOT)) {
+        PLOG(ERROR) << getId() << " failed to create mount points";
         return -errno;
     }
 
@@ -134,25 +137,18 @@ status_t PublicVolume::doMount() {
         initAsecStage();
     }
 
-    // TODO: teach FUSE daemon to protect itself with user-specific GID
+    dev_t before = GetDevice(mFuseWrite);
+
     if (!(mFusePid = fork())) {
         if (!(getMountFlags() & MountFlags::kVisible)) {
-            // TODO: mount so that only system apps can access
-            if (execl(kFusePath, kFusePath,
-                    "-u", "1023", // AID_MEDIA_RW
-                    "-g", "1023", // AID_MEDIA_RW
-                    mRawPath.c_str(),
-                    mFusePath.c_str(),
-                    NULL)) {
-                PLOG(ERROR) << "Failed to exec";
-            }
+            // TODO: do we need to wrap this device?
         } else if (getMountFlags() & MountFlags::kPrimary) {
             if (execl(kFusePath, kFusePath,
                     "-u", "1023", // AID_MEDIA_RW
                     "-g", "1023", // AID_MEDIA_RW
-                    "-d",
+                    "-w",
                     mRawPath.c_str(),
-                    mFusePath.c_str(),
+                    stableName.c_str(),
                     NULL)) {
                 PLOG(ERROR) << "Failed to exec";
             }
@@ -160,10 +156,8 @@ status_t PublicVolume::doMount() {
             if (execl(kFusePath, kFusePath,
                     "-u", "1023", // AID_MEDIA_RW
                     "-g", "1023", // AID_MEDIA_RW
-                    "-w", "1023", // AID_MEDIA_RW
-                    "-d",
                     mRawPath.c_str(),
-                    mFusePath.c_str(),
+                    stableName.c_str(),
                     NULL)) {
                 PLOG(ERROR) << "Failed to exec";
             }
@@ -178,6 +172,11 @@ status_t PublicVolume::doMount() {
         return -errno;
     }
 
+    while (before == GetDevice(mFuseWrite)) {
+        LOG(VERBOSE) << "Waiting for FUSE to spin up...";
+        usleep(50000); // 50ms
+    }
+
     return OK;
 }
 
@@ -189,17 +188,20 @@ status_t PublicVolume::doUnmount() {
     }
 
     ForceUnmount(kAsecPath);
-    ForceUnmount(mFusePath);
+
+    ForceUnmount(mFuseDefault);
+    ForceUnmount(mFuseRead);
+    ForceUnmount(mFuseWrite);
     ForceUnmount(mRawPath);
 
-    if (TEMP_FAILURE_RETRY(rmdir(mRawPath.c_str()))) {
-        PLOG(ERROR) << getId() << " failed to rmdir mount point " << mRawPath;
-    }
-    if (TEMP_FAILURE_RETRY(rmdir(mFusePath.c_str()))) {
-        PLOG(ERROR) << getId() << " failed to rmdir mount point " << mFusePath;
-    }
+    rmdir(mFuseDefault.c_str());
+    rmdir(mFuseRead.c_str());
+    rmdir(mFuseWrite.c_str());
+    rmdir(mRawPath.c_str());
 
-    mFusePath.clear();
+    mFuseDefault.clear();
+    mFuseRead.clear();
+    mFuseWrite.clear();
     mRawPath.clear();
 
     return OK;
