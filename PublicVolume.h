@@ -59,8 +59,11 @@ private:
     std::string mDevPath;
     /* Mount point of raw partition */
     std::string mRawPath;
-    /* Mount point of FUSE wrapper */
-    std::string mFusePath;
+
+    std::string mFuseDefault;
+    std::string mFuseRead;
+    std::string mFuseWrite;
+
     /* PID of FUSE wrapper */
     pid_t mFusePid;
 

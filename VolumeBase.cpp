@@ -219,7 +219,6 @@ status_t VolumeBase::unmount() {
     }
 
     setState(State::kEjecting);
-
     for (auto vol : mVolumes) {
         if (vol->destroy()) {
             LOG(WARNING) << getId() << " failed to destroy " << vol->getId()

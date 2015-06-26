@@ -129,6 +129,8 @@ public:
 
     int setPrimary(const std::shared_ptr<android::vold::VolumeBase>& vol);
 
+    int remountUid(uid_t uid, const std::string& mode);
+
     /* Reset all internal state, typically during framework boot */
     int reset();
     /* Prepare for device shutdown, safely unmounting all devices */

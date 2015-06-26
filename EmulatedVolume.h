@@ -46,10 +46,13 @@ protected:
     status_t doUnmount() override;
 
 private:
-    /* Mount point of raw storage */
     std::string mRawPath;
-    /* Mount point of visible storage */
-    std::string mFusePath;
+    std::string mLabel;
+
+    std::string mFuseDefault;
+    std::string mFuseRead;
+    std::string mFuseWrite;
+
     /* PID of FUSE wrapper */
     pid_t mFusePid;
 
