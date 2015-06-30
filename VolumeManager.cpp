@@ -481,6 +481,46 @@ int VolumeManager::setPrimary(const std::shared_ptr<android::vold::VolumeBase>& 
     return 0;
 }
 
+static int sane_readlinkat(int dirfd, const char* path, char* buf, size_t bufsiz) {
+    ssize_t len = readlinkat(dirfd, path, buf, bufsiz);
+    if (len < 0) {
+        return -1;
+    } else if (len == (ssize_t) bufsiz) {
+        return -1;
+    } else {
+        buf[len] = '\0';
+        return 0;
+    }
+}
+
+static int unmount_tree(const char* path) {
+    size_t path_len = strlen(path);
+
+    FILE* fp = setmntent("/proc/mounts", "r");
+    if (fp == NULL) {
+        ALOGE("Error opening /proc/mounts: %s", strerror(errno));
+        return -errno;
+    }
+
+    // Some volumes can be stacked on each other, so force unmount in
+    // reverse order to give us the best chance of success.
+    std::list<std::string> toUnmount;
+    mntent* mentry;
+    while ((mentry = getmntent(fp)) != NULL) {
+        if (strncmp(mentry->mnt_dir, path, path_len) == 0) {
+            toUnmount.push_front(std::string(mentry->mnt_dir));
+        }
+    }
+    endmntent(fp);
+
+    for (auto path : toUnmount) {
+        if (umount2(path.c_str(), MNT_DETACH)) {
+            ALOGW("Failed to unmount %s: %s", path.c_str(), strerror(errno));
+        }
+    }
+    return 0;
+}
+
 int VolumeManager::remountUid(uid_t uid, const std::string& mode) {
     LOG(DEBUG) << "Remounting " << uid << " as mode " << mode;
 
@@ -499,7 +539,7 @@ int VolumeManager::remountUid(uid_t uid, const std::string& mode) {
     }
 
     // Figure out root namespace to compare against below
-    if (readlinkat(dirfd(dir), "1/ns/mnt", rootName, PATH_MAX) == -1) {
+    if (sane_readlinkat(dirfd(dir), "1/ns/mnt", rootName, PATH_MAX) == -1) {
         PLOG(ERROR) << "Failed to readlink";
         closedir(dir);
         return -1;
@@ -524,7 +564,7 @@ int VolumeManager::remountUid(uid_t uid, const std::string& mode) {
 
         // Matches so far, but refuse to touch if in root namespace
         LOG(DEBUG) << "Found matching PID " << de->d_name;
-        if (readlinkat(pidFd, "ns/mnt", pidName, PATH_MAX) == -1) {
+        if (sane_readlinkat(pidFd, "ns/mnt", pidName, PATH_MAX) == -1) {
             PLOG(WARNING) << "Failed to read namespace for " << de->d_name;
             goto next;
         }
@@ -536,18 +576,17 @@ int VolumeManager::remountUid(uid_t uid, const std::string& mode) {
         // We purposefully leave the namespace open across the fork
         nsFd = openat(pidFd, "ns/mnt", O_RDONLY);
         if (nsFd < 0) {
-            PLOG(WARNING) << "Failed to open namespace";
+            PLOG(WARNING) << "Failed to open namespace for " << de->d_name;
             goto next;
         }
 
         if (!(child = fork())) {
             if (setns(nsFd, CLONE_NEWNS) != 0) {
-                PLOG(ERROR) << "Failed to setns";
+                PLOG(ERROR) << "Failed to setns for " << de->d_name;
                 _exit(1);
             }
 
-            // Unmount current view and replace with requested view
-            umount2("/storage", MNT_FORCE);
+            unmount_tree("/storage");
 
             std::string storageSource;
             if (mode == "default") {
@@ -562,9 +601,21 @@ int VolumeManager::remountUid(uid_t uid, const std::string& mode) {
             }
             if (TEMP_FAILURE_RETRY(mount(storageSource.c_str(), "/storage",
                     NULL, MS_BIND | MS_REC | MS_SLAVE, NULL)) == -1) {
-                PLOG(WARNING) << "Failed to mount " << storageSource;
-                return false;
+                PLOG(ERROR) << "Failed to mount " << storageSource << " for "
+                        << de->d_name;
+                _exit(1);
             }
+
+            // Mount user-specific symlink helper into place
+            userid_t user_id = multiuser_get_user_id(uid);
+            std::string userSource(StringPrintf("/mnt/user/%d", user_id));
+            if (TEMP_FAILURE_RETRY(mount(userSource.c_str(), "/storage/self",
+                    NULL, MS_BIND, NULL)) == -1) {
+                PLOG(ERROR) << "Failed to mount " << userSource << " for "
+                        << de->d_name;
+                _exit(1);
+            }
+
             _exit(0);
         }
 
