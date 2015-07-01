@@ -82,7 +82,7 @@ status_t EmulatedVolume::doMount() {
             PLOG(ERROR) << "Failed to exec";
         }
 
-        PLOG(DEBUG) << "FUSE exiting";
+        LOG(ERROR) << "FUSE exiting";
         _exit(1);
     }
 

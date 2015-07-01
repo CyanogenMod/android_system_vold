@@ -137,12 +137,15 @@ status_t PublicVolume::doMount() {
         initAsecStage();
     }
 
+    if (!(getMountFlags() & MountFlags::kVisible)) {
+        // Not visible to apps, so no need to spin up FUSE
+        return OK;
+    }
+
     dev_t before = GetDevice(mFuseWrite);
 
     if (!(mFusePid = fork())) {
-        if (!(getMountFlags() & MountFlags::kVisible)) {
-            // TODO: do we need to wrap this device?
-        } else if (getMountFlags() & MountFlags::kPrimary) {
+        if (getMountFlags() & MountFlags::kPrimary) {
             if (execl(kFusePath, kFusePath,
                     "-u", "1023", // AID_MEDIA_RW
                     "-g", "1023", // AID_MEDIA_RW
@@ -163,7 +166,7 @@ status_t PublicVolume::doMount() {
             }
         }
 
-        PLOG(DEBUG) << "FUSE exiting";
+        LOG(ERROR) << "FUSE exiting";
         _exit(1);
     }
 
