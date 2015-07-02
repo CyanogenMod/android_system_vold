@@ -14,19 +14,39 @@
  * limitations under the License.
  */
 
-#ifndef ANDROID_VOLD_BENCHMARK_H
-#define ANDROID_VOLD_BENCHMARK_H
+#ifndef ANDROID_VOLD_TRIM_TASK_H
+#define ANDROID_VOLD_TRIM_TASK_H
 
-#include <utils/Errors.h>
-#include <utils/Timers.h>
+#include "Utils.h"
 
-#include <string>
+#include <thread>
+#include <list>
 
 namespace android {
 namespace vold {
 
-/* Benchmark a private volume mounted at the given path */
-nsecs_t BenchmarkPrivate(const std::string& path);
+class TrimTask {
+public:
+    TrimTask(int flags);
+    virtual ~TrimTask();
+
+    enum Flags {
+        kDeepTrim = 1 << 0,
+        kBenchmarkAfter = 1 << 1,
+    };
+
+    void start();
+
+private:
+    int mFlags;
+    std::list<std::string> mPaths;
+    std::thread mThread;
+
+    void addFromFstab();
+    void run();
+
+    DISALLOW_COPY_AND_ASSIGN(TrimTask);
+};
 
 }  // namespace vold
 }  // namespace android

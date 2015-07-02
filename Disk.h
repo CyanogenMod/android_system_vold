@@ -18,6 +18,7 @@
 #define ANDROID_VOLD_DISK_H
 
 #include "Utils.h"
+#include "VolumeBase.h"
 
 #include <utils/Errors.h>
 
@@ -63,6 +64,8 @@ public:
     int getFlags() { return mFlags; }
 
     std::shared_ptr<VolumeBase> findVolume(const std::string& id);
+
+    void listVolumes(VolumeBase::Type type, std::list<std::string>& list);
 
     status_t create();
     status_t destroy();

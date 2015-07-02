@@ -70,6 +70,7 @@ public:
     static const int DiskSizeChanged = 641;
     static const int DiskLabelChanged = 642;
     static const int DiskScanned = 643;
+    static const int DiskSysPathChanged = 644;
     static const int DiskDestroyed = 649;
 
     static const int VolumeCreated = 650;
@@ -83,6 +84,7 @@ public:
 
     static const int MoveStatus = 660;
     static const int BenchmarkResult = 661;
+    static const int TrimResult = 662;
 
     static int convertFromErrno();
 };

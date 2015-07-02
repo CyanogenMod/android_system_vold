@@ -92,6 +92,8 @@ std::string BuildKeyPath(const std::string& partGuid);
 
 dev_t GetDevice(const std::string& path);
 
+std::string DefaultFstabPath();
+
 }  // namespace vold
 }  // namespace android
 
