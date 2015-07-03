@@ -22,6 +22,7 @@
 #include <base/file.h>
 #include <base/logging.h>
 #include <cutils/iosched_policy.h>
+#include <private/android_filesystem_config.h>
 
 #include <sys/time.h>
 #include <sys/resource.h>
@@ -33,14 +34,19 @@ using android::base::WriteStringToFile;
 namespace android {
 namespace vold {
 
-static std::string simpleRead(const std::string& path) {
-    std::string tmp;
-    ReadFileToString(path, &tmp);
-    tmp.erase(tmp.find_last_not_of(" \n\r") + 1);
-    return tmp;
+static void notifyResult(const std::string& path, int64_t create_d,
+        int64_t drop_d, int64_t run_d, int64_t destroy_d) {
+    std::string res(path +
+            + " " + BenchmarkIdent()
+            + " " + std::to_string(create_d)
+            + " " + std::to_string(drop_d)
+            + " " + std::to_string(run_d)
+            + " " + std::to_string(destroy_d));
+    VolumeManager::Instance()->getBroadcaster()->sendBroadcast(
+            ResponseCode::BenchmarkResult, res.c_str(), false);
 }
 
-nsecs_t Benchmark(const std::string& path, const std::string& sysPath) {
+static nsecs_t benchmark(const std::string& path) {
     errno = 0;
     int orig_prio = getpriority(PRIO_PROCESS, 0);
     if (errno != 0) {
@@ -82,9 +88,11 @@ nsecs_t Benchmark(const std::string& path, const std::string& sysPath) {
     sync();
     nsecs_t create = systemTime(SYSTEM_TIME_BOOTTIME);
 
+    LOG(VERBOSE) << "Before drop_caches";
     if (!WriteStringToFile("3", "/proc/sys/vm/drop_caches")) {
         PLOG(ERROR) << "Failed to drop_caches";
     }
+    LOG(VERBOSE) << "After drop_caches";
     nsecs_t drop = systemTime(SYSTEM_TIME_BOOTTIME);
 
     BenchmarkRun();
@@ -94,6 +102,16 @@ nsecs_t Benchmark(const std::string& path, const std::string& sysPath) {
     BenchmarkDestroy();
     sync();
     nsecs_t destroy = systemTime(SYSTEM_TIME_BOOTTIME);
+
+    if (chdir(orig_cwd) != 0) {
+        PLOG(ERROR) << "Failed to chdir";
+    }
+    if (android_set_ioprio(0, orig_clazz, orig_ioprio)) {
+        PLOG(ERROR) << "Failed to android_set_ioprio";
+    }
+    if (setpriority(PRIO_PROCESS, 0, orig_prio) != 0) {
+        PLOG(ERROR) << "Failed to setpriority";
+    }
 
     nsecs_t create_d = create - start;
     nsecs_t drop_d = drop - create;
@@ -105,38 +123,26 @@ nsecs_t Benchmark(const std::string& path, const std::string& sysPath) {
     LOG(INFO) << "run took " << nanoseconds_to_milliseconds(run_d) << "ms";
     LOG(INFO) << "destroy took " << nanoseconds_to_milliseconds(destroy_d) << "ms";
 
-    std::string detail;
-    detail += "id=" + BenchmarkIdent()
-            + ",cr=" + std::to_string(create_d)
-            + ",dr=" + std::to_string(drop_d)
-            + ",ru=" + std::to_string(run_d)
-            + ",de=" + std::to_string(destroy_d)
-            + ",si=" + simpleRead(sysPath + "/size")
-            + ",ve=" + simpleRead(sysPath + "/device/vendor")
-            + ",mo=" + simpleRead(sysPath + "/device/model")
-            + ",csd=" + simpleRead(sysPath + "/device/csd");
+    notifyResult(path, create_d, drop_d, run_d, destroy_d);
 
-    // Scrub CRC and serial number out of CID
-    std::string cid = simpleRead(sysPath + "/device/cid");
-    if (cid.length() == 32) {
-        cid.erase(32, 1);
-        cid.erase(18, 8);
-        detail += ",cid=" + cid;
-    }
-
-    VolumeManager::Instance()->getBroadcaster()->sendBroadcast(
-            ResponseCode::BenchmarkResult, detail.c_str(), false);
-
-    if (chdir(orig_cwd) != 0) {
-        PLOG(ERROR) << "Failed to chdir";
-    }
-    if (android_set_ioprio(0, orig_clazz, orig_ioprio)) {
-        PLOG(ERROR) << "Failed to android_set_ioprio";
-    }
-    if (setpriority(PRIO_PROCESS, 0, orig_prio) != 0) {
-        PLOG(ERROR) << "Failed to setpriority";
-    }
     return run_d;
+}
+
+nsecs_t BenchmarkPrivate(const std::string& path) {
+    std::string benchPath(path);
+    benchPath += "/misc";
+    if (android::vold::PrepareDir(benchPath, 01771, AID_SYSTEM, AID_MISC)) {
+        return -1;
+    }
+    benchPath += "/vold";
+    if (android::vold::PrepareDir(benchPath, 0700, AID_ROOT, AID_ROOT)) {
+        return -1;
+    }
+    benchPath += "/bench";
+    if (android::vold::PrepareDir(benchPath, 0700, AID_ROOT, AID_ROOT)) {
+        return -1;
+    }
+    return benchmark(benchPath);
 }
 
 }  // namespace vold

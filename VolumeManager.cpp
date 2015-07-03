@@ -60,7 +60,6 @@
 #include "Asec.h"
 #include "VoldUtil.h"
 #include "cryptfs.h"
-#include "fstrim.h"
 
 #define MASS_STORAGE_FILE_PATH  "/sys/class/android_usb/android0/f_mass_storage/lun/file"
 
@@ -370,20 +369,23 @@ std::shared_ptr<android::vold::VolumeBase> VolumeManager::findVolume(const std::
     return nullptr;
 }
 
-nsecs_t VolumeManager::benchmarkVolume(const std::string& id) {
+void VolumeManager::listVolumes(android::vold::VolumeBase::Type type,
+        std::list<std::string>& list) {
+    list.clear();
+    for (auto disk : mDisks) {
+        disk->listVolumes(type, list);
+    }
+}
+
+nsecs_t VolumeManager::benchmarkPrivate(const std::string& id) {
     std::string path;
-    std::string sysPath;
-    auto vol = findVolume(id);
-    if (vol != nullptr) {
-        if (vol->getState() == android::vold::VolumeBase::State::kMounted) {
-            path = vol->getPath();
-            auto disk = findDisk(vol->getDiskId());
-            if (disk != nullptr) {
-                sysPath = disk->getSysPath();
-            }
-        }
-    } else {
+    if (id == "private" || id == "null") {
         path = "/data";
+    } else {
+        auto vol = findVolume(id);
+        if (vol != nullptr && vol->getState() == android::vold::VolumeBase::State::kMounted) {
+            path = vol->getPath();
+        }
     }
 
     if (path.empty()) {
@@ -391,20 +393,7 @@ nsecs_t VolumeManager::benchmarkVolume(const std::string& id) {
         return -1;
     }
 
-    path += "/misc";
-    if (android::vold::PrepareDir(path, 01771, AID_SYSTEM, AID_MISC)) {
-        return -1;
-    }
-    path += "/vold";
-    if (android::vold::PrepareDir(path, 0700, AID_ROOT, AID_ROOT)) {
-        return -1;
-    }
-    path += "/bench";
-    if (android::vold::PrepareDir(path, 0700, AID_ROOT, AID_ROOT)) {
-        return -1;
-    }
-
-    return android::vold::Benchmark(path, sysPath);
+    return android::vold::BenchmarkPrivate(path);
 }
 
 int VolumeManager::forgetPartition(const std::string& partGuid) {

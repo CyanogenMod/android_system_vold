@@ -44,8 +44,8 @@
 #include "Process.h"
 #include "Loop.h"
 #include "Devmapper.h"
-#include "fstrim.h"
 #include "MoveTask.h"
+#include "TrimTask.h"
 
 #define DUMP_ARGS 0
 
@@ -254,7 +254,7 @@ int CommandListener::VolumeCmd::runCommand(SocketClient *cli,
     } else if (cmd == "benchmark" && argc > 2) {
         // benchmark [volId]
         std::string id(argv[2]);
-        nsecs_t res = vm->benchmarkVolume(id);
+        nsecs_t res = vm->benchmarkPrivate(id);
         return cli->sendMsg(ResponseCode::CommandOkay,
                 android::base::StringPrintf("%" PRId64, res).c_str(), false);
 
@@ -599,32 +599,23 @@ int CommandListener::FstrimCmd::runCommand(SocketClient *cli,
         return 0;
     }
 
-    int rc = 0;
+    VolumeManager *vm = VolumeManager::Instance();
+    std::lock_guard<std::mutex> lock(vm->getLock());
 
-    if (!strcmp(argv[1], "dotrim")) {
-        if (argc != 2) {
-            cli->sendMsg(ResponseCode::CommandSyntaxError, "Usage: fstrim dotrim", false);
-            return 0;
-        }
-        dumpArgs(argc, argv, -1);
-        rc = fstrim_filesystems(0);
-    } else if (!strcmp(argv[1], "dodtrim")) {
-        if (argc != 2) {
-            cli->sendMsg(ResponseCode::CommandSyntaxError, "Usage: fstrim dodtrim", false);
-            return 0;
-        }
-        dumpArgs(argc, argv, -1);
-        rc = fstrim_filesystems(1);   /* Do Deep Discard trim */
-    } else {
-        dumpArgs(argc, argv, -1);
-        cli->sendMsg(ResponseCode::CommandSyntaxError, "Unknown fstrim cmd", false);
+    int flags = 0;
+
+    std::string cmd(argv[1]);
+    if (cmd == "dotrim") {
+        flags = 0;
+    } else if (cmd == "dotrimbench") {
+        flags = android::vold::TrimTask::Flags::kBenchmarkAfter;
+    } else if (cmd == "dodtrim") {
+        flags = android::vold::TrimTask::Flags::kDeepTrim;
+    } else if (cmd == "dodtrimbench") {
+        flags = android::vold::TrimTask::Flags::kDeepTrim
+                | android::vold::TrimTask::Flags::kBenchmarkAfter;
     }
 
-    // Always report that the command succeeded and return the error code.
-    // The caller will check the return value to see what the error was.
-    char msg[255];
-    snprintf(msg, sizeof(msg), "%d", rc);
-    cli->sendMsg(ResponseCode::CommandOkay, msg, false);
-
-    return 0;
+    (new android::vold::TrimTask(flags))->start();
+    return sendGenericOkFail(cli, 0);
 }

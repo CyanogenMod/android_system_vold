@@ -22,6 +22,7 @@
 #include <base/logging.h>
 #include <base/stringprintf.h>
 #include <cutils/fs.h>
+#include <cutils/properties.h>
 #include <private/android_filesystem_config.h>
 #include <logwrap/logwrap.h>
 
@@ -530,6 +531,12 @@ dev_t GetDevice(const std::string& path) {
     } else {
         return sb.st_dev;
     }
+}
+
+std::string DefaultFstabPath() {
+    char hardware[PROPERTY_VALUE_MAX];
+    property_get("ro.hardware", hardware, "");
+    return StringPrintf("/fstab.%s", hardware);
 }
 
 }  // namespace vold

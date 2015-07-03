@@ -118,7 +118,9 @@ public:
     std::shared_ptr<android::vold::Disk> findDisk(const std::string& id);
     std::shared_ptr<android::vold::VolumeBase> findVolume(const std::string& id);
 
-    nsecs_t benchmarkVolume(const std::string& id);
+    void listVolumes(android::vold::VolumeBase::Type type, std::list<std::string>& list);
+
+    nsecs_t benchmarkPrivate(const std::string& id);
 
     int forgetPartition(const std::string& partGuid);
 
