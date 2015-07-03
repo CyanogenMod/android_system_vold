@@ -660,6 +660,7 @@ int e4crypt_delete_user_key(const char *user_handle) {
         SLOGD("Forked for secdiscard");
         execl("/system/bin/secdiscard",
             "/system/bin/secdiscard",
+            "--",
             key_path.c_str(),
             NULL);
         SLOGE("Unable to launch secdiscard on %s: %s\n", key_path.c_str(),
