@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -39,13 +40,14 @@ struct Options {
     bool unlink{true};
 };
 
-// Deliberately limit ourselves to wiping small files.
-constexpr uint64_t max_wipe_length = 4096;
+constexpr uint32_t max_extents = 32;
 
 bool read_command_line(int argc, const char * const argv[], Options &options);
 void usage(const char *progname);
 int secdiscard_path(const std::string &path);
-int path_device_range(const std::string &path, uint64_t range[2]);
+std::unique_ptr<struct fiemap> path_fiemap(const std::string &path, uint32_t extent_count);
+bool check_fiemap(const struct fiemap &fiemap, const std::string &path);
+std::unique_ptr<struct fiemap> alloc_fiemap(uint32_t extent_count);
 std::string block_device_for_path(const std::string &path);
 
 }
@@ -95,8 +97,8 @@ void usage(const char *progname) {
 
 // BLKSECDISCARD all content in "path", if it's small enough.
 int secdiscard_path(const std::string &path) {
-    uint64_t range[2];
-    if (path_device_range(path, range) == -1) {
+    auto fiemap = path_fiemap(path, max_extents);
+    if (!fiemap || !check_fiemap(*fiemap, path)) {
         return -1;
     }
     auto block_device = block_device_for_path(path);
@@ -108,16 +110,20 @@ int secdiscard_path(const std::string &path) {
         SLOGE("Failed to open device %s: %s", block_device.c_str(), strerror(errno));
         return -1;
     }
-    if (ioctl(fs_fd.get(), BLKSECDISCARD, range) == -1) {
-        SLOGE("Unable to BLKSECDISCARD %s: %s", path.c_str(), strerror(errno));
-        return -1;
+    for (uint32_t i = 0; i < fiemap->fm_mapped_extents; i++) {
+        uint64_t range[2];
+        range[0] = fiemap->fm_extents[i].fe_physical;
+        range[1] = fiemap->fm_extents[i].fe_length;
+        if (ioctl(fs_fd.get(), BLKSECDISCARD, range) == -1) {
+            SLOGE("Unable to BLKSECDISCARD %s: %s", path.c_str(), strerror(errno));
+            return -1;
+        }
     }
     return 0;
 }
 
-// Find a short range that completely covers the file.
-// If there isn't one, return -1, otherwise 0.
-int path_device_range(const std::string &path, uint64_t range[2])
+// Read the file's FIEMAP
+std::unique_ptr<struct fiemap> path_fiemap(const std::string &path, uint32_t extent_count)
 {
     AutoCloseFD fd(path);
     if (!fd) {
@@ -126,41 +132,49 @@ int path_device_range(const std::string &path, uint64_t range[2])
         } else {
             SLOGE("Unable to open %s: %s", path.c_str(), strerror(errno));
         }
-        return -1;
+        return nullptr;
     }
-    alignas(struct fiemap) char fiemap_buffer[offsetof(struct fiemap, fm_extents[1])];
-    memset(fiemap_buffer, 0, sizeof(fiemap_buffer));
-    struct fiemap *fiemap = (struct fiemap *)fiemap_buffer;
-    fiemap->fm_start = 0;
-    fiemap->fm_length = UINT64_MAX;
-    fiemap->fm_flags = 0;
-    fiemap->fm_extent_count = 1;
-    fiemap->fm_mapped_extents = 0;
-    if (ioctl(fd.get(), FS_IOC_FIEMAP, fiemap) != 0) {
+    auto fiemap = alloc_fiemap(extent_count);
+    if (ioctl(fd.get(), FS_IOC_FIEMAP, fiemap.get()) != 0) {
         SLOGE("Unable to FIEMAP %s: %s", path.c_str(), strerror(errno));
-        return -1;
+        return nullptr;
     }
-    if (fiemap->fm_mapped_extents != 1) {
-        SLOGE("Expecting one extent, got %d in %s", fiemap->fm_mapped_extents, path.c_str());
-        return -1;
+    auto mapped = fiemap->fm_mapped_extents;
+    if (mapped < 1 || mapped > extent_count) {
+        SLOGE("Extent count not in bounds 1 <= %u <= %u in %s", mapped, extent_count, path.c_str());
+        return nullptr;
     }
-    struct fiemap_extent *extent = &fiemap->fm_extents[0];
-    if (!(extent->fe_flags & FIEMAP_EXTENT_LAST)) {
-        SLOGE("First extent was not the last in %s", path.c_str());
-        return -1;
+    return fiemap;
+}
+
+// Ensure that the FIEMAP covers the file and is OK to discard
+bool check_fiemap(const struct fiemap &fiemap, const std::string &path) {
+    auto mapped = fiemap.fm_mapped_extents;
+    if (!(fiemap.fm_extents[mapped - 1].fe_flags & FIEMAP_EXTENT_LAST)) {
+        SLOGE("Extent %u was not the last in %s", mapped - 1, path.c_str());
+        return false;
     }
-    if (extent->fe_flags &
-            (FIEMAP_EXTENT_UNKNOWN | FIEMAP_EXTENT_DELALLOC | FIEMAP_EXTENT_NOT_ALIGNED)) {
-        SLOGE("Extent has unexpected flags %ulx: %s", extent->fe_flags, path.c_str());
-        return -1;
+    for (uint32_t i = 0; i < mapped; i++) {
+        auto flags = fiemap.fm_extents[i].fe_flags;
+        if (flags & (FIEMAP_EXTENT_UNKNOWN | FIEMAP_EXTENT_DELALLOC | FIEMAP_EXTENT_NOT_ALIGNED)) {
+            SLOGE("Extent %u has unexpected flags %ulx: %s", i, flags, path.c_str());
+            return false;
+        }
     }
-    if (extent->fe_length > max_wipe_length) {
-        SLOGE("Extent too big, %llu bytes in %s", extent->fe_length, path.c_str());
-        return -1;
-    }
-    range[0] = extent->fe_physical;
-    range[1] = extent->fe_length;
-    return 0;
+    return true;
+}
+
+std::unique_ptr<struct fiemap> alloc_fiemap(uint32_t extent_count)
+{
+    size_t allocsize = offsetof(struct fiemap, fm_extents[extent_count]);
+    std::unique_ptr<struct fiemap> res(new (::operator new (allocsize)) struct fiemap);
+    memset(res.get(), 0, allocsize);
+    res->fm_start = 0;
+    res->fm_length = UINT64_MAX;
+    res->fm_flags = 0;
+    res->fm_extent_count = extent_count;
+    res->fm_mapped_extents = 0;
+    return res;
 }
 
 // Given a file path, look for the corresponding block device in /proc/mount
