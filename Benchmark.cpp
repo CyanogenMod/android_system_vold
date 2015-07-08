@@ -28,6 +28,8 @@
 #include <sys/resource.h>
 #include <unistd.h>
 
+#define ENABLE_DROP_CACHES 1
+
 using android::base::ReadFileToString;
 using android::base::WriteStringToFile;
 
@@ -88,11 +90,13 @@ static nsecs_t benchmark(const std::string& path) {
     sync();
     nsecs_t create = systemTime(SYSTEM_TIME_BOOTTIME);
 
+#if ENABLE_DROP_CACHES
     LOG(VERBOSE) << "Before drop_caches";
     if (!WriteStringToFile("3", "/proc/sys/vm/drop_caches")) {
         PLOG(ERROR) << "Failed to drop_caches";
     }
     LOG(VERBOSE) << "After drop_caches";
+#endif
     nsecs_t drop = systemTime(SYSTEM_TIME_BOOTTIME);
 
     BenchmarkRun();
