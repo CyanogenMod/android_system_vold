@@ -54,12 +54,19 @@ EmulatedVolume::~EmulatedVolume() {
 }
 
 status_t EmulatedVolume::doMount() {
-    mFuseDefault = StringPrintf("/mnt/runtime_default/%s", mLabel.c_str());
-    mFuseRead = StringPrintf("/mnt/runtime_read/%s", mLabel.c_str());
-    mFuseWrite = StringPrintf("/mnt/runtime_write/%s", mLabel.c_str());
+    // We could have migrated storage to an adopted private volume, so always
+    // call primary storage "emulated" to avoid media rescans.
+    std::string label = mLabel;
+    if (getMountFlags() & MountFlags::kPrimary) {
+        label = "emulated";
+    }
+
+    mFuseDefault = StringPrintf("/mnt/runtime_default/%s", label.c_str());
+    mFuseRead = StringPrintf("/mnt/runtime_read/%s", label.c_str());
+    mFuseWrite = StringPrintf("/mnt/runtime_write/%s", label.c_str());
 
     setInternalPath(mRawPath);
-    setPath(StringPrintf("/storage/%s", mLabel.c_str()));
+    setPath(StringPrintf("/storage/%s", label.c_str()));
 
     if (fs_prepare_dir(mFuseDefault.c_str(), 0700, AID_ROOT, AID_ROOT) ||
             fs_prepare_dir(mFuseRead.c_str(), 0700, AID_ROOT, AID_ROOT) ||
@@ -77,7 +84,7 @@ status_t EmulatedVolume::doMount() {
                 "-m",
                 "-w",
                 mRawPath.c_str(),
-                mLabel.c_str(),
+                label.c_str(),
                 NULL)) {
             PLOG(ERROR) << "Failed to exec";
         }
