@@ -493,12 +493,9 @@ int e4crypt_set_field(const char* path, const char* fieldname,
         .Set(fieldname, std::string(value)) ? 0 : -1;
 }
 
-// ext4enc:TODO this can't be the only place keys are read from /dev/urandom
-// we should unite those places.
-static std::string e4crypt_get_user_key(
+static std::string get_key_path(
     const char *mount_path,
-    const char *user_handle,
-    bool create_if_absent)
+    const char *user_handle)
 {
     // ext4enc:TODO get the path properly
     auto key_dir = android::base::StringPrintf("%s/misc/vold/user_keys",
@@ -507,7 +504,17 @@ static std::string e4crypt_get_user_key(
         SLOGE("Unable to create %s (%s)", key_dir.c_str(), strerror(errno));
         return "";
     }
-    auto key_path = key_dir + "/" + user_handle;
+    return key_dir + "/" + user_handle;
+}
+
+// ext4enc:TODO this can't be the only place keys are read from /dev/urandom
+// we should unite those places.
+static std::string e4crypt_get_user_key(
+    const char *mount_path,
+    const char *user_handle,
+    bool create_if_absent)
+{
+    auto key_path = get_key_path(mount_path, user_handle);
     std::string content;
     if (android::base::ReadFileToString(key_path, &content)) {
         if (content.size() != key_length/8) {
@@ -609,6 +616,19 @@ int e4crypt_set_user_crypto_policies(const char *dir)
             // deliver on promised encryption.
             SLOGE("Unable to set policy on %s\n", user_dir.c_str());
         }
+    }
+    return 0;
+}
+
+int e4crypt_delete_user_key(const char *user_handle) {
+    SLOGD("e4crypt_delete_user_key(\"%s\")", user_handle);
+    auto key_path = get_key_path(DATA_MNT_POINT, user_handle);
+    // ext4enc:TODO delete it securely.
+    // ext4enc:TODO evict the key from the keyring.
+    if (unlink(key_path.c_str()) != 0 && errno != ENOENT) {
+        SLOGE("Unable to delete user key %s: %s\n",
+            key_path.c_str(), strerror(errno));
+        return -1;
     }
     return 0;
 }
