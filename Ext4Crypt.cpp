@@ -623,12 +623,22 @@ int e4crypt_set_user_crypto_policies(const char *dir)
 int e4crypt_delete_user_key(const char *user_handle) {
     SLOGD("e4crypt_delete_user_key(\"%s\")", user_handle);
     auto key_path = get_key_path(DATA_MNT_POINT, user_handle);
-    // ext4enc:TODO delete it securely.
     // ext4enc:TODO evict the key from the keyring.
-    if (unlink(key_path.c_str()) != 0 && errno != ENOENT) {
-        SLOGE("Unable to delete user key %s: %s\n",
-            key_path.c_str(), strerror(errno));
+    int pid = fork();
+    if (pid < 0) {
+        SLOGE("Unable to fork: %s", strerror(errno));
         return -1;
     }
+    if (pid == 0) {
+        SLOGD("Forked for secdiscard");
+        execl("/system/bin/secdiscard",
+            "/system/bin/secdiscard",
+            key_path.c_str(),
+            NULL);
+        SLOGE("Unable to launch secdiscard on %s: %s\n", key_path.c_str(),
+            strerror(errno));
+        exit(-1);
+    }
+    // ext4enc:TODO reap the zombie
     return 0;
 }
