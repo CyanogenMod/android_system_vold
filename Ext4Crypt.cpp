@@ -285,6 +285,7 @@ int e4crypt_crypto_complete(const char* path)
     return 0;
 }
 
+// Get raw keyref - used to make keyname and to pass to ioctl
 static std::string generate_key_ref(const char* key, int length)
 {
     SHA512_CTX c;
@@ -351,9 +352,7 @@ int e4crypt_check_passwd(const char* path, const char* password)
     return 0;
 }
 
-// Install password into global keyring
-// Return raw key reference for use in policy
-static std::string e4crypt_install_key(const std::string &key)
+static ext4_encryption_key fill_key(const std::string &key)
 {
     // ext4enc:TODO Currently raw key is required to be of length
     // sizeof(ext4_key.raw) == EXT4_MAX_KEY_SIZE, so zero pad to
@@ -365,37 +364,52 @@ static std::string e4crypt_install_key(const std::string &key)
     static_assert(key_length / 8 <= sizeof(ext4_key.raw),
                   "Key too long!");
     memcpy(ext4_key.raw, &key[0], key.size());
+    return ext4_key;
+}
 
-    // Get raw keyref - used to make keyname and to pass to ioctl
-    auto raw_ref = generate_key_ref(ext4_key.raw, ext4_key.size);
-
-    // Generate keyname
+static std::string keyname(const std::string &raw_ref)
+{
     std::ostringstream o;
+    o << "ext4:";
     for (auto i = raw_ref.begin(); i != raw_ref.end(); ++i) {
         o << std::hex << std::setw(2) << std::setfill('0') << (int)*i;
     }
-    auto ref = std::string("ext4:") + o.str();
+    return o.str();
+}
 
-    // Find existing keyring
-    key_serial_t device_keyring = keyctl_search(KEY_SPEC_SESSION_KEYRING,
-                                                "keyring", "e4crypt", 0);
+// Get the keyring we store all keys in
+static key_serial_t e4crypt_keyring()
+{
+    return keyctl_search(KEY_SPEC_SESSION_KEYRING, "keyring", "e4crypt", 0);
+}
 
+static int e4crypt_install_key(const ext4_encryption_key &ext4_key, const std::string &ref)
+{
+    key_serial_t device_keyring = e4crypt_keyring();
     SLOGI("Found device_keyring - id is %d", device_keyring);
-
-    // Add key ...
     key_serial_t key_id = add_key("logon", ref.c_str(),
                                   (void*)&ext4_key, sizeof(ext4_key),
                                   device_keyring);
-
     if (key_id == -1) {
         SLOGE("Failed to insert key into keyring with error %s",
               strerror(errno));
-        return "";
+        return -1;
     }
-
     SLOGI("Added key %d (%s) to keyring %d in process %d",
           key_id, ref.c_str(), device_keyring, getpid());
+    return 0;
+}
 
+// Install password into global keyring
+// Return raw key reference for use in policy
+static std::string e4crypt_install_key(const std::string &key)
+{
+    auto ext4_key = fill_key(key);
+    auto raw_ref = generate_key_ref(ext4_key.raw, ext4_key.size);
+    auto ref = keyname(raw_ref);
+    if (e4crypt_install_key(ext4_key, ref) == -1) {
+        return "";
+    }
     return raw_ref;
 }
 
@@ -509,12 +523,10 @@ static std::string get_key_path(
 
 // ext4enc:TODO this can't be the only place keys are read from /dev/urandom
 // we should unite those places.
-static std::string e4crypt_get_user_key(
-    const char *mount_path,
-    const char *user_handle,
+static std::string e4crypt_get_key(
+    const std::string &key_path,
     bool create_if_absent)
 {
-    auto key_path = get_key_path(mount_path, user_handle);
     std::string content;
     if (android::base::ReadFileToString(key_path, &content)) {
         if (content.size() != key_length/8) {
@@ -539,20 +551,21 @@ static std::string e4crypt_get_user_key(
         SLOGE("Unable to read key from /dev/urandom (%s)", strerror(errno));
         return "";
     }
-    std::string user_key(key_bytes, sizeof(key_bytes));
-    if (!android::base::WriteStringToFile(user_key, key_path)) {
+    std::string key(key_bytes, sizeof(key_bytes));
+    if (!android::base::WriteStringToFile(key, key_path)) {
         SLOGE("Unable to write key to %s (%s)",
                 key_path.c_str(), strerror(errno));
         return "";
     }
-    return user_key;
+    return key;
 }
 
 static int e4crypt_set_user_policy(const char *mount_path, const char *user_handle,
                             const char *path, bool create_if_absent)
 {
     SLOGD("e4crypt_set_user_policy for %s", user_handle);
-    auto user_key = e4crypt_get_user_key(mount_path, user_handle,
+    auto user_key = e4crypt_get_key(
+        get_key_path(mount_path, user_handle),
         create_if_absent);
     if (user_key.empty()) {
         return -1;
@@ -623,7 +636,16 @@ int e4crypt_set_user_crypto_policies(const char *dir)
 int e4crypt_delete_user_key(const char *user_handle) {
     SLOGD("e4crypt_delete_user_key(\"%s\")", user_handle);
     auto key_path = get_key_path(DATA_MNT_POINT, user_handle);
-    // ext4enc:TODO evict the key from the keyring.
+    auto key = e4crypt_get_key(key_path, false);
+    auto ext4_key = fill_key(key);
+    auto ref = keyname(generate_key_ref(ext4_key.raw, ext4_key.size));
+    auto key_serial = keyctl_search(e4crypt_keyring(), "logon", ref.c_str(), 0);
+    if (keyctl_revoke(key_serial) == 0) {
+        SLOGD("Revoked key with serial %ld ref %s\n", key_serial, ref.c_str());
+    } else {
+        SLOGE("Failed to revoke key with serial %ld ref %s: %s\n",
+            key_serial, ref.c_str(), strerror(errno));
+    }
     int pid = fork();
     if (pid < 0) {
         SLOGE("Unable to fork: %s", strerror(errno));
