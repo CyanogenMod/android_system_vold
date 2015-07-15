@@ -289,6 +289,15 @@ int CryptCommandListener::CryptfsCmd::runCommand(SocketClient *cli,
         dumpArgs(argc, argv, -1);
         cryptfs_clear_password();
         rc = 0;
+    } else if (!strcmp(argv[1], "setusercryptopolicies")) {
+        if (argc != 3) {
+            cli->sendMsg(ResponseCode::CommandSyntaxError,
+                "Usage: cryptfs setusercryptopolicies <path>", false);
+            return 0;
+        }
+        SLOGD("cryptfs setusercryptopolicies");
+        dumpArgs(argc, argv, -1);
+        rc = e4crypt_set_user_crypto_policies(argv[2]);
     } else if (!strcmp(argv[1], "createnewuserdir")) {
         if (argc != 4) {
             cli->sendMsg(ResponseCode::CommandSyntaxError,
