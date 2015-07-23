@@ -416,6 +416,7 @@ int VolumeManager::linkPrimary(userid_t userId) {
     std::string source(mPrimary->getPath());
     if (mPrimary->getType() == android::vold::VolumeBase::Type::kEmulated) {
         source = StringPrintf("%s/%d", source.c_str(), userId);
+        fs_prepare_dir(source.c_str(), 0755, AID_ROOT, AID_ROOT);
     }
 
     std::string target(StringPrintf("/mnt/user/%d/primary", userId));
