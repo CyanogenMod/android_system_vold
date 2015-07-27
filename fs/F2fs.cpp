@@ -43,7 +43,7 @@ bool IsSupported() {
 status_t Check(const std::string& source) {
     std::vector<std::string> cmd;
     cmd.push_back(kFsckPath);
-    cmd.push_back("-f");
+    cmd.push_back("-a");
     cmd.push_back(source);
 
     // f2fs devices are currently always trusted
