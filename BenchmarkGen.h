@@ -31,6 +31,8 @@
 #include <algorithm>
 #include <string>
 
+#include <Utils.h>
+
 namespace android {
 namespace vold {
 
@@ -4024,35 +4026,32 @@ free(buf);
 return 0;
 }
 
-static status_t CreateFile(const char* name, size_t len) {
-    status_t res = -1;
-    int in = -1;
+static status_t CreateFile(const char* name, int len) {
+    int chunk = std::min(len, 65536);
     int out = -1;
+    std::string buf;
 
-    if ((in = TEMP_FAILURE_RETRY(open("/dev/zero", O_RDONLY))) < 0) {
-        PLOG(ERROR) << "Failed to open";
-        goto done;
+    if (android::vold::ReadRandomBytes(chunk, buf) != OK) {
+        LOG(ERROR) << "Failed to read random data";
+        return -EIO;
     }
     if ((out = TEMP_FAILURE_RETRY(open(name, O_WRONLY|O_CREAT|O_TRUNC))) < 0) {
         PLOG(ERROR) << "Failed to open " << name;
-        goto done;
+        return -errno;
     }
 
-    char buf[65536];
     while (len > 0) {
-        int n = read(in, buf, std::min(len, sizeof(buf)));
-        if (write(out, buf, n) != n) {
+        int n = write(out, buf.c_str(), std::min(len, chunk));
+        if (n < 0) {
             PLOG(ERROR) << "Failed to write";
-            goto done;
+            close(out);
+            return -errno;
         }
         len -= n;
     }
 
-    res = 0;
-done:
-    close(in);
     close(out);
-    return res;
+    return OK;
 }
 
 static status_t BenchmarkCreate() {
