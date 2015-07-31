@@ -117,7 +117,11 @@ status_t PublicVolume::doMount() {
     mFuseWrite = StringPrintf("/mnt/runtime_write/%s", stableName.c_str());
 
     setInternalPath(mRawPath);
-    setPath(StringPrintf("/storage/%s", stableName.c_str()));
+    if (getMountFlags() & MountFlags::kVisible) {
+        setPath(StringPrintf("/storage/%s", stableName.c_str()));
+    } else {
+        setPath(mRawPath);
+    }
 
     if (fs_prepare_dir(mRawPath.c_str(), 0700, AID_ROOT, AID_ROOT) ||
             fs_prepare_dir(mFuseDefault.c_str(), 0700, AID_ROOT, AID_ROOT) ||
