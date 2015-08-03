@@ -178,7 +178,7 @@ status_t Mount(const std::string& source, const std::string& target, bool ro,
     return rc;
 }
 
-status_t Format(const std::string& source, unsigned int numSectors) {
+status_t Format(const std::string& source, unsigned long numSectors) {
     std::vector<std::string> cmd;
     cmd.push_back(kMkfsPath);
     cmd.push_back("-F");
@@ -191,7 +191,7 @@ status_t Format(const std::string& source, unsigned int numSectors) {
 
     if (numSectors) {
         cmd.push_back("-s");
-        cmd.push_back(StringPrintf("%u", numSectors));
+        cmd.push_back(StringPrintf("%lu", numSectors));
     }
 
     cmd.push_back(source);

@@ -252,7 +252,7 @@ int Loop::destroyByFile(const char * /*loopFile*/) {
     return -1;
 }
 
-int Loop::createImageFile(const char *file, unsigned int numSectors) {
+int Loop::createImageFile(const char *file, unsigned long numSectors) {
     int fd;
 
     if ((fd = creat(file, 0600)) < 0) {
@@ -269,7 +269,7 @@ int Loop::createImageFile(const char *file, unsigned int numSectors) {
     return 0;
 }
 
-int Loop::resizeImageFile(const char *file, unsigned int numSectors) {
+int Loop::resizeImageFile(const char *file, unsigned long numSectors) {
     int fd;
 
     if ((fd = open(file, O_RDWR | O_CLOEXEC)) < 0) {
@@ -277,7 +277,7 @@ int Loop::resizeImageFile(const char *file, unsigned int numSectors) {
         return -1;
     }
 
-    SLOGD("Attempting to increase size of %s to %d sectors.", file, numSectors);
+    SLOGD("Attempting to increase size of %s to %lu sectors.", file, numSectors);
 
     if (fallocate(fd, 0, 0, numSectors * 512)) {
         if (errno == ENOSYS || errno == ENOTSUP) {

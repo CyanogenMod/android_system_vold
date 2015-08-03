@@ -408,7 +408,7 @@ int CommandListener::AsecCmd::runCommand(SocketClient *cli,
             return 0;
         }
 
-        unsigned int numSectors = (atoi(argv[3]) * (1024 * 1024)) / 512;
+        unsigned long numSectors = (atoi(argv[3]) * (1024 * 1024)) / 512;
         const bool isExternal = (atoi(argv[7]) == 1);
         rc = vm->createAsec(argv[2], numSectors, argv[4], argv[5], atoi(argv[6]), isExternal);
     } else if (!strcmp(argv[1], "resize")) {
@@ -417,7 +417,7 @@ int CommandListener::AsecCmd::runCommand(SocketClient *cli,
             cli->sendMsg(ResponseCode::CommandSyntaxError, "Usage: asec resize <container-id> <size_mb> <key>", false);
             return 0;
         }
-        unsigned int numSectors = (atoi(argv[3]) * (1024 * 1024)) / 512;
+        unsigned long numSectors = (atoi(argv[3]) * (1024 * 1024)) / 512;
         rc = vm->resizeAsec(argv[2], numSectors, argv[4]);
     } else if (!strcmp(argv[1], "finalize")) {
         dumpArgs(argc, argv, -1);
