@@ -115,21 +115,21 @@ static int writeSuperBlock(const char* name, struct asec_superblock *sb, unsigne
     return 0;
 }
 
-static int adjustSectorNumExt4(unsigned numSectors) {
+static unsigned long adjustSectorNumExt4(unsigned long numSectors) {
     // Ext4 started to reserve 2% or 4096 clusters, whichever is smaller for
     // preventing costly operations or unexpected ENOSPC error.
     // Ext4::format() uses default block size without clustering.
-    unsigned clusterSectors = 4096 / 512;
-    unsigned reservedSectors = (numSectors * 2)/100 + (numSectors % 50 > 0);
+    unsigned long clusterSectors = 4096 / 512;
+    unsigned long reservedSectors = (numSectors * 2)/100 + (numSectors % 50 > 0);
     numSectors += reservedSectors > (4096 * clusterSectors) ? (4096 * clusterSectors) : reservedSectors;
     return ROUND_UP_POWER_OF_2(numSectors, 3);
 }
 
-static int adjustSectorNumFAT(unsigned numSectors) {
+static unsigned long adjustSectorNumFAT(unsigned long numSectors) {
     /*
     * Add some headroom
     */
-    unsigned fatSize = (((numSectors * 4) / 512) + 1) * 2;
+    unsigned long fatSize = (((numSectors * 4) / 512) + 1) * 2;
     numSectors += fatSize + 2;
     /*
     * FAT is aligned to 32 kb with 512b sectors.
@@ -154,7 +154,7 @@ static int setupLoopDevice(char* buffer, size_t len, const char* asecFileName, c
     return 0;
 }
 
-static int setupDevMapperDevice(char* buffer, size_t len, const char* loopDevice, const char* asecFileName, const char* key, const char* idHash , int numImgSectors, bool* createdDMDevice, bool debug) {
+static int setupDevMapperDevice(char* buffer, size_t len, const char* loopDevice, const char* asecFileName, const char* key, const char* idHash , unsigned long numImgSectors, bool* createdDMDevice, bool debug) {
     if (strcmp(key, "none")) {
         if (Devmapper::lookupActive(idHash, buffer, len)) {
             if (Devmapper::create(idHash, loopDevice, key, numImgSectors,
@@ -767,7 +767,7 @@ int VolumeManager::getAsecFilesystemPath(const char *id, char *buffer, int maxle
     return 0;
 }
 
-int VolumeManager::createAsec(const char *id, unsigned int numSectors, const char *fstype,
+int VolumeManager::createAsec(const char *id, unsigned long numSectors, const char *fstype,
         const char *key, const int ownerUid, bool isExternal) {
     struct asec_superblock sb;
     memset(&sb, 0, sizeof(sb));
@@ -795,7 +795,7 @@ int VolumeManager::createAsec(const char *id, unsigned int numSectors, const cha
     sb.ver = ASEC_SB_VER;
 
     if (numSectors < ((1024*1024)/512)) {
-        SLOGE("Invalid container size specified (%d sectors)", numSectors);
+        SLOGE("Invalid container size specified (%lu sectors)", numSectors);
         errno = EINVAL;
         return -1;
     }
@@ -824,7 +824,7 @@ int VolumeManager::createAsec(const char *id, unsigned int numSectors, const cha
         return -1;
     }
 
-    unsigned numImgSectors;
+    unsigned long numImgSectors;
     if (usingExt4)
         numImgSectors = adjustSectorNumExt4(numSectors);
     else
@@ -961,7 +961,7 @@ int VolumeManager::createAsec(const char *id, unsigned int numSectors, const cha
     return 0;
 }
 
-int VolumeManager::resizeAsec(const char *id, unsigned numSectors, const char *key) {
+int VolumeManager::resizeAsec(const char *id, unsigned long numSectors, const char *key) {
     char asecFileName[255];
     char mountPoint[255];
     bool cleanupDm = false;
@@ -991,7 +991,7 @@ int VolumeManager::resizeAsec(const char *id, unsigned numSectors, const char *k
 
     struct asec_superblock sb;
     int fd;
-    unsigned int oldNumSec = 0;
+    unsigned long oldNumSec = 0;
 
     if ((fd = open(asecFileName, O_RDONLY | O_CLOEXEC)) < 0) {
         SLOGE("Failed to open ASEC file (%s)", strerror(errno));
@@ -1007,7 +1007,7 @@ int VolumeManager::resizeAsec(const char *id, unsigned numSectors, const char *k
 
     oldNumSec = info.st_size / 512;
 
-    unsigned numImgSectors;
+    unsigned long numImgSectors;
     if (sb.c_opts & ASEC_SB_C_OPTS_EXT4)
         numImgSectors = adjustSectorNumExt4(numSectors);
     else
@@ -1015,7 +1015,7 @@ int VolumeManager::resizeAsec(const char *id, unsigned numSectors, const char *k
     /*
      *  add one block for the superblock
      */
-    SLOGD("Resizing from %d sectors to %d sectors", oldNumSec, numImgSectors + 1);
+    SLOGD("Resizing from %lu sectors to %lu sectors", oldNumSec, numImgSectors + 1);
     if (oldNumSec == numImgSectors + 1) {
         SLOGW("Size unchanged; ignoring resize request");
         return 0;
