@@ -283,8 +283,8 @@ void VolumeManager::handleBlockEvent(NetlinkEvent *evt) {
         evt->dump();
     }
 
-    std::string eventPath(evt->findParam("DEVPATH"));
-    std::string devType(evt->findParam("DEVTYPE"));
+    std::string eventPath(evt->findParam("DEVPATH")?evt->findParam("DEVPATH"):"");
+    std::string devType(evt->findParam("DEVTYPE")?evt->findParam("DEVTYPE"):"");
 
     if (devType != "disk") return;
 
