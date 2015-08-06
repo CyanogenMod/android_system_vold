@@ -112,9 +112,9 @@ status_t PublicVolume::doMount() {
 
     mRawPath = StringPrintf("/mnt/media_rw/%s", stableName.c_str());
 
-    mFuseDefault = StringPrintf("/mnt/runtime_default/%s", stableName.c_str());
-    mFuseRead = StringPrintf("/mnt/runtime_read/%s", stableName.c_str());
-    mFuseWrite = StringPrintf("/mnt/runtime_write/%s", stableName.c_str());
+    mFuseDefault = StringPrintf("/mnt/runtime/default/%s", stableName.c_str());
+    mFuseRead = StringPrintf("/mnt/runtime/read/%s", stableName.c_str());
+    mFuseWrite = StringPrintf("/mnt/runtime/write/%s", stableName.c_str());
 
     setInternalPath(mRawPath);
     if (getMountFlags() & MountFlags::kVisible) {
