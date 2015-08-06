@@ -61,9 +61,9 @@ status_t EmulatedVolume::doMount() {
         label = "emulated";
     }
 
-    mFuseDefault = StringPrintf("/mnt/runtime_default/%s", label.c_str());
-    mFuseRead = StringPrintf("/mnt/runtime_read/%s", label.c_str());
-    mFuseWrite = StringPrintf("/mnt/runtime_write/%s", label.c_str());
+    mFuseDefault = StringPrintf("/mnt/runtime/default/%s", label.c_str());
+    mFuseRead = StringPrintf("/mnt/runtime/read/%s", label.c_str());
+    mFuseWrite = StringPrintf("/mnt/runtime/write/%s", label.c_str());
 
     setInternalPath(mRawPath);
     setPath(StringPrintf("/storage/%s", label.c_str()));
