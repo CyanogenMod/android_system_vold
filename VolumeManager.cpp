@@ -580,11 +580,11 @@ int VolumeManager::remountUid(uid_t uid, const std::string& mode) {
 
             std::string storageSource;
             if (mode == "default") {
-                storageSource = "/mnt/runtime_default";
+                storageSource = "/mnt/runtime/default";
             } else if (mode == "read") {
-                storageSource = "/mnt/runtime_read";
+                storageSource = "/mnt/runtime/read";
             } else if (mode == "write") {
-                storageSource = "/mnt/runtime_write";
+                storageSource = "/mnt/runtime/write";
             } else {
                 // Sane default of no storage visible
                 _exit(0);
