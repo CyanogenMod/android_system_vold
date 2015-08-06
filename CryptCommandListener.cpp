@@ -262,12 +262,16 @@ int CryptCommandListener::CryptfsCmd::runCommand(SocketClient *cli,
         rc = cryptfs_enable_file();
     } else if (subcommand == "changepw") {
         const char* syntax = "Usage: cryptfs changepw "
+                             "default|password|pin|pattern [currentpasswd] "
                              "default|password|pin|pattern [newpasswd]";
         const char* password;
-        if (argc == 3) {
+        const char* currentpassword;
+        if (argc == 4) {
+            currentpassword = "";
             password = "";
-        } else if (argc == 4) {
-            password = argv[3];
+        } else if (argc == 5) {
+            currentpassword = argv[3];
+            password = argv[4];
         } else {
             cli->sendMsg(ResponseCode::CommandSyntaxError, syntax, false);
             return 0;
@@ -278,7 +282,7 @@ int CryptCommandListener::CryptfsCmd::runCommand(SocketClient *cli,
             return 0;
         }
         SLOGD("cryptfs changepw %s {}", argv[2]);
-        rc = cryptfs_changepw(type, password);
+        rc = cryptfs_changepw(type, currentpassword, password);
     } else if (subcommand == "verifypw") {
         if (!check_argc(cli, subcommand, argc, 3, "<passwd>")) return 0;
         SLOGD("cryptfs verifypw {}");
