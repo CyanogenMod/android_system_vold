@@ -170,6 +170,12 @@ static status_t readMetadata(const std::string& path, std::string& fsType,
     cmd.push_back(kBlkidPath);
     cmd.push_back("-c");
     cmd.push_back("/dev/null");
+    cmd.push_back("-s");
+    cmd.push_back("TYPE");
+    cmd.push_back("-s");
+    cmd.push_back("UUID");
+    cmd.push_back("-s");
+    cmd.push_back("LABEL");
     cmd.push_back(path);
 
     std::vector<std::string> output;
