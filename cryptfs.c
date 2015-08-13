@@ -103,6 +103,30 @@ static struct crypt_persist_data *persist_data = NULL;
 
 static int previous_type;
 
+#ifdef CONFIG_HW_DISK_ENCRYPTION
+static int scrypt_keymaster(const char *passwd, const unsigned char *salt,
+                            unsigned char *ikey, void *params);
+
+static int get_keymaster_hw_fde_passwd(const char* passwd, unsigned char* newpw,
+                                  unsigned char* salt,
+                                  const struct crypt_mnt_ftr *ftr)
+{
+    /* if newpw updated, return 0
+     * if newpw not updated return -1
+     */
+    int rc = -1;
+
+    if (should_use_keymaster()) {
+        if (scrypt_keymaster(passwd, salt, newpw, (void*)ftr)) {
+            SLOGE("scrypt failed");
+            return rc;
+        }
+    }
+
+    return 0;
+}
+#endif
+
 static int keymaster_init(keymaster0_device_t **keymaster0_dev,
                           keymaster1_device_t **keymaster1_dev)
 {
@@ -1879,8 +1903,14 @@ static int test_mount_encrypted_fs(struct crypt_mnt_ftr* crypt_ftr,
 
 #ifdef CONFIG_HW_DISK_ENCRYPTION
   int key_index = 0;
+  unsigned char newpw[32];
   if(is_hw_disk_encryption((char*)crypt_ftr->crypto_type_name)) {
-    key_index = set_hw_device_encryption_key(passwd, (char*) crypt_ftr->crypto_type_name);
+    if (get_keymaster_hw_fde_passwd(passwd, newpw, crypt_ftr->salt, crypt_ftr))
+      key_index = set_hw_device_encryption_key(passwd,
+                                (char*) crypt_ftr->crypto_type_name);
+    else
+      key_index = set_hw_device_encryption_key((const char*)newpw,
+                                (char*) crypt_ftr->crypto_type_name);
     if (key_index < 0) {
       rc = ++crypt_ftr->failed_decrypt_count;
       put_crypt_ftr_and_key(crypt_ftr);
@@ -2969,6 +2999,7 @@ int cryptfs_enable_internal(char *howarg, int crypt_type, char *passwd,
     int num_vols;
     off64_t previously_encrypted_upto = 0;
 #ifdef CONFIG_HW_DISK_ENCRYPTION
+    unsigned char newpw[32];
     int key_index = 0;
 #endif
 
@@ -3083,21 +3114,26 @@ int cryptfs_enable_internal(char *howarg, int crypt_type, char *passwd,
            On successfully completing encryption, remove this flag */
         crypt_ftr.flags |= CRYPT_INCONSISTENT_STATE;
         crypt_ftr.crypt_type = crypt_type;
-#ifndef CONFIG_HW_DISK_ENCRYPTION
         strlcpy((char *)crypt_ftr.crypto_type_name, "aes-cbc-essiv:sha256", MAX_CRYPTO_TYPE_NAME_LEN);
-#else
-        strlcpy((char *)crypt_ftr.crypto_type_name, "aes-xts", MAX_CRYPTO_TYPE_NAME_LEN);
-        clear_hw_device_encryption_key();
-        key_index = set_hw_device_encryption_key(passwd, (char*)crypt_ftr.crypto_type_name);
-        if (key_index < 0)
-          goto error_shutting_down;
-#endif
 
         /* Make an encrypted master key */
         if (create_encrypted_random_key(passwd, crypt_ftr.master_key, crypt_ftr.salt, &crypt_ftr)) {
             SLOGE("Cannot create encrypted master key\n");
             goto error_shutting_down;
         }
+
+#ifdef CONFIG_HW_DISK_ENCRYPTION
+        strlcpy((char *)crypt_ftr.crypto_type_name, "aes-xts", MAX_CRYPTO_TYPE_NAME_LEN);
+        clear_hw_device_encryption_key();
+        if (get_keymaster_hw_fde_passwd(passwd, newpw, crypt_ftr.salt,
+                                        &crypt_ftr))
+            key_index = set_hw_device_encryption_key(passwd, (char*)crypt_ftr.crypto_type_name);
+        else
+            key_index = set_hw_device_encryption_key((const char*)newpw,
+                                (char*) crypt_ftr.crypto_type_name);
+        if (key_index < 0)
+            goto error_shutting_down;
+#endif
 
         /* Write the key to the end of the partition */
         put_crypt_ftr_and_key(&crypt_ftr);
@@ -3325,6 +3361,14 @@ int cryptfs_changepw(int crypt_type, const char *currentpw, const char *newpw)
         return -1;
     }
 
+#ifdef CONFIG_HW_DISK_ENCRYPTION
+    int rc1;
+    unsigned char tmp_curpw[32] = {0};
+    rc1 = get_keymaster_hw_fde_passwd(currentpw, tmp_curpw, crypt_ftr.salt,
+                                    &crypt_ftr);
+#endif
+
+
     crypt_ftr.crypt_type = crypt_type;
 
     if (previous_type == CRYPT_TYPE_DEFAULT)
@@ -3345,11 +3389,17 @@ int cryptfs_changepw(int crypt_type, const char *currentpw, const char *newpw)
     put_crypt_ftr_and_key(&crypt_ftr);
 
 #ifdef CONFIG_HW_DISK_ENCRYPTION
-    int ret;
+    int ret, rc2;
+    unsigned char tmp_newpw[32] = {0};
+
+    rc2 = get_keymaster_hw_fde_passwd(crypt_type == CRYPT_TYPE_DEFAULT ?
+                                DEFAULT_PASSWORD : newpw , tmp_newpw,
+                                crypt_ftr.salt, &crypt_ftr);
+
     if (is_hw_disk_encryption((char*)crypt_ftr.crypto_type_name)) {
-        ret = update_hw_device_encryption_key(currentpw,
-                                    crypt_type == CRYPT_TYPE_DEFAULT ?
-                                    DEFAULT_PASSWORD : newpw,
+        ret = update_hw_device_encryption_key(rc1 ? currentpw: (const char*)tmp_curpw,
+                                    rc2 ? (crypt_type == CRYPT_TYPE_DEFAULT ?
+                                    DEFAULT_PASSWORD : newpw): (const char*)tmp_newpw,
                                     (char*)crypt_ftr.crypto_type_name);
         if (ret) {
             SLOGE("Error updating device encryption hardware key ret %d", ret);
