@@ -124,20 +124,6 @@ int Fat::doMount(const char *fsPath, const char *mountPoint,
     flags |= (ro ? MS_RDONLY : 0);
     flags |= (remount ? MS_REMOUNT : 0);
 
-    /*
-     * Note: This is a temporary hack. If the sampling profiler is enabled,
-     * we make the SD card world-writable so any process can write snapshots.
-     *
-     * TODO: Remove this code once we have a drop box in system_server.
-     */
-    char value[PROPERTY_VALUE_MAX];
-    property_get("persist.sampling_profiler", value, "");
-    if (value[0] == '1') {
-        SLOGW("The SD card is world-writable because the"
-            " 'persist.sampling_profiler' system property is set to '1'.");
-        permMask = 0;
-    }
-
     sprintf(mountData,
             "utf8,uid=%d,gid=%d,fmask=%o,dmask=%o,shortname=mixed",
             ownerUid, ownerGid, permMask, permMask);
