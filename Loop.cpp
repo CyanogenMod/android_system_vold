@@ -103,10 +103,11 @@ int Loop::lookupActive(const char *id, char *buffer, size_t len) {
         }
 
         rc = ioctl(fd, LOOP_GET_STATUS64, &li);
-        close(fd);
         if (rc < 0 && errno == ENXIO) {
+            close(fd);
             continue;
         }
+        close(fd);
 
         if (rc < 0) {
             SLOGE("Unable to get loop status for %s (%s)", filename,
