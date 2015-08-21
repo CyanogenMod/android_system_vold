@@ -80,6 +80,8 @@ LOCAL_SRC_FILES := \
 	main.cpp \
 	$(common_src_files)
 
+LOCAL_INIT_RC := vold.rc
+
 LOCAL_C_INCLUDES := $(common_c_includes)
 LOCAL_CFLAGS := $(vold_cflags)
 LOCAL_CONLYFLAGS := $(vold_conlyflags)
@@ -104,5 +106,6 @@ LOCAL_MODULE:= vdc
 LOCAL_SHARED_LIBRARIES := libcutils
 LOCAL_CFLAGS := $(vold_cflags)
 LOCAL_CONLYFLAGS := $(vold_conlyflags)
+LOCAL_INIT_RC := vdc.rc
 
 include $(BUILD_EXECUTABLE)
