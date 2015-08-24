@@ -15,6 +15,8 @@
 #include <cutils/properties.h>
 #include <openssl/sha.h>
 
+#include <private/android_filesystem_config.h>
+
 #include "unencrypted_properties.h"
 #include "key_control.h"
 #include "cryptfs.h"
@@ -583,6 +585,9 @@ int e4crypt_create_new_user_dir(const char *user_handle, const char *path) {
         return -1;
     }
     if (chmod(path, S_IRWXU | S_IRWXG | S_IXOTH) < 0) {
+        return -1;
+    }
+    if (chown(path, AID_SYSTEM, AID_SYSTEM) < 0) {
         return -1;
     }
     if (e4crypt_crypto_complete(DATA_MNT_POINT) == 0) {
