@@ -1035,7 +1035,7 @@ static int load_crypto_mapping_table(struct crypt_mnt_ftr *crypt_ftr, unsigned c
 #else
   convert_key_to_hex_ascii(master_key, crypt_ftr->keysize, master_key_ascii);
 #endif
-  sprintf(crypt_params, "%s %s 0 %s 0 %s 0", crypt_ftr->crypto_type_name,
+  sprintf(crypt_params, "%s %s 0 %s 0 %s", crypt_ftr->crypto_type_name,
           master_key_ascii, real_blk_name, extra_params);
 
   SLOGI("%s: target_type = %s\n", __func__, tgt->target_type);
