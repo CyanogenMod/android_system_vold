@@ -147,26 +147,66 @@ int CryptCommandListener::CryptfsCmd::runCommand(SocketClient *cli,
         rc = cryptfs_crypto_complete();
     } else if (!strcmp(argv[1], "enablecrypto")) {
         const char* syntax = "Usage: cryptfs enablecrypto <wipe|inplace> "
-                             "default|password|pin|pattern [passwd]";
-        if ( (argc != 4 && argc != 5)
-             || (strcmp(argv[2], "wipe") && strcmp(argv[2], "inplace")) ) {
+                             "default|password|pin|pattern [passwd] [noui]";
+
+        // This should be replaced with a command line parser if more options
+        // are added
+        bool valid = true;
+        bool no_ui = false;
+        int type = CRYPT_TYPE_DEFAULT;
+        int options = 4; // Optional parameters are at this offset
+        if (argc < 4) {
+            // Minimum 4 parameters
+            valid = false;
+        } else if (strcmp(argv[2], "wipe") && strcmp(argv[2], "inplace") ) {
+            // Second parameter must be wipe or inplace
+            valid = false;
+        } else {
+            // Third parameter must be valid type
+            type = getType(argv[3]);
+            if (type == -1) {
+                valid = false;
+            } else if (type != CRYPT_TYPE_DEFAULT) {
+                options++;
+            }
+        }
+
+        if (valid) {
+            if(argc < options) {
+                // Too few parameters
+                valid = false;
+            } else if (argc == options) {
+                // No more, done
+            } else if (argc == options + 1) {
+                // One option, must be noui
+                if (!strcmp(argv[options], "noui")) {
+                    no_ui = true;
+                } else {
+                    valid = false;
+                }
+            } else {
+                // Too many options
+                valid = false;
+            }
+        }
+
+        if (!valid ) {
             cli->sendMsg(ResponseCode::CommandSyntaxError, syntax, false);
             return 0;
         }
+
         dumpArgs(argc, argv, 4);
 
         int tries;
         for (tries = 0; tries < 2; ++tries) {
-            int type = getType(argv[3]);
             if (type == -1) {
                 cli->sendMsg(ResponseCode::CommandSyntaxError, syntax,
                              false);
                 return 0;
             } else if (type == CRYPT_TYPE_DEFAULT) {
-              rc = cryptfs_enable_default(argv[2], /*allow_reboot*/false);
+              rc = cryptfs_enable_default(argv[2], no_ui);
             } else {
-                rc = cryptfs_enable(argv[2], type, argv[4],
-                                    /*allow_reboot*/false);
+                rc = cryptfs_enable(argv[2], type, argv[4], no_ui);
             }
 
             if (rc == 0) {
