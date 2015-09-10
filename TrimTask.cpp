@@ -37,7 +37,7 @@
 /* From a would-be kernel header */
 #define FIDTRIM         _IOWR('f', 128, struct fstrim_range)    /* Deep discard trim */
 
-#define BENCHMARK_ENABLED 0
+#define BENCHMARK_ENABLED 1
 
 using android::base::StringPrintf;
 
