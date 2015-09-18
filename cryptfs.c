@@ -1102,24 +1102,25 @@ static int load_crypto_mapping_table(struct crypt_mnt_ftr *crypt_ftr,
   tgt->status = 0;
   tgt->sector_start = 0;
   tgt->length = crypt_ftr->fs_size;
+  crypt_params = buffer + sizeof(struct dm_ioctl) + sizeof(struct dm_target_spec);
+
 #ifdef CONFIG_HW_DISK_ENCRYPTION
-  if(is_hw_disk_encryption((char*)crypt_ftr->crypto_type_name))
+  if(is_hw_disk_encryption((char*)crypt_ftr->crypto_type_name)) {
     strlcpy(tgt->target_type, "req-crypt",DM_MAX_TYPE_NAME);
-  else
+    if (is_ice_enabled())
+      convert_key_to_hex_ascii(master_key, sizeof(int), master_key_ascii);
+    else
+      convert_key_to_hex_ascii(master_key, crypt_ftr->keysize, master_key_ascii);
+  }
+  else {
+    convert_key_to_hex_ascii(master_key, crypt_ftr->keysize, master_key_ascii);
     strlcpy(tgt->target_type, "crypt", DM_MAX_TYPE_NAME);
+  }
 #else
+  convert_key_to_hex_ascii(master_key, crypt_ftr->keysize, master_key_ascii);
   strlcpy(tgt->target_type, "crypt", DM_MAX_TYPE_NAME);
 #endif
 
-  crypt_params = buffer + sizeof(struct dm_ioctl) + sizeof(struct dm_target_spec);
-#ifdef CONFIG_HW_DISK_ENCRYPTION
-  if (is_ice_enabled())
-    convert_key_to_hex_ascii(master_key, sizeof(int), master_key_ascii);
-  else
-    convert_key_to_hex_ascii(master_key, crypt_ftr->keysize, master_key_ascii);
-#else
-  convert_key_to_hex_ascii(master_key, crypt_ftr->keysize, master_key_ascii);
-#endif
   snprintf(crypt_params,
            sizeof(buffer)-sizeof(struct dm_ioctl)-sizeof(struct dm_target_spec),
            "%s %s 0 %s 0 %s 0",
@@ -1148,7 +1149,6 @@ static int load_crypto_mapping_table(struct crypt_mnt_ftr *crypt_ftr,
   }
 }
 
-#ifndef CONFIG_HW_DISK_ENCRYPTION
 static int get_dm_crypt_version(int fd, const char *name,  int *version)
 {
     char buffer[DM_CRYPT_BUF_SIZE];
@@ -1181,7 +1181,6 @@ static int get_dm_crypt_version(int fd, const char *name,  int *version)
 
     return -1;
 }
-#endif
 
 static int create_crypto_blk_dev(struct crypt_mnt_ftr *crypt_ftr,
         const unsigned char *master_key, const char *real_blk_name,
@@ -1222,17 +1221,28 @@ static int create_crypto_blk_dev(struct crypt_mnt_ftr *crypt_ftr,
   snprintf(crypto_blk_name, MAXPATHLEN, "/dev/block/dm-%u", minor);
 
 #ifdef CONFIG_HW_DISK_ENCRYPTION
-  /* Set fde_enabled if either FDE completed or in-progress */
-  property_get("ro.crypto.state", encrypted_state, ""); /* FDE completed */
-  property_get("vold.encrypt_progress", progress, ""); /* FDE in progress */
-  if (!strcmp(encrypted_state, "encrypted") || strcmp(progress, "")) {
+  if(is_hw_disk_encryption((char*)crypt_ftr->crypto_type_name)) {
+    /* Set fde_enabled if either FDE completed or in-progress */
+    property_get("ro.crypto.state", encrypted_state, ""); /* FDE completed */
+    property_get("vold.encrypt_progress", progress, ""); /* FDE in progress */
+    if (!strcmp(encrypted_state, "encrypted") || strcmp(progress, "")) {
       if (is_ice_enabled())
           extra_params = "fde_enabled ice";
       else
-      extra_params = "fde_enabled";
-  }
-  else
+        extra_params = "fde_enabled";
+    } else
       extra_params = "fde_disabled";
+  } else {
+    extra_params = "";
+    if (! get_dm_crypt_version(fd, name, version)) {
+      /* Support for allow_discards was added in version 1.11.0 */
+      if ((version[0] >= 2) ||
+          ((version[0] == 1) && (version[1] >= 11))) {
+          extra_params = "1 allow_discards";
+          SLOGI("Enabling support for allow_discards in dmcrypt.\n");
+      }
+    }
+  }
 #else
   extra_params = "";
   if (! get_dm_crypt_version(fd, name, version)) {
