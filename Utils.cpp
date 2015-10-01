@@ -432,7 +432,7 @@ status_t NormalizeHex(const std::string& in, std::string& out) {
 uint64_t GetFreeBytes(const std::string& path) {
     struct statvfs sb;
     if (statvfs(path.c_str(), &sb) == 0) {
-        return sb.f_bfree * sb.f_bsize;
+        return (uint64_t)sb.f_bfree * sb.f_bsize;
     } else {
         return -1;
     }
