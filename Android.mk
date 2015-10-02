@@ -48,6 +48,8 @@ common_shared_libraries := \
 
 common_static_libraries := \
 	libfs_mgr \
+	libfec \
+	libfec_rs \
 	libsquashfs_utils \
 	libscrypt_static \
 	libmincrypt \
