@@ -416,15 +416,17 @@ void DirectVolume::handlePartitionRemoved(const char * /*devpath*/,
          * Yikes, our mounted partition is going away!
          */
 
+        snprintf(msg, sizeof(msg), "Volume %s %s bad removal (%d:%d)",
+                 getLabel(), getFuseMountpoint(), major, minor);
+        mVm->getBroadcaster()->sendBroadcast(ResponseCode::VolumeBadRemoval,
+                                             msg, false);
+
         bool providesAsec = (getFlags() & VOL_PROVIDES_ASEC) != 0;
         if (providesAsec && mVm->cleanupAsec(this, true)) {
             SLOGE("Failed to cleanup ASEC - unmount will probably fail!");
         }
 
-        snprintf(msg, sizeof(msg), "Volume %s %s bad removal (%d:%d)",
-                 getLabel(), getFuseMountpoint(), major, minor);
-        mVm->getBroadcaster()->sendBroadcast(ResponseCode::VolumeBadRemoval,
-                                             msg, false);
+
 
         if (Volume::unmountVol(true, false, false)) {
             SLOGE("Failed to unmount volume on bad removal (%s)", 
