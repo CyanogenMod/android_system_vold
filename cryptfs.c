@@ -1389,7 +1389,8 @@ static int scrypt_keymaster(const char *passwd, const unsigned char *salt,
 static int encrypt_master_key(const char *passwd, const unsigned char *salt,
                               const unsigned char *decrypted_master_key,
                               unsigned char *encrypted_master_key,
-                              struct crypt_mnt_ftr *crypt_ftr)
+                              struct crypt_mnt_ftr *crypt_ftr,
+                              bool create_keymaster_key)
 {
     unsigned char ikey[32+32] = { 0 }; /* Big enough to hold a 256 bit key and 256 bit IV */
     EVP_CIPHER_CTX e_ctx;
@@ -1401,7 +1402,7 @@ static int encrypt_master_key(const char *passwd, const unsigned char *salt,
 
     switch (crypt_ftr->kdf_type) {
     case KDF_SCRYPT_KEYMASTER:
-        if (keymaster_create_key(crypt_ftr)) {
+        if (create_keymaster_key && keymaster_create_key(crypt_ftr)) {
             SLOGE("keymaster_create_key failed");
             return -1;
         }
@@ -1564,7 +1565,7 @@ static int create_encrypted_random_key(char *passwd, unsigned char *master_key, 
     close(fd);
 
     /* Now encrypt it with the password */
-    return encrypt_master_key(passwd, salt, key_buf, master_key, crypt_ftr);
+    return encrypt_master_key(passwd, salt, key_buf, master_key, crypt_ftr, true);
 }
 
 int wait_and_unmount(const char *mountpoint, bool kill)
@@ -2036,7 +2037,7 @@ static int test_mount_encrypted_fs(struct crypt_mnt_ftr* crypt_ftr,
 
     if (upgrade) {
         rc = encrypt_master_key(passwd, crypt_ftr->salt, saved_master_key,
-                                crypt_ftr->master_key, crypt_ftr);
+                                crypt_ftr->master_key, crypt_ftr, true);
         if (!rc) {
             rc = put_crypt_ftr_and_key(crypt_ftr);
         }
@@ -3406,7 +3407,7 @@ int cryptfs_changepw(int crypt_type, const char *currentpw, const char *newpw)
                        crypt_ftr.salt,
                        saved_master_key,
                        crypt_ftr.master_key,
-                       &crypt_ftr);
+                       &crypt_ftr, false);
     if (rc) {
         SLOGE("Encrypt master key failed: %d", rc);
         return -1;
@@ -3909,5 +3910,5 @@ int cryptfs_set_password(struct crypt_mnt_ftr* ftr, const char* password,
                          const unsigned char* master_key)
 {
     return encrypt_master_key(password, ftr->salt, master_key, ftr->master_key,
-                              ftr);
+                              ftr, true);
 }
