@@ -998,14 +998,14 @@ static void convert_key_to_hex_ascii(unsigned char *master_key, unsigned int key
 
 static int load_crypto_mapping_table(struct crypt_mnt_ftr *crypt_ftr, unsigned char *master_key,
                                      char *real_blk_name, const char *name, int fd,
-                                     char *extra_params)
+                                     char *extra_params, unsigned int fallback)
 {
   char buffer[DM_CRYPT_BUF_SIZE];
   struct dm_ioctl *io;
   struct dm_target_spec *tgt;
   char *crypt_params;
   char master_key_ascii[129]; /* Large enough to hold 512 bit key and null */
-  int i;
+  int i, rc = 0;
 
   io = (struct dm_ioctl *) buffer;
 
@@ -1035,8 +1035,14 @@ static int load_crypto_mapping_table(struct crypt_mnt_ftr *crypt_ftr, unsigned c
 #else
   convert_key_to_hex_ascii(master_key, crypt_ftr->keysize, master_key_ascii);
 #endif
-  sprintf(crypt_params, "%s %s 0 %s 0 %s 0", crypt_ftr->crypto_type_name,
+
+  if (fallback) {
+    sprintf(crypt_params, "%s %s 0 %s 0 %s", crypt_ftr->crypto_type_name,
           master_key_ascii, real_blk_name, extra_params);
+  } else {
+    sprintf(crypt_params, "%s %s 0 %s 0 %s 0", crypt_ftr->crypto_type_name,
+          master_key_ascii, real_blk_name, extra_params);
+  }
 
   SLOGI("%s: target_type = %s\n", __func__, tgt->target_type);
   SLOGI("%s: real_blk_name = %s, extra_params = %s\n", __func__, real_blk_name, extra_params);
@@ -1045,16 +1051,19 @@ static int load_crypto_mapping_table(struct crypt_mnt_ftr *crypt_ftr, unsigned c
   crypt_params = (char *) (((unsigned long)crypt_params + 7) & ~8); /* Align to an 8 byte boundary */
   tgt->next = crypt_params - buffer;
 
-  for (i = 0; i < TABLE_LOAD_RETRIES; i++) {
-    if (! ioctl(fd, DM_TABLE_LOAD, io)) {
+  for (i = 0; i < TABLE_LOAD_RETRIES && rc != EINVAL; i++) {
+    if ((rc = ioctl(fd, DM_TABLE_LOAD, io)) == 0) {
       break;
+    } else {
+      rc = errno;
     }
+    SLOGD("%s[%d]: ioctl(%d, DM_TABLE_LOAD, %p) = %d (%s)", __func__, i, fd, io, rc, strerror(rc));
     usleep(500000);
   }
 
-  if (i == TABLE_LOAD_RETRIES) {
+  if (i == TABLE_LOAD_RETRIES || rc) {
     /* We failed to load the table, return an error */
-    return -1;
+    return -rc;
   } else {
     return i + 1;
   }
@@ -1177,12 +1186,20 @@ static int create_crypto_blk_dev(struct crypt_mnt_ftr *crypt_ftr, unsigned char 
 #endif
 
   load_count = load_crypto_mapping_table(crypt_ftr, master_key, real_blk_name, name,
-                                         fd, extra_params);
+                                         fd, extra_params, 0);
   if (load_count < 0) {
-      SLOGE("Cannot load dm-crypt mapping table.\n");
-      goto errout;
-  } else if (load_count > 1) {
-      SLOGI("Took %d tries to load dmcrypt table.\n", load_count);
+      SLOGE("Cannot load dm-crypt mapping table: %s\n", strerror(-load_count));
+      SLOGW("Trying fallback options for DM_TABLE_LOAD ioctl\n");
+      load_count = load_crypto_mapping_table(crypt_ftr, master_key, real_blk_name, name,
+                                         fd, extra_params, 1);
+      if (load_count < 0) {
+          SLOGE("Giving up to load crypto table\n");
+          goto errout;
+      }
+  }
+
+  if (load_count > 1) {
+      SLOGI("Took %d tries to load dmcrypt table successfully\n", load_count);
   }
 
   /* Resume this device to activate it */
@@ -1197,6 +1214,9 @@ static int create_crypto_blk_dev(struct crypt_mnt_ftr *crypt_ftr, unsigned char 
   retval = 0;
 
 errout:
+  if (retval) {
+    SLOGD("%s: status: error: %s\n", __func__, strerror(errno));
+  }
   close(fd);   /* If fd is <0 from a failed open call, it's safe to just ignore the close error */
 
   return retval;
