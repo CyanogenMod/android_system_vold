@@ -3049,7 +3049,7 @@ int cryptfs_enable_internal(char *howarg, int crypt_type, char *passwd,
 #else
         strlcpy((char *)crypt_ftr.crypto_type_name, "aes-xts", MAX_CRYPTO_TYPE_NAME_LEN);
 
-        rc = clear_hw_device_encryption_key();
+        rc = wipe_hw_device_encryption_key((char*)crypt_ftr.crypto_type_name);
         if (!rc) {
           SLOGE("Error clearing device encryption hardware key. rc = %d", rc);
         }
