@@ -3150,7 +3150,7 @@ int cryptfs_enable_internal(char *howarg, int crypt_type, char *passwd,
 
 #ifdef CONFIG_HW_DISK_ENCRYPTION
         strlcpy((char *)crypt_ftr.crypto_type_name, "aes-xts", MAX_CRYPTO_TYPE_NAME_LEN);
-        clear_hw_device_encryption_key();
+        wipe_hw_device_encryption_key((char*)crypt_ftr.crypto_type_name);
         if (get_keymaster_hw_fde_passwd(passwd, newpw, crypt_ftr.salt,
                                         &crypt_ftr))
             key_index = set_hw_device_encryption_key(passwd, (char*)crypt_ftr.crypto_type_name);
