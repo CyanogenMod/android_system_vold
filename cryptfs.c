@@ -79,6 +79,7 @@
 
 #define KEY_IN_FOOTER  "footer"
 
+#define DEFAULT_HEX_PASSWORD "64656661756c745f70617373776f7264"
 #define DEFAULT_PASSWORD "default_password"
 
 #define EXT4_FS 1
@@ -111,6 +112,9 @@ inline int acquire_wake_lock(int lock, const char* id) { return 0; }
 #ifdef CONFIG_HW_DISK_ENCRYPTION
 static int scrypt_keymaster(const char *passwd, const unsigned char *salt,
                             unsigned char *ikey, void *params);
+static void convert_key_to_hex_ascii(const unsigned char *master_key,
+                                     unsigned int keysize, char *master_key_ascii);
+static int put_crypt_ftr_and_key(struct crypt_mnt_ftr *crypt_ftr);
 
 static int get_keymaster_hw_fde_passwd(const char* passwd, unsigned char* newpw,
                                   unsigned char* salt,
@@ -130,6 +134,90 @@ static int get_keymaster_hw_fde_passwd(const char* passwd, unsigned char* newpw,
     }
 
     return rc;
+}
+
+static int verify_hw_fde_passwd(char *passwd, struct crypt_mnt_ftr* crypt_ftr)
+{
+    unsigned char newpw[32] = {0};
+    int key_index;
+    if (get_keymaster_hw_fde_passwd(passwd, newpw, crypt_ftr->salt, crypt_ftr))
+        key_index = set_hw_device_encryption_key(passwd,
+                                           (char*) crypt_ftr->crypto_type_name);
+    else
+        key_index = set_hw_device_encryption_key((const char*)newpw,
+                                           (char*) crypt_ftr->crypto_type_name);
+    return key_index;
+}
+
+static int verify_and_update_hw_fde_passwd(char *passwd,
+                                           struct crypt_mnt_ftr* crypt_ftr)
+{
+    char* new_passwd = NULL;
+    unsigned char newpw[32] = {0};
+    int key_index = -1;
+    int passwd_updated = -1;
+    int ascii_passwd_updated = (crypt_ftr->flags & CRYPT_ASCII_PASSWORD_UPDATED);
+
+    key_index = verify_hw_fde_passwd(passwd, crypt_ftr);
+    if (key_index < 0) {
+        ++crypt_ftr->failed_decrypt_count;
+
+        if (ascii_passwd_updated) {
+            SLOGI("Ascii password was updated");
+        } else {
+            /* Code in else part would execute only once:
+             * When device is upgraded from L->M release.
+             * Once upgraded, code flow should never come here.
+             * L release passed actual password in hex, so try with hex
+             * Each nible of passwd was encoded as a byte, so allocate memory
+             * twice of password len plus one more byte for null termination
+             */
+            new_passwd = (char*)malloc(strlen(passwd)*2+1);
+            if (new_passwd == NULL) {
+                SLOGE("System out of memory. Password verification  incomplete");
+                goto out;
+            }
+
+            if (crypt_ftr->crypt_type == CRYPT_TYPE_DEFAULT)
+                strlcpy(new_passwd, DEFAULT_HEX_PASSWORD, strlen(DEFAULT_HEX_PASSWORD) + 1);
+            else
+                convert_key_to_hex_ascii((const unsigned char*)passwd,
+                                       strlen(passwd), new_passwd);
+            key_index = set_hw_device_encryption_key((const char*)new_passwd,
+                                       (char*) crypt_ftr->crypto_type_name);
+            if (key_index >=0) {
+                crypt_ftr->failed_decrypt_count = 0;
+                SLOGI("Hex password verified...will try to update with Ascii value");
+                /* Before updating password, tie that with keymaster to tie with ROT */
+
+                if (get_keymaster_hw_fde_passwd(passwd, newpw,
+                                                crypt_ftr->salt, crypt_ftr)) {
+                    passwd_updated = update_hw_device_encryption_key(new_passwd,
+                                     passwd, (char*)crypt_ftr->crypto_type_name);
+                } else {
+                    passwd_updated = update_hw_device_encryption_key(new_passwd,
+                                     (const char*)newpw, (char*)crypt_ftr->crypto_type_name);
+                }
+
+                if (passwd_updated >= 0) {
+                    crypt_ftr->flags |= CRYPT_ASCII_PASSWORD_UPDATED;
+                    SLOGI("Ascii password recorded and updated");
+                } else {
+                    SLOGI("Passwd verified, could not update...Will try next time");
+                }
+            } else {
+                ++crypt_ftr->failed_decrypt_count;
+            }
+            free(new_passwd);
+        }
+    } else {
+        if (!ascii_passwd_updated)
+            crypt_ftr->flags |= CRYPT_ASCII_PASSWORD_UPDATED;
+    }
+out:
+    // update footer before leaving
+    put_crypt_ftr_and_key(crypt_ftr);
+    return key_index;
 }
 #endif
 
@@ -1934,17 +2022,10 @@ static int test_mount_encrypted_fs(struct crypt_mnt_ftr* crypt_ftr,
 
 #ifdef CONFIG_HW_DISK_ENCRYPTION
   int key_index = 0;
-  unsigned char newpw[32];
   if(is_hw_disk_encryption((char*)crypt_ftr->crypto_type_name)) {
-    if (get_keymaster_hw_fde_passwd(passwd, newpw, crypt_ftr->salt, crypt_ftr))
-      key_index = set_hw_device_encryption_key(passwd,
-                                (char*) crypt_ftr->crypto_type_name);
-    else
-      key_index = set_hw_device_encryption_key((const char*)newpw,
-                                (char*) crypt_ftr->crypto_type_name);
+    key_index = verify_and_update_hw_fde_passwd(passwd, crypt_ftr);
     if (key_index < 0) {
-      rc = ++crypt_ftr->failed_decrypt_count;
-      put_crypt_ftr_and_key(crypt_ftr);
+      rc = crypt_ftr->failed_decrypt_count;
       goto errout;
     }
     else {
@@ -3056,6 +3137,7 @@ int cryptfs_enable_internal(char *howarg, int crypt_type, char *passwd,
     unsigned char newpw[32];
     int key_index = 0;
 #endif
+  int index = 0;
 
     if (!strcmp(howarg, "wipe")) {
       how = CRYPTO_ENABLE_WIPE;
@@ -3183,6 +3265,8 @@ int cryptfs_enable_internal(char *howarg, int crypt_type, char *passwd,
                                 (char*) crypt_ftr.crypto_type_name);
         if (key_index < 0)
             goto error_shutting_down;
+        else
+           crypt_ftr.flags |= CRYPT_ASCII_PASSWORD_UPDATED;
 #endif
 
         /* Write the key to the end of the partition */
