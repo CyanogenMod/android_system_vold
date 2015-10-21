@@ -49,6 +49,9 @@ status_t PrepareDir(const std::string& path, mode_t mode, uid_t uid, gid_t gid);
 /* Really unmounts the path, killing active processes along the way */
 status_t ForceUnmount(const std::string& path);
 
+/* Kills any processes using given path */
+status_t KillProcessesUsingPath(const std::string& path);
+
 /* Creates bind mount from source to target */
 status_t BindMount(const std::string& source, const std::string& target);
 
