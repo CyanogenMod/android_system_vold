@@ -21,7 +21,7 @@
 
 class Process {
 public:
-    static void killProcessesWithOpenFiles(const char *path, int signal);
+    static int killProcessesWithOpenFiles(const char *path, int signal);
     static int getPid(const char *s);
     static int checkSymLink(int pid, const char *path, const char *name);
     static int checkFileMaps(int pid, const char *path);
