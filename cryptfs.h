@@ -218,9 +218,9 @@ extern "C" {
   int cryptfs_check_passwd(char *pw);
   int cryptfs_verify_passwd(char *newpw);
   int cryptfs_restart(void);
-  int cryptfs_enable(char *flag, int type, char *passwd, int allow_reboot);
+  int cryptfs_enable(char *flag, int type, char *passwd, int no_ui);
   int cryptfs_changepw(int type, const char *newpw);
-  int cryptfs_enable_default(char *flag, int allow_reboot);
+  int cryptfs_enable_default(char *flag, int no_ui);
   int cryptfs_setup_ext_volume(const char* label, const char* real_blkdev,
           const unsigned char* key, int keysize, char* out_crypto_blkdev);
   int cryptfs_revert_ext_volume(const char* label);
