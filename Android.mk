@@ -9,7 +9,9 @@ common_src_files := \
 	NetlinkHandler.cpp \
 	Process.cpp \
 	fs/Ext4.cpp \
+	fs/Exfat.cpp \
 	fs/F2fs.cpp \
+	fs/Ntfs.cpp \
 	fs/Vfat.cpp \
 	Loop.cpp \
 	Devmapper.cpp \
