@@ -14,6 +14,10 @@
  * limitations under the License.
  */
 
+#include "fs/Ext4.h"
+#include "fs/Exfat.h"
+#include "fs/F2fs.h"
+#include "fs/Ntfs.h"
 #include "fs/Vfat.h"
 #include "PublicVolume.h"
 #include "Utils.h"
@@ -91,18 +95,41 @@ status_t PublicVolume::doDestroy() {
 }
 
 status_t PublicVolume::doMount() {
-    // TODO: expand to support mounting other filesystems
     readMetadata();
 
-    if (mFsType != "vfat") {
+    mPath = StringPrintf("/mnt/expand/%s", mFsUuid.c_str());
+    setPath(mPath);
+
+    if (mFsType == "vfat") {
+        if (vfat::Check(mDevPath)) {
+            LOG(ERROR) << getId() << " failed filesystem check";
+            return -EIO;
+        }
+    } else if (mFsType == "ext4") {
+        if (ext4::Check(mDevPath, mPath)) {
+            LOG(ERROR) << getId() << " failed filesystem check";
+            return -EIO;
+        }
+    } else if (mFsType == "exfat") {
+        if (exfat::Check(mDevPath)) {
+            LOG(ERROR) << getId() << " failed filesystem check";
+            return -EIO;
+        }
+    } else if (mFsType == "f2fs") {
+        if (f2fs::Check(mDevPath)) {
+            LOG(ERROR) << getId() << " failed filesystem check";
+            return -EIO;
+        }
+    } else if (mFsType == "ntfs") {
+        if (ntfs::Check(mDevPath)) {
+            LOG(ERROR) << getId() << " failed filesystem check";
+            return -EIO;
+        }
+    } else {
         LOG(ERROR) << getId() << " unsupported filesystem " << mFsType;
         return -EIO;
     }
 
-    if (vfat::Check(mDevPath)) {
-        LOG(ERROR) << getId() << " failed filesystem check";
-        return -EIO;
-    }
 
     // Use UUID as stable name, if available
     std::string stableName = getId();
@@ -131,10 +158,27 @@ status_t PublicVolume::doMount() {
         return -errno;
     }
 
-    if (vfat::Mount(mDevPath, mRawPath, false, false, false,
-            AID_MEDIA_RW, AID_MEDIA_RW, 0007, true)) {
-        PLOG(ERROR) << getId() << " failed to mount " << mDevPath;
-        return -EIO;
+    if (mFsType == "vfat") {
+        if (vfat::Mount(mDevPath, mRawPath, false, false, false,
+                AID_MEDIA_RW, AID_MEDIA_RW, 0007, true)) {
+            PLOG(ERROR) << getId() << " failed to mount " << mDevPath;
+            return -EIO;
+        }
+    } else if (mFsType == "ext4") {
+        if (ext4::Mount(mDevPath, mRawPath, false, false, true)) {
+            PLOG(ERROR) << getId() << " failed to mount " << mDevPath;
+            return -EIO;
+        }
+    } else if (mFsType == "exfat") {
+        if (exfat::Mount(mDevPath, mRawPath)) {
+            PLOG(ERROR) << getId() << " failed to mount " << mDevPath;
+            return -EIO;
+        }
+    } else if (mFsType == "ntfs") {
+        if (ntfs::Mount(mDevPath, mRawPath)) {
+            PLOG(ERROR) << getId() << " failed to mount " << mDevPath;
+            return -EIO;
+        }
     }
 
     if (getMountFlags() & MountFlags::kPrimary) {
@@ -217,7 +261,10 @@ status_t PublicVolume::doUnmount() {
 }
 
 status_t PublicVolume::doFormat(const std::string& fsType) {
-    if (fsType == "vfat" || fsType == "auto") {
+    mPath = StringPrintf("/mnt/expand/%s", mFsUuid.c_str());
+    setPath(mPath);
+
+    if (fsType == "vfat") {
         if (WipeBlockDevice(mDevPath) != OK) {
             LOG(WARNING) << getId() << " failed to wipe";
         }
@@ -225,6 +272,32 @@ status_t PublicVolume::doFormat(const std::string& fsType) {
             LOG(ERROR) << getId() << " failed to format";
             return -errno;
         }
+    } else if (fsType == "ext4") {
+        if (WipeBlockDevice(mDevPath) != OK) {
+            LOG(WARNING) << getId() << " failed to wipe";
+        }
+        if (ext4::Format(mDevPath, 0, mPath)) {
+            LOG(ERROR) << getId() << " failed to format";
+            return -errno;
+        }
+    } else if (fsType == "f2fs") {
+        if (WipeBlockDevice(mDevPath) != OK) {
+            LOG(WARNING) << getId() << " failed to wipe";
+        }
+        if (f2fs::Format(mDevPath)) {
+            LOG(ERROR) << getId() << " failed to format";
+            return -errno;
+        }
+    } else if (fsType == "ntfs") {
+        if (WipeBlockDevice(mDevPath) != OK) {
+            LOG(WARNING) << getId() << " failed to wipe";
+        }
+        if (ntfs::Format(mDevPath)) {
+            LOG(ERROR) << getId() << " failed to format";
+            return -errno;
+        }
+    } else if (fsType == "auto") {
+        // use blkid to determine this??
     } else {
         LOG(ERROR) << "Unsupported filesystem " << fsType;
         return -EINVAL;

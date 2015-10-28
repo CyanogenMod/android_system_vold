@@ -59,6 +59,8 @@ private:
     std::string mDevPath;
     /* Mount point of raw partition */
     std::string mRawPath;
+    /* Path to mounted volume */
+    std::string mPath;
 
     std::string mFuseDefault;
     std::string mFuseRead;
