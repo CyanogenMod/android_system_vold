@@ -21,6 +21,9 @@
 #include <android-base/file.h>
 #include <android-base/logging.h>
 #include <android-base/stringprintf.h>
+#include "fs/Exfat.h"
+#include "fs/Ntfs.h"
+
 #include <cutils/fs.h>
 #include <cutils/properties.h>
 #include <private/android_filesystem_config.h>
@@ -524,6 +527,11 @@ bool IsFilesystemSupported(const std::string& fsType) {
         PLOG(ERROR) << "Failed to read supported filesystems";
         return false;
     }
+
+    /* fuse filesystems */
+    supported.append("fuse\tntfs\n"
+                     "fuse\texfat\n");
+
     return supported.find(fsType + "\n") != std::string::npos;
 }
 
