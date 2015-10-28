@@ -14,6 +14,10 @@
  * limitations under the License.
  */
 
+#include "fs/Exfat.h"
+#include "fs/Ext4.h"
+#include "fs/F2fs.h"
+#include "fs/Ntfs.h"
 #include "fs/Vfat.h"
 #include "PublicVolume.h"
 #include "Utils.h"
@@ -94,12 +98,20 @@ status_t PublicVolume::doMount() {
     // TODO: expand to support mounting other filesystems
     readMetadata();
 
-    if (mFsType != "vfat") {
+    if (!IsFilesystemSupported(mFsType)) {
         LOG(ERROR) << getId() << " unsupported filesystem " << mFsType;
         return -EIO;
     }
 
-    if (vfat::Check(mDevPath)) {
+    int ret = 0;
+    if (mFsType == "exfat") ret = exfat::Check(mDevPath);
+    else if (mFsType == "ext4") ret = ext4::Check(mDevPath, mRawPath);
+    else if (mFsType == "f2fs") ret = f2fs::Check(mDevPath);
+    else if (mFsType == "ntfs") ret = ntfs::Check(mDevPath);
+    else if (mFsType == "vfat") ret = vfat::Check(mDevPath);
+    else LOG(WARNING) << getId() << " unsupported filesystem check, skipping";
+
+    if (ret) {
         LOG(ERROR) << getId() << " failed filesystem check";
         return -EIO;
     }
@@ -131,8 +143,17 @@ status_t PublicVolume::doMount() {
         return -errno;
     }
 
-    if (vfat::Mount(mDevPath, mRawPath, false, false, false,
-            AID_MEDIA_RW, AID_MEDIA_RW, 0007, true)) {
+    if (mFsType == "exfat") ret = exfat::Mount(mDevPath, mRawPath, false, false, false,
+                                               AID_MEDIA_RW, AID_MEDIA_RW, 0007);
+    else if (mFsType == "ext4") ret = ext4::Mount(mDevPath, mRawPath, false, false, true);
+    else if (mFsType == "f2fs") ret = f2fs::Mount(mDevPath, mRawPath);
+    else if (mFsType == "ntfs") ret = ntfs::Mount(mDevPath, mRawPath, false, false, false,
+                                             AID_MEDIA_RW, AID_MEDIA_RW, 0007, true);
+    else if (mFsType == "vfat") ret = vfat::Mount(mDevPath, mRawPath, false, false, false,
+                                             AID_MEDIA_RW, AID_MEDIA_RW, 0007, true);
+    else ret = ::mount(mDevPath.c_str(), mRawPath.c_str(), mFsType.c_str(), 0, NULL);
+
+    if (ret) {
         PLOG(ERROR) << getId() << " failed to mount " << mDevPath;
         return -EIO;
     }
@@ -217,11 +238,20 @@ status_t PublicVolume::doUnmount() {
 }
 
 status_t PublicVolume::doFormat(const std::string& fsType) {
-    if (fsType == "vfat" || fsType == "auto") {
+    if (IsFilesystemSupported(fsType)) {
+        int ret = 0;
+
         if (WipeBlockDevice(mDevPath) != OK) {
             LOG(WARNING) << getId() << " failed to wipe";
         }
-        if (vfat::Format(mDevPath, 0)) {
+
+        if (fsType == "exfat") ret = exfat::Format(mDevPath);
+        else if (fsType == "ext4") ret = ext4::Format(mDevPath, 0, mRawPath);
+        else if (fsType == "f2fs") ret = f2fs::Format(mDevPath);
+        else if (fsType == "ntfs") ret = ntfs::Format(mDevPath, 0);
+        else ret = vfat::Format(mDevPath, 0);
+
+        if (ret) {
             LOG(ERROR) << getId() << " failed to format";
             return -errno;
         }
