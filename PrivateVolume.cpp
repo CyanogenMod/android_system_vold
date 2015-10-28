@@ -15,7 +15,9 @@
  */
 
 #include "fs/Ext4.h"
+#include "fs/Exfat.h"
 #include "fs/F2fs.h"
+#include "fs/Ntfs.h"
 #include "PrivateVolume.h"
 #include "EmulatedVolume.h"
 #include "Utils.h"
@@ -118,6 +120,20 @@ status_t PrivateVolume::doMount() {
             return -EIO;
         }
 
+    } else if (mFsType == "exfat") {
+        int res = exfat::Check(mDmDevPath);
+        if (res == 0 || res == 1) {
+            LOG(DEBUG) << getId() << " passed filesystem check";
+        } else {
+            PLOG(ERROR) << getId() << " failed filesystem check";
+            return -EIO;
+        }
+
+        if (exfat::Mount(mDmDevPath, mPath)) {
+            PLOG(ERROR) << getId() << " failed to mount";
+            return -EIO;
+        }
+
     } else if (mFsType == "f2fs") {
         int res = f2fs::Check(mDmDevPath);
         if (res == 0) {
@@ -128,6 +144,20 @@ status_t PrivateVolume::doMount() {
         }
 
         if (f2fs::Mount(mDmDevPath, mPath)) {
+            PLOG(ERROR) << getId() << " failed to mount";
+            return -EIO;
+        }
+
+    } else if (mFsType == "ntfs") {
+        int res = ntfs::Check(mDmDevPath);
+        if (res == 0) {
+            LOG(DEBUG) << getId() << " passed filesystem check";
+        } else {
+            PLOG(ERROR) << getId() << " failed filesystem check";
+            return -EIO;
+        }
+
+        if (ntfs::Mount(mDmDevPath, mPath)) {
             PLOG(ERROR) << getId() << " failed to mount";
             return -EIO;
         }
@@ -194,6 +224,10 @@ status_t PrivateVolume::doFormat(const std::string& fsType) {
         // give everyone else ext4 because sysfs rotational isn't reliable.
         if ((major(mRawDevice) == kMajorBlockMmc) && f2fs::IsSupported()) {
             resolvedFsType = "f2fs";
+        } else if ((major(mRawDevice) == kMajorBlockMmc) && ntfs::IsSupported()) {
+            resolvedFsType = "ntfs";
+        } else if ((major(mRawDevice) == kMajorBlockMmc) && exfat::IsSupported()) {
+            resolvedFsType = "exfat";
         } else {
             resolvedFsType = "ext4";
         }
@@ -206,8 +240,18 @@ status_t PrivateVolume::doFormat(const std::string& fsType) {
             PLOG(ERROR) << getId() << " failed to format";
             return -EIO;
         }
+    } else if (resolvedFsType == "exfat") {
+        if (exfat::Format(mDmDevPath)) {
+            PLOG(ERROR) << getId() << " failed to format";
+            return -EIO;
+        }
     } else if (resolvedFsType == "f2fs") {
         if (f2fs::Format(mDmDevPath)) {
+            PLOG(ERROR) << getId() << " failed to format";
+            return -EIO;
+        }
+    } else if (resolvedFsType == "ntfs") {
+        if (ntfs::Format(mDmDevPath)) {
             PLOG(ERROR) << getId() << " failed to format";
             return -EIO;
         }
