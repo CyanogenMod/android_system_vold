@@ -3712,6 +3712,12 @@ int cryptfs_enable_file()
     return e4crypt_enable(DATA_MNT_POINT);
 }
 
+int cryptfs_isConvertibleToFBE()
+{
+    struct fstab_rec* rec = fs_mgr_get_entry_for_mount_point(fstab, DATA_MNT_POINT);
+    return fs_mgr_is_convertible_to_fbe(rec) ? 1 : 0;
+}
+
 int cryptfs_create_default_ftr(struct crypt_mnt_ftr* crypt_ftr, __attribute__((unused))int key_length)
 {
     if (cryptfs_init_crypt_mnt_ftr(crypt_ftr)) {

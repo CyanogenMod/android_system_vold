@@ -358,6 +358,16 @@ int CryptCommandListener::CryptfsCmd::runCommand(SocketClient *cli,
         SLOGD("cryptfs deleteuserkey");
         dumpArgs(argc, argv, -1);
         rc = e4crypt_delete_user_key(argv[2]);
+    } else if (!strcmp(argv[1], "isConvertibleToFBE")) {
+        if (argc != 2) {
+            cli->sendMsg(ResponseCode::CommandSyntaxError,
+                "Usage: cryptfs isConvertibleToFBE", false);
+            return 0;
+        }
+        // ext4enc:TODO: send a CommandSyntaxError if argv[2] not an integer
+        SLOGD("cryptfs isConvertibleToFBE");
+        dumpArgs(argc, argv, -1);
+        rc = cryptfs_isConvertibleToFBE();
     } else {
         dumpArgs(argc, argv, -1);
         cli->sendMsg(ResponseCode::CommandSyntaxError, "Unknown cryptfs cmd", false);
