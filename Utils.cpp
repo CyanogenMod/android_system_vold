@@ -526,7 +526,7 @@ status_t WipeBlockDevice(const std::string& path) {
         goto done;
     }
 
-    if ((ioctl(fd, BLKGETSIZE, nr_sec)) == -1) {
+    if ((ioctl(fd, BLKGETSIZE, &nr_sec)) == -1) {
         PLOG(ERROR) << "Failed to determine size of " << path;
         goto done;
     }
