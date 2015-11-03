@@ -177,13 +177,14 @@ extern "C" void vold_killProcessesWithOpenFiles(const char *path, int signal) {
 /*
  * Hunt down processes that have files open at the given mount point.
  */
-void Process::killProcessesWithOpenFiles(const char *path, int signal) {
-    DIR*    dir;
+int Process::killProcessesWithOpenFiles(const char *path, int signal) {
+    int count = 0;
+    DIR* dir;
     struct dirent* de;
 
     if (!(dir = opendir("/proc"))) {
         SLOGE("opendir failed (%s)", strerror(errno));
-        return;
+        return count;
     }
 
     while ((de = readdir(dir))) {
@@ -213,7 +214,9 @@ void Process::killProcessesWithOpenFiles(const char *path, int signal) {
         if (signal != 0) {
             SLOGW("Sending %s to process %d", strsignal(signal), pid);
             kill(pid, signal);
+            count++;
         }
     }
     closedir(dir);
+    return count;
 }
