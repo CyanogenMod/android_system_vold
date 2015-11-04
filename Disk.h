@@ -37,7 +37,7 @@ class VolumeBase;
  */
 class Disk {
 public:
-    Disk(const std::string& eventPath, dev_t device, const std::string& nickname, int flags);
+    Disk(const std::string& eventPath, dev_t device, const std::string& nickname, int partnum, int flags);
     virtual ~Disk();
 
     enum Flags {
@@ -61,6 +61,7 @@ public:
     dev_t getDevice() { return mDevice; }
     uint64_t getSize() { return mSize; }
     const std::string& getLabel() { return mLabel; }
+    const std::string& getNickname() { return mNickname; }
     int getFlags() { return mFlags; }
 
     std::shared_ptr<VolumeBase> findVolume(const std::string& id);
@@ -101,6 +102,8 @@ private:
     std::vector<std::shared_ptr<VolumeBase>> mVolumes;
     /* Nickname for this disk */
     std::string mNickname;
+    /* Partition number */
+    int mPartNum;
     /* Flags applicable to this disk */
     int mFlags;
     /* Flag indicating object is created */

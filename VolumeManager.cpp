@@ -306,7 +306,7 @@ void VolumeManager::handleBlockEvent(NetlinkEvent *evt) {
                 }
 
                 auto disk = new android::vold::Disk(eventPath, device,
-                        source->getNickname(), flags);
+                        source->getNickname(), source->getPartNum(), flags);
                 disk->create();
                 mDisks.push_back(std::shared_ptr<android::vold::Disk>(disk));
                 break;

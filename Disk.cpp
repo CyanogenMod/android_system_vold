@@ -74,6 +74,13 @@ static const char* kGptBasicData = "EBD0A0A2-B9E5-4433-87C0-68B6B72699C7";
 static const char* kGptAndroidMeta = "19A710A2-B3CA-11E4-B026-10604B889DCF";
 static const char* kGptAndroidExpand = "193D1EA4-B3CA-11E4-B075-10604B889DCF";
 
+// List of supported partition type GUIDs for disk management
+static const char* kGptSupportedData[] = {
+    "EBD0A0A2-B9E5-4433-87C0-68B6B72699C7", // Basic data
+    "20117F86-E985-4357-B9EE-374BC1D8487D", // Oppo find7 sdcard
+    NULL
+};
+
 enum class Table {
     kUnknown,
     kMbr,
@@ -81,8 +88,8 @@ enum class Table {
 };
 
 Disk::Disk(const std::string& eventPath, dev_t device,
-        const std::string& nickname, int flags) :
-        mDevice(device), mSize(-1), mNickname(nickname), mFlags(flags), mCreated(
+        const std::string& nickname, int partnum, int flags) :
+        mDevice(device), mSize(-1), mNickname(nickname), mPartNum(partnum), mFlags(flags), mCreated(
                 false), mJustPartitioned(false) {
     mId = StringPrintf("disk:%u,%u", major(device), minor(device));
     mEventPath = eventPath;
@@ -193,6 +200,11 @@ status_t Disk::readMetadata() {
     mSize = -1;
     mLabel.clear();
 
+    if (mPartNum != -1) {
+        // We are holding a single partition, so skip reading metadata
+        return OK;
+    }
+
     int fd = open(mDevPath.c_str(), O_RDONLY | O_CLOEXEC);
     if (fd != -1) {
         if (ioctl(fd, BLKGETSIZE64, &mSize)) {
@@ -292,6 +304,10 @@ status_t Disk::readPartitions() {
                         << " beyond max supported devices";
                 continue;
             }
+            if (mPartNum != -1 && i != mPartNum) {
+                // We are holding a single partition, so skip all others
+                continue;
+            }
             dev_t partDevice = makedev(major(mDevice), minor(mDevice) + i);
 
             if (table == Table::kMbr) {
@@ -306,10 +322,19 @@ status_t Disk::readPartitions() {
                     break;
                 }
             } else if (table == Table::kGpt) {
+                bool supported = false;
                 const char* typeGuid = strtok(nullptr, kSgdiskToken);
                 const char* partGuid = strtok(nullptr, kSgdiskToken);
 
-                if (!strcasecmp(typeGuid, kGptBasicData)) {
+                unsigned int n;
+                for (n = 0; kGptSupportedData[n]; ++n) {
+                    if (!strcasecmp(typeGuid, kGptSupportedData[n])) {
+                        supported = true;
+                        break;
+                    }
+                }
+
+                if (supported) {
                     createPublicVolume(partDevice);
                 } else if (!strcasecmp(typeGuid, kGptAndroidExpand)) {
                     createPrivateVolume(partDevice, partGuid);
