@@ -206,17 +206,23 @@ static status_t readMetadata(const std::string& path, std::string& fsType,
         const char* cline = line.c_str();
         char* start = strstr(cline, "TYPE=");
         if (start != nullptr && sscanf(start + 5, "\"%127[^\"]\"", value) == 1) {
-            fsType = value;
+            if (value[0]) {
+                fsType = value;
+            }
         }
 
         start = strstr(cline, "UUID=");
         if (start != nullptr && sscanf(start + 5, "\"%127[^\"]\"", value) == 1) {
-            fsUuid = value;
+            if (value[0]) {
+                fsUuid = value;
+            }
         }
 
         start = strstr(cline, "LABEL=");
         if (start != nullptr && sscanf(start + 6, "\"%127[^\"]\"", value) == 1) {
-            fsLabel = value;
+            if (value[0]) {
+                fsLabel = value;
+            }
         }
     }
 

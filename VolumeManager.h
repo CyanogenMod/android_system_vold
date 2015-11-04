@@ -36,6 +36,7 @@
 #include <sysutils/NetlinkEvent.h>
 
 #include "Disk.h"
+#include "DiskPartition.h"
 #include "VolumeBase.h"
 
 /* The length of an MD5 hash when encoded into ASCII hex characters */
@@ -96,8 +97,8 @@ public:
 
     class DiskSource {
     public:
-        DiskSource(const std::string& sysPattern, const std::string& nickname, int flags) :
-                mSysPattern(sysPattern), mNickname(nickname), mFlags(flags) {
+        DiskSource(const std::string& sysPattern, const std::string& nickname, int partnum, int flags) :
+                mSysPattern(sysPattern), mNickname(nickname), mPartNum(partnum), mFlags(flags) {
         }
 
         bool matches(const std::string& sysPath) {
@@ -105,11 +106,13 @@ public:
         }
 
         const std::string& getNickname() { return mNickname; }
+        int getPartNum() { return mPartNum; }
         int getFlags() { return mFlags; }
 
     private:
         std::string mSysPattern;
         std::string mNickname;
+        int mPartNum;
         int mFlags;
     };
 
