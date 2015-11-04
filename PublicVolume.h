@@ -39,7 +39,7 @@ namespace vold {
  */
 class PublicVolume : public VolumeBase {
 public:
-    explicit PublicVolume(dev_t device);
+    explicit PublicVolume(dev_t device, const std::string& nickname);
     virtual ~PublicVolume();
 
 protected:
