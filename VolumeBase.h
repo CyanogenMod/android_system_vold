@@ -98,7 +98,7 @@ public:
     status_t create();
     status_t destroy();
     status_t mount();
-    status_t unmount();
+    status_t unmount(bool detach = false);
     status_t format(const std::string& fsType);
 
 protected:
@@ -107,7 +107,7 @@ protected:
     virtual status_t doCreate();
     virtual status_t doDestroy();
     virtual status_t doMount() = 0;
-    virtual status_t doUnmount() = 0;
+    virtual status_t doUnmount(bool detach = false) = 0;
     virtual status_t doFormat(const std::string& fsType);
 
     status_t setId(const std::string& id);

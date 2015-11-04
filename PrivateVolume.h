@@ -44,7 +44,7 @@ protected:
     status_t doCreate() override;
     status_t doDestroy() override;
     status_t doMount() override;
-    status_t doUnmount() override;
+    status_t doUnmount(bool detach = false) override;
     status_t doFormat(const std::string& fsType) override;
 
     status_t readMetadata();

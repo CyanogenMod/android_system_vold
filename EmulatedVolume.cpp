@@ -16,6 +16,7 @@
 
 #include "EmulatedVolume.h"
 #include "Utils.h"
+#include "ResponseCode.h"
 
 #include <base/stringprintf.h>
 #include <base/logging.h>
@@ -34,7 +35,11 @@ using android::base::StringPrintf;
 namespace android {
 namespace vold {
 
+#ifdef MINIVOLD
+static const char* kFusePath = "/sbin/sdcard";
+#else
 static const char* kFusePath = "/system/bin/sdcard";
+#endif
 
 EmulatedVolume::EmulatedVolume(const std::string& rawPath) :
         VolumeBase(Type::kEmulated), mFusePid(0) {
@@ -51,6 +56,13 @@ EmulatedVolume::EmulatedVolume(const std::string& rawPath, dev_t device,
 }
 
 EmulatedVolume::~EmulatedVolume() {
+}
+
+status_t EmulatedVolume::doCreate() {
+    if (mLabel.size() > 0) {
+        notifyEvent(ResponseCode::VolumeFsLabelChanged, mLabel);
+    }
+    return OK;
 }
 
 status_t EmulatedVolume::doMount() {
@@ -106,7 +118,7 @@ status_t EmulatedVolume::doMount() {
     return OK;
 }
 
-status_t EmulatedVolume::doUnmount() {
+status_t EmulatedVolume::doUnmount(bool detach /* = false */) {
     if (mFusePid > 0) {
         kill(mFusePid, SIGTERM);
         TEMP_FAILURE_RETRY(waitpid(mFusePid, nullptr, 0));
