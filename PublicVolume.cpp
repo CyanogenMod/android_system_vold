@@ -15,6 +15,7 @@
  */
 
 #include "fs/Vfat.h"
+#include "fs/Ext4.h"
 #include "PublicVolume.h"
 #include "Utils.h"
 #include "VolumeManager.h"
@@ -101,16 +102,6 @@ status_t PublicVolume::doMount() {
     // TODO: expand to support mounting other filesystems
     readMetadata();
 
-    if (mFsType != "vfat") {
-        LOG(ERROR) << getId() << " unsupported filesystem " << mFsType;
-        return -EIO;
-    }
-
-    if (vfat::Check(mDevPath)) {
-        LOG(ERROR) << getId() << " failed filesystem check";
-        return -EIO;
-    }
-
     // Use UUID as stable name, if available
     std::string stableName = getId();
     if (!mFsUuid.empty()) {
@@ -147,9 +138,29 @@ status_t PublicVolume::doMount() {
         return -errno;
     }
 
-    if (vfat::Mount(mDevPath, mRawPath, false, false, false,
-            AID_MEDIA_RW, AID_MEDIA_RW, 0007, true)) {
-        PLOG(ERROR) << getId() << " failed to mount " << mDevPath;
+    if (mFsType == "vfat") {
+        if (vfat::Check(mDevPath)) {
+            LOG(ERROR) << getId() << " failed filesystem check";
+            return -EIO;
+        }
+        if (vfat::Mount(mDevPath, mRawPath, false, false, false,
+                AID_MEDIA_RW, AID_MEDIA_RW, 0007, true)) {
+            PLOG(ERROR) << getId() << " failed to mount " << mDevPath;
+            return -EIO;
+        }
+    }
+    else if (mFsType == "ext4") {
+        if (ext4::Check(mDevPath, mRawPath)) {
+            LOG(ERROR) << getId() << " failed filesystem check";
+            return -EIO;
+        }
+        if (ext4::Mount(mDevPath, mRawPath, false, false, false)) {
+            PLOG(ERROR) << getId() << " failed to mount " << mDevPath;
+            return -EIO;
+        }
+    }
+    else {
+        LOG(ERROR) << getId() << " unsupported filesystem " << mFsType;
         return -EIO;
     }
 
