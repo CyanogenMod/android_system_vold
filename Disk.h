@@ -67,11 +67,11 @@ public:
 
     void listVolumes(VolumeBase::Type type, std::list<std::string>& list);
 
-    status_t create();
-    status_t destroy();
+    virtual status_t create();
+    virtual status_t destroy();
 
-    status_t readMetadata();
-    status_t readPartitions();
+    virtual status_t readMetadata();
+    virtual status_t readPartitions();
 
     status_t unmountAll();
 
@@ -82,7 +82,7 @@ public:
     void notifyEvent(int msg);
     void notifyEvent(int msg, const std::string& value);
 
-private:
+protected:
     /* ID that uniquely references this disk */
     std::string mId;
     /* Original event path */
