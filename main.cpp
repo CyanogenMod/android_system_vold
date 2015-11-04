@@ -49,7 +49,7 @@ struct selabel_handle *sehandle;
 
 using android::base::StringPrintf;
 
-int main(int argc, char** argv) {
+extern "C" int vold_main(int argc, char** argv) {
     setenv("ANDROID_LOG_TAGS", "*:v", 1);
     android::base::InitLogging(argv, android::base::LogdLogger(android::base::SYSTEM));
 

@@ -42,8 +42,9 @@ public:
     virtual ~EmulatedVolume();
 
 protected:
+    status_t doCreate() override;
     status_t doMount() override;
-    status_t doUnmount() override;
+    status_t doUnmount(bool detach = false) override;
 
 private:
     std::string mRawPath;
