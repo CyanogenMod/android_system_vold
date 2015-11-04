@@ -164,9 +164,9 @@ status_t VolumeBase::create() {
     CHECK(!mCreated);
 
     mCreated = true;
-    status_t res = doCreate();
     notifyEvent(ResponseCode::VolumeCreated,
             StringPrintf("%d \"%s\" \"%s\"", mType, mDiskId.c_str(), mPartGuid.c_str()));
+    status_t res = doCreate();
     setState(State::kUnmounted);
     return res;
 }

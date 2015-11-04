@@ -52,7 +52,11 @@ security_context_t sBlkidUntrustedContext = nullptr;
 security_context_t sFsckContext = nullptr;
 security_context_t sFsckUntrustedContext = nullptr;
 
+#ifdef MINIVOLD
+static const char* kBlkidPath = "/sbin/blkid";
+#else
 static const char* kBlkidPath = "/system/bin/blkid";
+#endif
 static const char* kKeyPath = "/data/misc/vold";
 
 static const char* kProcFilesystems = "/proc/filesystems";
@@ -164,7 +168,6 @@ static status_t readMetadata(const std::string& path, std::string& fsType,
         std::string& fsUuid, std::string& fsLabel, bool untrusted) {
     fsType.clear();
     fsUuid.clear();
-    fsLabel.clear();
 
     std::vector<std::string> cmd;
     cmd.push_back(kBlkidPath);
