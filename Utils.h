@@ -50,7 +50,7 @@ status_t DestroyDeviceNode(const std::string& path);
 status_t PrepareDir(const std::string& path, mode_t mode, uid_t uid, gid_t gid);
 
 /* Really unmounts the path, killing active processes along the way */
-status_t ForceUnmount(const std::string& path);
+status_t ForceUnmount(const std::string& path, bool detach = false);
 
 /* Kills any processes using given path */
 status_t KillProcessesUsingPath(const std::string& path);

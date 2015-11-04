@@ -52,7 +52,11 @@ security_context_t sBlkidUntrustedContext = nullptr;
 security_context_t sFsckContext = nullptr;
 security_context_t sFsckUntrustedContext = nullptr;
 
+#ifdef MINIVOLD
+static const char* kBlkidPath = "/sbin/blkid";
+#else
 static const char* kBlkidPath = "/system/bin/blkid";
+#endif
 static const char* kKeyPath = "/data/misc/vold";
 
 static const char* kProcFilesystems = "/proc/filesystems";
@@ -118,8 +122,15 @@ status_t PrepareDir(const std::string& path, mode_t mode, uid_t uid, gid_t gid) 
     }
 }
 
-status_t ForceUnmount(const std::string& path) {
+status_t ForceUnmount(const std::string& path, bool detach /* = false */) {
     const char* cpath = path.c_str();
+    if (detach) {
+        if (!umount2(path.c_str(), UMOUNT_NOFOLLOW | MNT_DETACH) || errno == EINVAL || errno == ENOENT) {
+            return OK;
+        }
+        PLOG(WARNING) << "Failed to unmount " << path;
+        return -errno;
+    }
     if (!umount2(cpath, UMOUNT_NOFOLLOW) || errno == EINVAL || errno == ENOENT) {
         return OK;
     }
@@ -190,6 +201,7 @@ static status_t readMetadata(const std::string& path, std::string& fsType,
 
     std::vector<std::string> cmd;
     cmd.push_back(kBlkidPath);
+#ifndef MINIVOLD
     cmd.push_back("-c");
     cmd.push_back("/dev/null");
     cmd.push_back("-s");
@@ -198,6 +210,7 @@ static status_t readMetadata(const std::string& path, std::string& fsType,
     cmd.push_back("UUID");
     cmd.push_back("-s");
     cmd.push_back("LABEL");
+#endif
     cmd.push_back(path);
 
     std::vector<std::string> output;
