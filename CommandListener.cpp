@@ -226,14 +226,15 @@ int CommandListener::VolumeCmd::runCommand(SocketClient *cli,
         return sendGenericOkFail(cli, res);
 
     } else if (cmd == "unmount" && argc > 2) {
-        // unmount [volId]
+        // unmount [volId] [detach]
         std::string id(argv[2]);
         auto vol = vm->findVolume(id);
         if (vol == nullptr) {
             return cli->sendMsg(ResponseCode::CommandSyntaxError, "Unknown volume", false);
         }
+        bool detach = (argc > 3 && !strcmp(argv[3], "detach"));
 
-        return sendGenericOkFail(cli, vol->unmount());
+        return sendGenericOkFail(cli, vol->unmount(detach));
 
     } else if (cmd == "format" && argc > 3) {
         // format [volId] [fsType|auto]
