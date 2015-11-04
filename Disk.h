@@ -52,6 +52,8 @@ public:
         kUsb = 1 << 3,
         /* Flag that disk is EMMC internal */
         kEmmc = 1 << 4,
+        /* Flag that disk is non-removable */
+        kNonRemovable = 1 << 5,
     };
 
     const std::string& getId() { return mId; }
@@ -67,22 +69,22 @@ public:
 
     void listVolumes(VolumeBase::Type type, std::list<std::string>& list);
 
-    status_t create();
-    status_t destroy();
+    virtual status_t create();
+    virtual status_t destroy();
 
-    status_t readMetadata();
-    status_t readPartitions();
+    virtual status_t readMetadata();
+    virtual status_t readPartitions();
 
     status_t unmountAll();
 
-    status_t partitionPublic();
-    status_t partitionPrivate();
-    status_t partitionMixed(int8_t ratio);
+    virtual status_t partitionPublic();
+    virtual status_t partitionPrivate();
+    virtual status_t partitionMixed(int8_t ratio);
 
     void notifyEvent(int msg);
     void notifyEvent(int msg, const std::string& value);
 
-private:
+protected:
     /* ID that uniquely references this disk */
     std::string mId;
     /* Original event path */

@@ -21,6 +21,7 @@ common_src_files := \
 	VoldUtil.c \
 	cryptfs.c \
 	Disk.cpp \
+	DiskPartition.cpp \
 	VolumeBase.cpp \
 	PublicVolume.cpp \
 	PrivateVolume.cpp \
