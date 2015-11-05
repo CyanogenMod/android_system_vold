@@ -31,7 +31,8 @@ class DiskPartition : public Disk {
 public:
     DiskPartition(const std::string& eventPath, dev_t device,
             const std::string& nickname,
-            int flags, int partnum);
+            int flags, int partnum,
+            const std::string& fstype = "", const std::string& mntopts = "");
     virtual ~DiskPartition();
 
     virtual status_t create();
@@ -44,6 +45,10 @@ public:
 private:
     /* Partition number */
     int mPartNum;
+    /* Filesystem type */
+    std::string mFsType;
+    /* Mount options */
+    std::string mMntOpts;
 };
 
 }  // namespace vold
