@@ -176,9 +176,6 @@ status_t BindMount(const std::string& source, const std::string& target) {
 
 static status_t readMetadata(const std::string& path, std::string& fsType,
         std::string& fsUuid, std::string& fsLabel, bool untrusted) {
-    fsType.clear();
-    fsUuid.clear();
-
     std::vector<std::string> cmd;
     cmd.push_back(kBlkidPath);
 #ifndef MINIVOLD
@@ -199,6 +196,10 @@ static status_t readMetadata(const std::string& path, std::string& fsType,
         LOG(WARNING) << "blkid failed to identify " << path;
         return res;
     }
+
+    fsType.clear();
+    fsUuid.clear();
+    fsLabel.clear();
 
     char value[128];
     for (auto line : output) {
