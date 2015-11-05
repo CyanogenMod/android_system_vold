@@ -88,9 +88,11 @@ enum class Table {
 };
 
 Disk::Disk(const std::string& eventPath, dev_t device,
-        const std::string& nickname, int partnum, int flags) :
-        mDevice(device), mSize(-1), mNickname(nickname), mPartNum(partnum), mFlags(flags), mCreated(
-                false), mJustPartitioned(false) {
+           const std::string& opts, const std::string& nickname,
+           int partnum, int flags) :
+        mDevice(device), mSize(-1), mOpts(opts), mNickname(nickname),
+        mPartNum(partnum), mFlags(flags),
+        mCreated(false), mJustPartitioned(false) {
     mId = StringPrintf("disk:%u,%u", major(device), minor(device));
     mEventPath = eventPath;
     mSysPath = StringPrintf("/sys/%s", eventPath.c_str());
@@ -143,7 +145,7 @@ status_t Disk::destroy() {
 }
 
 void Disk::createPublicVolume(dev_t device) {
-    auto vol = std::shared_ptr<VolumeBase>(new PublicVolume(device, mNickname));
+    auto vol = std::shared_ptr<VolumeBase>(new PublicVolume(device, mOpts, mNickname));
     if (mJustPartitioned) {
         LOG(DEBUG) << "Device just partitioned; silently formatting";
         vol->setSilent(true);

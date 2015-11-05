@@ -96,20 +96,24 @@ public:
 
     class DiskSource {
     public:
-        DiskSource(const std::string& sysPattern, const std::string& nickname, int partnum, int flags) :
-                mSysPattern(sysPattern), mNickname(nickname), mPartNum(partnum), mFlags(flags) {
+        DiskSource(const std::string& sysPattern, const std::string opts,
+                   const std::string& nickname, int partnum, int flags) :
+                mSysPattern(sysPattern), mOpts(opts),
+                mNickname(nickname), mPartNum(partnum), mFlags(flags) {
         }
 
         bool matches(const std::string& sysPath) {
             return !fnmatch(mSysPattern.c_str(), sysPath.c_str(), 0);
         }
 
+        const std::string& getOpts() { return mOpts; }
         const std::string& getNickname() { return mNickname; }
         int getPartNum() { return mPartNum; }
         int getFlags() { return mFlags; }
 
     private:
         std::string mSysPattern;
+        std::string mOpts;
         std::string mNickname;
         int mPartNum;
         int mFlags;

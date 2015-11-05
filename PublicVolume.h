@@ -39,7 +39,7 @@ namespace vold {
  */
 class PublicVolume : public VolumeBase {
 public:
-    explicit PublicVolume(dev_t device, const std::string& nickname);
+    PublicVolume(dev_t device, const std::string& opts, const std::string& nickname);
     virtual ~PublicVolume();
 
 protected:
@@ -69,6 +69,8 @@ private:
 
     /* Filesystem type */
     std::string mFsType;
+    /* Mount options */
+    std::string mOpts;
     /* Filesystem UUID */
     std::string mFsUuid;
     /* User-visible filesystem label */

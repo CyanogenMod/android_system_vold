@@ -49,8 +49,10 @@ static const char* kFusePath = "/system/bin/sdcard";
 
 static const char* kAsecPath = "/mnt/secure/asec";
 
-PublicVolume::PublicVolume(dev_t device, const std::string& nickname) :
-        VolumeBase(Type::kPublic), mDevice(device), mFusePid(0), mFsLabel(nickname) {
+PublicVolume::PublicVolume(dev_t device, const std::string& opts,
+                           const std::string& nickname) :
+        VolumeBase(Type::kPublic), mDevice(device), mFusePid(0),
+        mOpts(opts), mFsLabel(nickname) {
     setId(StringPrintf("public:%u,%u", major(device), minor(device)));
     mDevPath = StringPrintf("/dev/block/vold/%s", getId().c_str());
 }
@@ -169,7 +171,7 @@ status_t PublicVolume::doMount() {
         ret = exfat::Mount(mDevPath, mRawPath, false, false, false,
                 AID_MEDIA_RW, AID_MEDIA_RW, 0007);
     } else if (mFsType == "ext4") {
-        ret = ext4::Mount(mDevPath, mRawPath, false, false, true);
+        ret = ext4::Mount(mDevPath, mRawPath, false, false, true, mOpts);
     } else if (mFsType == "f2fs") {
         ret = f2fs::Mount(mDevPath, mRawPath);
     } else if (mFsType == "ntfs") {
