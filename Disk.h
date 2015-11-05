@@ -37,7 +37,9 @@ class VolumeBase;
  */
 class Disk {
 public:
-    Disk(const std::string& eventPath, dev_t device, const std::string& nickname, int partnum, int flags);
+    Disk(const std::string& eventPath, dev_t device,
+            const std::string& opts, const std::string& nickname,
+            int partnum, int flags);
     virtual ~Disk();
 
     enum Flags {
@@ -100,6 +102,8 @@ private:
     std::string mLabel;
     /* Current partitions on disk */
     std::vector<std::shared_ptr<VolumeBase>> mVolumes;
+    /* Mount options */
+    std::string mOpts;
     /* Nickname for this disk */
     std::string mNickname;
     /* Partition number */

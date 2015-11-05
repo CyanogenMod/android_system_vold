@@ -133,12 +133,13 @@ status_t Check(const std::string& source, const std::string& target) {
 }
 
 status_t Mount(const std::string& source, const std::string& target, bool ro,
-        bool remount, bool executable) {
+        bool remount, bool executable, const std::string& opts /* = "" */) {
     int rc;
     unsigned long flags;
 
     const char* c_source = source.c_str();
     const char* c_target = target.c_str();
+    const char* c_opts = opts.c_str();
 
     flags = MS_NOATIME | MS_NODEV | MS_NOSUID | MS_DIRSYNC;
 
@@ -146,7 +147,7 @@ status_t Mount(const std::string& source, const std::string& target, bool ro,
     flags |= (ro ? MS_RDONLY : 0);
     flags |= (remount ? MS_REMOUNT : 0);
 
-    rc = mount(c_source, c_target, "ext4", flags, NULL);
+    rc = mount(c_source, c_target, "ext4", flags, c_opts);
 
     if (rc && errno == EROFS) {
         SLOGE("%s appears to be a read only filesystem - retrying mount RO", c_source);
