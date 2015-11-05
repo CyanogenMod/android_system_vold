@@ -44,9 +44,12 @@ namespace android {
 namespace vold {
 
 DiskPartition::DiskPartition(const std::string& eventPath, dev_t device,
-            const std::string& nickname, int flags, int partnum) :
+            const std::string& nickname, int flags, int partnum,
+            const std::string& fstype /* = "" */, const std::string& mntopts /* = "" */) :
         Disk(eventPath, device, nickname, flags),
-        mPartNum(partnum) {
+        mPartNum(partnum),
+        mFsType(fstype),
+        mMntOpts(mntopts) {
     // Empty
 }
 
@@ -59,7 +62,7 @@ status_t DiskPartition::create() {
     mCreated = true;
     notifyEvent(ResponseCode::DiskCreated, StringPrintf("%d", mFlags));
     dev_t partDevice = makedev(major(mDevice), minor(mDevice) + mPartNum);
-    createPublicVolume(partDevice);
+    createPublicVolume(partDevice, mFsType, mMntOpts);
     return OK;
 }
 
