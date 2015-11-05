@@ -42,6 +42,7 @@
 #include "Process.h"
 #include "ResponseCode.h"
 #include "cryptfs.h"
+#include "Ext4Crypt.h"
 
 #define DUMP_ARGS 0
 
@@ -292,6 +293,35 @@ int CryptCommandListener::CryptfsCmd::runCommand(SocketClient *cli,
         dumpArgs(argc, argv, -1);
         cryptfs_clear_password();
         rc = 0;
+    } else if (!strcmp(argv[1], "setusercryptopolicies")) {
+        if (argc != 3) {
+            cli->sendMsg(ResponseCode::CommandSyntaxError,
+                "Usage: cryptfs setusercryptopolicies <path>", false);
+            return 0;
+        }
+        SLOGD("cryptfs setusercryptopolicies");
+        dumpArgs(argc, argv, -1);
+        rc = e4crypt_set_user_crypto_policies(argv[2]);
+    } else if (!strcmp(argv[1], "createnewuserdir")) {
+        if (argc != 4) {
+            cli->sendMsg(ResponseCode::CommandSyntaxError,
+                "Usage: cryptfs createnewuserdir <userHandle> <path>", false);
+            return 0;
+        }
+        // ext4enc:TODO: send a CommandSyntaxError if argv[2] not an integer
+        SLOGD("cryptfs createnewuserdir");
+        dumpArgs(argc, argv, -1);
+        rc = e4crypt_create_new_user_dir(argv[2], argv[3]);
+    } else if (!strcmp(argv[1], "deleteuserkey")) {
+        if (argc != 3) {
+            cli->sendMsg(ResponseCode::CommandSyntaxError,
+                "Usage: cryptfs deleteuserkey <userHandle>", false);
+            return 0;
+        }
+        // ext4enc:TODO: send a CommandSyntaxError if argv[2] not an integer
+        SLOGD("cryptfs deleteuserkey");
+        dumpArgs(argc, argv, -1);
+        rc = e4crypt_delete_user_key(argv[2]);
     } else {
         dumpArgs(argc, argv, -1);
         cli->sendMsg(ResponseCode::CommandSyntaxError, "Unknown cryptfs cmd", false);

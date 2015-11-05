@@ -118,3 +118,15 @@ LOCAL_CFLAGS := $(vold_cflags)
 LOCAL_CONLYFLAGS := $(vold_conlyflags)
 
 include $(BUILD_EXECUTABLE)
+
+include $(CLEAR_VARS)
+
+LOCAL_ADDITIONAL_DEPENDENCIES := $(LOCAL_PATH)/Android.mk
+LOCAL_CLANG := true
+LOCAL_SRC_FILES:= secdiscard.cpp
+LOCAL_MODULE:= secdiscard
+LOCAL_SHARED_LIBRARIES := libcutils
+LOCAL_CFLAGS := $(vold_cflags)
+LOCAL_CONLYFLAGS := $(vold_conlyflags)
+
+include $(BUILD_EXECUTABLE)

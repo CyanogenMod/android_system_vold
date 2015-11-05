@@ -2564,11 +2564,19 @@ static int cryptfs_enable_inplace_ext4(char *crypto_blkdev,
         goto errout;
     }
 
-    if ( (data.cryptofd = open(crypto_blkdev, O_WRONLY|O_CLOEXEC)) < 0) {
-        SLOGE("Error opening crypto_blkdev %s for ext4 inplace encrypt. err=%d(%s)\n",
-              crypto_blkdev, errno, strerror(errno));
-        rc = ENABLE_INPLACE_ERR_DEV;
-        goto errout;
+    // Wait until the block device appears.  Re-use the mount retry values since it is reasonable.
+    int retries = RETRY_MOUNT_ATTEMPTS;
+    while ((data.cryptofd = open(crypto_blkdev, O_WRONLY|O_CLOEXEC)) < 0) {
+        if (--retries) {
+            SLOGE("Error opening crypto_blkdev %s for ext4 inplace encrypt. err=%d(%s), retrying\n",
+                  crypto_blkdev, errno, strerror(errno));
+            sleep(RETRY_MOUNT_DELAY_SECONDS);
+        } else {
+            SLOGE("Error opening crypto_blkdev %s for ext4 inplace encrypt. err=%d(%s)\n",
+                  crypto_blkdev, errno, strerror(errno));
+            rc = ENABLE_INPLACE_ERR_DEV;
+            goto errout;
+        }
     }
 
     if (setjmp(setjmp_env)) {
@@ -3365,7 +3373,9 @@ int cryptfs_enable_default(char *howarg, int allow_reboot)
 int cryptfs_changepw(int crypt_type, const char *currentpw, const char *newpw)
 {
     if (e4crypt_crypto_complete(DATA_MNT_POINT) == 0) {
-        return e4crypt_change_password(DATA_MNT_POINT, crypt_type, newpw);
+        return e4crypt_change_password(DATA_MNT_POINT, crypt_type,
+                    crypt_type == CRYPT_TYPE_DEFAULT ? DEFAULT_PASSWORD
+                                                     : newpw);
     }
 
     struct crypt_mnt_ftr crypt_ftr;
