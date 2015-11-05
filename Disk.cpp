@@ -164,8 +164,10 @@ status_t Disk::destroy() {
     return OK;
 }
 
-void Disk::createPublicVolume(dev_t device) {
-    auto vol = std::shared_ptr<VolumeBase>(new PublicVolume(device, mNickname));
+void Disk::createPublicVolume(dev_t device,
+                const std::string& fstype /* = "" */,
+                const std::string& mntopts /* = "" */) {
+    auto vol = std::shared_ptr<VolumeBase>(new PublicVolume(device, mNickname, fstype, mntopts));
     if (mJustPartitioned) {
         LOG(DEBUG) << "Device just partitioned; silently formatting";
         vol->setSilent(true);
