@@ -1253,11 +1253,9 @@ static int pbkdf2(const char *passwd, const unsigned char *salt,
     SLOGI("Using pbkdf2 for cryptfs KDF");
 
     /* Turn the password into a key and IV that can decrypt the master key */
-    PKCS5_PBKDF2_HMAC_SHA1(passwd, strlen(passwd),
-                           salt, SALT_LEN,
-                           HASH_COUNT, KEY_LEN_BYTES+IV_LEN_BYTES, ikey);
-
-    return 0;
+    return PKCS5_PBKDF2_HMAC_SHA1(passwd, strlen(passwd), salt, SALT_LEN,
+                                  HASH_COUNT, KEY_LEN_BYTES + IV_LEN_BYTES,
+                                  ikey) != 1;
 }
 
 static int scrypt(const char *passwd, const unsigned char *salt,
