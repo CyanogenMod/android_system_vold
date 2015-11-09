@@ -14,7 +14,6 @@ common_src_files := \
 	Ext4.cpp \
 	Fat.cpp \
 	Ntfs.cpp \
-	Exfat.cpp \
 	F2FS.cpp \
 	Loop.cpp \
 	Devmapper.cpp \
@@ -24,6 +23,11 @@ common_src_files := \
 	fstrim.c \
 	cryptfs.c \
 	main.cpp
+
+ifeq ($(TARGET_USES_EXFAT),true)
+common_src_files += Exfat.cpp
+common_cflags += -DVOLD_ENABLE_EXFAT
+endif
 
 common_c_includes := \
 	system/extras/ext4_utils \
