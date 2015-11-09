@@ -16,6 +16,7 @@
 
 #include <stdlib.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
 #include <sys/types.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
@@ -30,7 +31,9 @@
 
 #define LOG_TAG "VoldCryptCmdListener"
 
+#include <base/logging.h>
 #include <base/stringprintf.h>
+
 #include <cutils/fs.h>
 #include <cutils/log.h>
 #include <cutils/sockets.h>
@@ -43,6 +46,7 @@
 #include "ResponseCode.h"
 #include "cryptfs.h"
 #include "Ext4Crypt.h"
+#include "Utils.h"
 
 #define DUMP_ARGS 0
 
@@ -110,6 +114,14 @@ static int getType(const char* type)
     }
 }
 
+static char* parseNull(char* arg) {
+    if (strcmp(arg, "!") == 0) {
+        return nullptr;
+    } else {
+        return arg;
+    }
+}
+
 int CryptCommandListener::CryptfsCmd::runCommand(SocketClient *cli,
                                                  int argc, char **argv) {
     if ((cli->getUid() != 0) && (cli->getUid() != AID_SYSTEM)) {
@@ -124,6 +136,7 @@ int CryptCommandListener::CryptfsCmd::runCommand(SocketClient *cli,
 
     int rc = 0;
 
+    std::string cmd(argv[1]);
     if (!strcmp(argv[1], "checkpw")) {
         if (argc != 3) {
             cli->sendMsg(ResponseCode::CommandSyntaxError, "Usage: cryptfs checkpw <passwd>", false);
@@ -338,26 +351,7 @@ int CryptCommandListener::CryptfsCmd::runCommand(SocketClient *cli,
         SLOGD("cryptfs setusercryptopolicies");
         dumpArgs(argc, argv, -1);
         rc = e4crypt_set_user_crypto_policies(argv[2]);
-    } else if (!strcmp(argv[1], "createnewuserdir")) {
-        if (argc != 4) {
-            cli->sendMsg(ResponseCode::CommandSyntaxError,
-                "Usage: cryptfs createnewuserdir <userHandle> <path>", false);
-            return 0;
-        }
-        // ext4enc:TODO: send a CommandSyntaxError if argv[2] not an integer
-        SLOGD("cryptfs createnewuserdir");
-        dumpArgs(argc, argv, -1);
-        rc = e4crypt_create_new_user_dir(argv[2], argv[3]);
-    } else if (!strcmp(argv[1], "deleteuserkey")) {
-        if (argc != 3) {
-            cli->sendMsg(ResponseCode::CommandSyntaxError,
-                "Usage: cryptfs deleteuserkey <userHandle>", false);
-            return 0;
-        }
-        // ext4enc:TODO: send a CommandSyntaxError if argv[2] not an integer
-        SLOGD("cryptfs deleteuserkey");
-        dumpArgs(argc, argv, -1);
-        rc = e4crypt_delete_user_key(argv[2]);
+
     } else if (!strcmp(argv[1], "isConvertibleToFBE")) {
         if (argc != 2) {
             cli->sendMsg(ResponseCode::CommandSyntaxError,
@@ -368,6 +362,28 @@ int CryptCommandListener::CryptfsCmd::runCommand(SocketClient *cli,
         SLOGD("cryptfs isConvertibleToFBE");
         dumpArgs(argc, argv, -1);
         rc = cryptfs_isConvertibleToFBE();
+
+    } else if (cmd == "create_user_key" && argc > 3) {
+        // create_user_key [user] [serial]
+        return sendGenericOkFail(cli, e4crypt_create_user_key(atoi(argv[2])));
+
+    } else if (cmd == "destroy_user_key" && argc > 2) {
+        // destroy_user_key [user]
+        return sendGenericOkFail(cli, e4crypt_destroy_user_key(atoi(argv[2])));
+
+    } else if (cmd == "unlock_user_key" && argc > 4) {
+        // unlock_user_key [user] [serial] [token]
+        return sendGenericOkFail(cli, e4crypt_unlock_user_key(atoi(argv[2]), parseNull(argv[4])));
+
+    } else if (cmd == "lock_user_key" && argc > 2) {
+        // lock_user_key [user]
+        return sendGenericOkFail(cli, e4crypt_lock_user_key(atoi(argv[2])));
+
+    } else if (cmd == "prepare_user_storage" && argc > 4) {
+        // prepare_user_storage [uuid] [user] [serial]
+        return sendGenericOkFail(cli,
+                e4crypt_prepare_user_storage(parseNull(argv[2]), atoi(argv[3])));
+
     } else {
         dumpArgs(argc, argv, -1);
         cli->sendMsg(ResponseCode::CommandSyntaxError, "Unknown cryptfs cmd", false);

@@ -1,4 +1,22 @@
+/*
+ * Copyright (C) 2015 The Android Open Source Project
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 #include "Ext4Crypt.h"
+
+#include "Utils.h"
 
 #include <iomanip>
 #include <map>
@@ -23,10 +41,16 @@
 #include "ext4_crypt_init_extensions.h"
 
 #define LOG_TAG "Ext4Crypt"
-#include "cutils/log.h"
+
+#include <cutils/fs.h>
+#include <cutils/log.h>
 #include <cutils/klog.h>
+
 #include <base/file.h>
+#include <base/logging.h>
 #include <base/stringprintf.h>
+
+using android::base::StringPrintf;
 
 namespace {
     // Key length in bits
@@ -509,18 +533,14 @@ int e4crypt_set_field(const char* path, const char* fieldname,
         .Set(fieldname, std::string(value)) ? 0 : -1;
 }
 
-static std::string get_key_path(
-    const char *mount_path,
-    const char *user_handle)
-{
+static std::string get_key_path(const char *mount_path, userid_t user_id) {
     // ext4enc:TODO get the path properly
-    auto key_dir = android::base::StringPrintf("%s/misc/vold/user_keys",
-        mount_path);
-    if (mkdir(key_dir.c_str(), 0700) < 0 && errno != EEXIST) {
-        SLOGE("Unable to create %s (%s)", key_dir.c_str(), strerror(errno));
+    auto key_dir = StringPrintf("%s/misc/vold/user_keys", mount_path);
+    if (fs_prepare_dir(key_dir.c_str(), 0700, AID_ROOT, AID_ROOT)) {
+        PLOG(ERROR) << "Failed to prepare " << key_dir;
         return "";
     }
-    return key_dir + "/" + user_handle;
+    return StringPrintf("%s/%d", key_dir.c_str(), user_id);
 }
 
 // ext4enc:TODO this can't be the only place keys are read from /dev/urandom
@@ -562,13 +582,11 @@ static std::string e4crypt_get_key(
     return key;
 }
 
-static int e4crypt_set_user_policy(const char *mount_path, const char *user_handle,
-                            const char *path, bool create_if_absent)
-{
-    SLOGD("e4crypt_set_user_policy for %s", user_handle);
-    auto user_key = e4crypt_get_key(
-        get_key_path(mount_path, user_handle),
-        create_if_absent);
+static int e4crypt_set_user_policy(const char *mount_path, userid_t user_id,
+        const char *path, bool create_if_absent) {
+    SLOGD("e4crypt_set_user_policy for %d", user_id);
+    auto user_key = e4crypt_get_key(get_key_path(mount_path, user_id),
+            create_if_absent);
     if (user_key.empty()) {
         return -1;
     }
@@ -577,24 +595,6 @@ static int e4crypt_set_user_policy(const char *mount_path, const char *user_hand
         return -1;
     }
     return do_policy_set(path, raw_ref.c_str(), raw_ref.size());
-}
-
-int e4crypt_create_new_user_dir(const char *user_handle, const char *path) {
-    SLOGD("e4crypt_create_new_user_dir(\"%s\", \"%s\")", user_handle, path);
-    if (mkdir(path, S_IRWXU | S_IRWXG | S_IXOTH) < 0) {
-        return -1;
-    }
-    if (chmod(path, S_IRWXU | S_IRWXG | S_IXOTH) < 0) {
-        return -1;
-    }
-    if (chown(path, AID_SYSTEM, AID_SYSTEM) < 0) {
-        return -1;
-    }
-    if (e4crypt_crypto_complete(DATA_MNT_POINT) == 0) {
-        // ext4enc:TODO handle errors from this.
-        e4crypt_set_user_policy(DATA_MNT_POINT, user_handle, path, true);
-    }
-    return 0;
 }
 
 static bool is_numeric(const char *name) {
@@ -626,10 +626,10 @@ int e4crypt_set_user_crypto_policies(const char *dir)
         if (result->d_type != DT_DIR || !is_numeric(result->d_name)) {
             continue; // skips user 0, which is a symlink
         }
+        auto user_id = atoi(result->d_name);
         auto user_dir = std::string() + dir + "/" + result->d_name;
         // ext4enc:TODO don't hardcode /data
-        if (e4crypt_set_user_policy("/data", result->d_name,
-                user_dir.c_str(), false)) {
+        if (e4crypt_set_user_policy("/data", user_id, user_dir.c_str(), false)) {
             // ext4enc:TODO If this function fails, stop the boot: we must
             // deliver on promised encryption.
             SLOGE("Unable to set policy on %s\n", user_dir.c_str());
@@ -638,9 +638,20 @@ int e4crypt_set_user_crypto_policies(const char *dir)
     return 0;
 }
 
-int e4crypt_delete_user_key(const char *user_handle) {
-    SLOGD("e4crypt_delete_user_key(\"%s\")", user_handle);
-    auto key_path = get_key_path(DATA_MNT_POINT, user_handle);
+int e4crypt_create_user_key(userid_t user_id) {
+    SLOGD("e4crypt_create_user_key(%d)", user_id);
+    // TODO: create second key for user_de data
+    if (e4crypt_get_key(get_key_path(DATA_MNT_POINT, user_id), true).empty()) {
+        return -1;
+    } else {
+        return 0;
+    }
+}
+
+int e4crypt_destroy_user_key(userid_t user_id) {
+    SLOGD("e4crypt_destroy_user_key(%d)", user_id);
+    // TODO: destroy second key for user_de data
+    auto key_path = get_key_path(DATA_MNT_POINT, user_id);
     auto key = e4crypt_get_key(key_path, false);
     auto ext4_key = fill_key(key);
     auto ref = keyname(generate_key_ref(ext4_key.raw, ext4_key.size));
@@ -667,5 +678,68 @@ int e4crypt_delete_user_key(const char *user_handle) {
         exit(-1);
     }
     // ext4enc:TODO reap the zombie
+    return 0;
+}
+
+int e4crypt_unlock_user_key(userid_t user_id, const char* token) {
+    if (property_get_bool("vold.emulate_fbe", false)) {
+        // When in emulation mode, we just use chmod
+        if (chmod(android::vold::BuildDataSystemCePath(user_id).c_str(), 0771) ||
+                chmod(android::vold::BuildDataUserPath(nullptr, user_id).c_str(), 0771)) {
+            PLOG(ERROR) << "Failed to unlock user " << user_id;
+            return -1;
+        }
+    } else {
+        auto user_key = e4crypt_get_key(get_key_path(DATA_MNT_POINT, user_id), false);
+        if (user_key.empty()) {
+            return -1;
+        }
+        auto raw_ref = e4crypt_install_key(user_key);
+        if (raw_ref.empty()) {
+            return -1;
+        }
+    }
+    return 0;
+}
+
+int e4crypt_lock_user_key(userid_t user_id) {
+    if (property_get_bool("vold.emulate_fbe", false)) {
+        // When in emulation mode, we just use chmod
+        if (chmod(android::vold::BuildDataSystemCePath(user_id).c_str(), 0000) ||
+                chmod(android::vold::BuildDataUserPath(nullptr, user_id).c_str(), 0000)) {
+            PLOG(ERROR) << "Failed to lock user " << user_id;
+            return -1;
+        }
+    } else {
+        // TODO: remove from kernel keyring
+    }
+    return 0;
+}
+
+int e4crypt_prepare_user_storage(const char* volume_uuid, userid_t user_id) {
+    std::string system_ce_path(android::vold::BuildDataSystemCePath(user_id));
+    std::string user_ce_path(android::vold::BuildDataUserPath(volume_uuid, user_id));
+    std::string user_de_path(android::vold::BuildDataUserDePath(volume_uuid, user_id));
+
+    if (fs_prepare_dir(system_ce_path.c_str(), 0700, AID_SYSTEM, AID_SYSTEM)) {
+        PLOG(ERROR) << "Failed to prepare " << system_ce_path;
+        return -1;
+    }
+    if (fs_prepare_dir(user_ce_path.c_str(), 0771, AID_SYSTEM, AID_SYSTEM)) {
+        PLOG(ERROR) << "Failed to prepare " << user_ce_path;
+        return -1;
+    }
+    if (fs_prepare_dir(user_de_path.c_str(), 0771, AID_SYSTEM, AID_SYSTEM)) {
+        PLOG(ERROR) << "Failed to prepare " << user_de_path;
+        return -1;
+    }
+
+    if (e4crypt_crypto_complete(DATA_MNT_POINT) == 0) {
+        if (e4crypt_set_user_policy(DATA_MNT_POINT, user_id, system_ce_path.c_str(), true)
+                || e4crypt_set_user_policy(DATA_MNT_POINT, user_id, user_ce_path.c_str(), true)) {
+            return -1;
+        }
+    }
+
     return 0;
 }

@@ -18,6 +18,7 @@
 #define ANDROID_VOLD_UTILS_H
 
 #include <utils/Errors.h>
+#include <cutils/multiuser.h>
 #include <selinux/selinux.h>
 
 #include <vector>
@@ -92,6 +93,12 @@ bool IsFilesystemSupported(const std::string& fsType);
 status_t WipeBlockDevice(const std::string& path);
 
 std::string BuildKeyPath(const std::string& partGuid);
+
+std::string BuildDataSystemCePath(userid_t userid);
+
+std::string BuildDataPath(const char* volumeUuid);
+std::string BuildDataUserPath(const char* volumeUuid, userid_t userid);
+std::string BuildDataUserDePath(const char* volumeUuid, userid_t userid);
 
 dev_t GetDevice(const std::string& path);
 

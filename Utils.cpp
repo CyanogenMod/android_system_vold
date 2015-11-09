@@ -547,8 +547,53 @@ done:
     return res;
 }
 
+static bool isValidFilename(const std::string& name) {
+    if (name.empty() || (name == ".") || (name == "..")
+            || (name.find('/') != std::string::npos)) {
+        return false;
+    } else {
+        return true;
+    }
+}
+
 std::string BuildKeyPath(const std::string& partGuid) {
     return StringPrintf("%s/expand_%s.key", kKeyPath, partGuid.c_str());
+}
+
+std::string BuildDataSystemCePath(userid_t userId) {
+    // TODO: unify with installd path generation logic
+    std::string data(BuildDataPath(nullptr));
+    return StringPrintf("%s/system_ce/%u", data.c_str(), userId);
+}
+
+std::string BuildDataPath(const char* volumeUuid) {
+    // TODO: unify with installd path generation logic
+    if (volumeUuid == nullptr) {
+        return "/data";
+    } else {
+        CHECK(isValidFilename(volumeUuid));
+        return StringPrintf("/mnt/expand/%s", volumeUuid);
+    }
+}
+
+std::string BuildDataUserPath(const char* volumeUuid, userid_t userId) {
+    // TODO: unify with installd path generation logic
+    std::string data(BuildDataPath(volumeUuid));
+    if (volumeUuid == nullptr) {
+        if (userId == 0) {
+            return StringPrintf("%s/data", data.c_str());
+        } else {
+            return StringPrintf("%s/user/%u", data.c_str(), userId);
+        }
+    } else {
+        return StringPrintf("%s/user/%u", data.c_str(), userId);
+    }
+}
+
+std::string BuildDataUserDePath(const char* volumeUuid, userid_t userId) {
+    // TODO: unify with installd path generation logic
+    std::string data(BuildDataPath(volumeUuid));
+    return StringPrintf("%s/user_de/%u", data.c_str(), userId);
 }
 
 dev_t GetDevice(const std::string& path) {
