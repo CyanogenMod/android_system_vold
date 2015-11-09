@@ -50,7 +50,9 @@
 #include "Ext4.h"
 #include "Fat.h"
 #include "Ntfs.h"
+#ifdef VOLD_ENABLE_EXFAT
 #include "Exfat.h"
+#endif
 #include "F2FS.h"
 #include "Process.h"
 #include "cryptfs.h"
@@ -313,8 +315,10 @@ int Volume::formatVol(bool wipe) {
 
     if (strcmp(fstype, "f2fs") == 0) {
         ret = F2FS::format(devicePath);
+#ifdef VOLD_ENABLE_EXFAT
     } else if (strcmp(fstype, "exfat") == 0) {
         ret = Exfat::format(devicePath);
+#endif
     } else if (strcmp(fstype, "ext4") == 0) {
         ret = Ext4::format(devicePath, 0, NULL);
     } else if (strcmp(fstype, "ntfs") == 0) {
@@ -543,7 +547,7 @@ int Volume::mountVol() {
                     SLOGE("%s failed to mount via F2FS (%s)\n", devicePath, strerror(errno));
                     continue;
                 }
-
+#ifdef VOLD_ENABLE_EXFAT
             } else if (strcmp(fstype, "exfat") == 0) {
 
                 if (Exfat::check(devicePath)) {
@@ -560,7 +564,7 @@ int Volume::mountVol() {
                     SLOGE("%s failed to mount via EXFAT (%s)\n", devicePath, strerror(errno));
                     continue;
                 }
-
+#endif
             } else {
                 // Unsupported filesystem
                 errno = ENODATA;
