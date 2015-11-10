@@ -104,9 +104,11 @@ status_t PublicVolume::doMount() {
         return -EIO;
     }
 
-    // Use UUID as stable name, if available
+    // Use volume label and otherwise UUID as stable name, if available
     std::string stableName = getId();
-    if (!mFsUuid.empty()) {
+    if (!mFsLabel.empty()) {
+        stableName = mFsLabel;
+    } else if (!mFsUuid.empty()) {
         stableName = mFsUuid;
     }
 
