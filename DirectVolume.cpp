@@ -235,6 +235,8 @@ void DirectVolume::handleDiskAdded(const char * /*devpath*/,
         mDiskNumParts = 1;
     }
 
+    isDiskAdded = true;
+
     mPendingPartCount = mDiskNumParts;
 
     if (mDiskNumParts == 0) {
@@ -362,6 +364,8 @@ void DirectVolume::handleDiskRemoved(const char * /*devpath*/,
     if (mVm->shareEnabled(getLabel(), "ums", &enabled) == 0 && enabled) {
         mVm->unshareVolume(getLabel(), "ums");
     }
+
+    isDiskAdded = false;
 
     SLOGD("Volume %s %s disk %d:%d removed\n", getLabel(), getMountpoint(), major, minor);
     snprintf(msg, sizeof(msg), "Volume %s %s disk removed (%d:%d)",
