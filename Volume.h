@@ -59,6 +59,7 @@ protected:
     int mOrigPartIdx;
     bool mRetryMount;
     int mLunNumber;
+    bool isDiskAdded;
 
     /*
      * The major/minor tuple of the currently mounted filesystem.

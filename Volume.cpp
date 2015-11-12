@@ -131,6 +131,7 @@ Volume::Volume(VolumeManager *vm, const fstab_rec* rec, int flags) {
     mPartIdx = rec->partnum;
     mRetryMount = false;
     mLunNumber = -1;
+    isDiskAdded = false;
 }
 
 Volume::~Volume() {
@@ -584,6 +585,14 @@ int Volume::mountVol() {
         }
 
         extractMetadata(devicePath);
+
+        if(!isDiskAdded) {
+            errno = ENODEV;
+            SLOGE("Volume %s possibly removed, unmounting", getMountpoint());
+            umount(getMountpoint());
+            setState(Volume::State_Idle);
+            return -1;
+        }
 
 #ifndef MINIVOLD
         if (providesAsec && mountAsecExternal() != 0) {
