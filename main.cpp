@@ -18,6 +18,7 @@
 #include "VolumeManager.h"
 #include "CommandListener.h"
 #include "CryptCommandListener.h"
+#include "Ext4Crypt.h"
 #include "NetlinkManager.h"
 #include "cryptfs.h"
 #include "sehandle.h"
@@ -95,6 +96,9 @@ int main(int argc, char** argv) {
     if (property_get_bool("vold.debug", false)) {
         vm->setDebug(true);
     }
+
+    // Prepare owner storage
+    e4crypt_prepare_user_storage(nullptr, 0);
 
     cl = new CommandListener();
     ccl = new CryptCommandListener();

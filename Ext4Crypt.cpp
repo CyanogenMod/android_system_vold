@@ -52,6 +52,8 @@
 
 using android::base::StringPrintf;
 
+static const char* kPropEmulateFbe = "persist.vold.emulate_fbe";
+
 namespace {
     // Key length in bits
     const int key_length = 128;
@@ -683,7 +685,7 @@ int e4crypt_destroy_user_key(userid_t user_id) {
 }
 
 int e4crypt_unlock_user_key(userid_t user_id, const char* token) {
-    if (property_get_bool("vold.emulate_fbe", false)) {
+    if (property_get_bool(kPropEmulateFbe, false)) {
         // When in emulation mode, we just use chmod
         if (chmod(android::vold::BuildDataSystemCePath(user_id).c_str(), 0771) ||
                 chmod(android::vold::BuildDataUserPath(nullptr, user_id).c_str(), 0771)) {
@@ -704,7 +706,7 @@ int e4crypt_unlock_user_key(userid_t user_id, const char* token) {
 }
 
 int e4crypt_lock_user_key(userid_t user_id) {
-    if (property_get_bool("vold.emulate_fbe", false)) {
+    if (property_get_bool(kPropEmulateFbe, false)) {
         // When in emulation mode, we just use chmod
         if (chmod(android::vold::BuildDataSystemCePath(user_id).c_str(), 0000) ||
                 chmod(android::vold::BuildDataUserPath(nullptr, user_id).c_str(), 0000)) {
