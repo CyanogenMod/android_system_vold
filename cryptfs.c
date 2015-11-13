@@ -3722,23 +3722,26 @@ int cryptfs_changepw(int crypt_type, const char *newpw)
         return -1;
     }
 
-    free(adjusted_passwd);
-
 #ifdef CONFIG_HW_DISK_ENCRYPTION
     if (!strcmp((char *)crypt_ftr.crypto_type_name, "aes-xts")) {
         if (crypt_type == CRYPT_TYPE_DEFAULT) {
             int rc = update_hw_device_encryption_key(DEFAULT_PASSWORD, (char*) crypt_ftr.crypto_type_name);
+            free(adjusted_passwd);
             SLOGD("Update hardware encryption key to default for crypt_type: %d. rc = %d", crypt_type, rc);
             if (!rc)
                 return -1;
         } else {
             int rc = update_hw_device_encryption_key(newpw, (char*) crypt_ftr.crypto_type_name);
             SLOGD("Update hardware encryption key for crypt_type: %d. rc = %d", crypt_type, rc);
+            free(adjusted_passwd);
             if (!rc)
                 return -1;
         }
-    }
+    } else
 #endif
+        free(adjusted_passwd);
+
+
     return 0;
 }
 
