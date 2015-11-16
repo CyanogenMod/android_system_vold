@@ -671,6 +671,7 @@ int e4crypt_destroy_user_key(userid_t user_id) {
         SLOGD("Forked for secdiscard");
         execl("/system/bin/secdiscard",
             "/system/bin/secdiscard",
+            "--",
             key_path.c_str(),
             NULL);
         SLOGE("Unable to launch secdiscard on %s: %s\n", key_path.c_str(),

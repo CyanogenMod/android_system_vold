@@ -15,6 +15,7 @@
  */
 
 #include <string>
+#include <vector>
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -32,35 +33,64 @@
 #include <AutoCloseFD.h>
 
 namespace {
+
+struct Options {
+    std::vector<std::string> targets;
+    bool unlink{true};
+};
+
 // Deliberately limit ourselves to wiping small files.
 constexpr uint64_t max_wipe_length = 4096;
 
+bool read_command_line(int argc, const char * const argv[], Options &options);
 void usage(const char *progname);
 int secdiscard_path(const std::string &path);
 int path_device_range(const std::string &path, uint64_t range[2]);
 std::string block_device_for_path(const std::string &path);
+
 }
 
 int main(int argc, const char * const argv[]) {
-    if (argc != 2 || argv[1][0] != '/') {
+    Options options;
+    if (!read_command_line(argc, argv, options)) {
         usage(argv[0]);
         return -1;
     }
-    SLOGD("Running: %s %s", argv[0], argv[1]);
-    secdiscard_path(argv[1]);
-    if (unlink(argv[1]) != 0 && errno != ENOENT) {
-        SLOGE("Unable to delete %s: %s",
-            argv[1], strerror(errno));
-        return -1;
+    for (auto target: options.targets) {
+        SLOGD("Securely discarding '%s' unlink=%d", target.c_str(), options.unlink);
+        secdiscard_path(target);
+        if (options.unlink) {
+            if (unlink(target.c_str()) != 0 && errno != ENOENT) {
+                SLOGE("Unable to unlink %s: %s",
+                    target.c_str(), strerror(errno));
+            }
+        }
+        SLOGD("Discarded %s", target.c_str());
     }
-    SLOGD("Discarded %s", argv[1]);
     return 0;
 }
 
 namespace {
 
+bool read_command_line(int argc, const char * const argv[], Options &options) {
+    for (int i = 1; i < argc; i++) {
+        if (!strcmp("--no-unlink", argv[i])) {
+            options.unlink = false;
+        } else if (!strcmp("--", argv[i])) {
+            for (int j = i+1; j < argc; j++) {
+                if (argv[j][0] != '/') return false; // Must be absolute path
+                options.targets.emplace_back(argv[j]);
+            }
+            return options.targets.size() > 0;
+        } else {
+            return false; // Unknown option
+        }
+    }
+    return false; // "--" not found
+}
+
 void usage(const char *progname) {
-    fprintf(stderr, "Usage: %s <absolute path>\n", progname);
+    fprintf(stderr, "Usage: %s [--no-unlink] -- <absolute path> ...\n", progname);
 }
 
 // BLKSECDISCARD all content in "path", if it's small enough.
