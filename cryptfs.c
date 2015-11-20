@@ -81,6 +81,10 @@
 
 #define DEFAULT_PASSWORD "default_password"
 
+#define CRYPTO_BLOCK_DEVICE "userdata"
+
+#define BREADCRUMB_FILE "/data/misc/vold/convert_fde"
+
 #define EXT4_FS 1
 #define F2FS_FS 2
 
@@ -187,6 +191,11 @@ static int keymaster_create_key(struct crypt_mnt_ftr *ftr)
     uint8_t* key = 0;
     keymaster0_device_t *keymaster0_dev = 0;
     keymaster1_device_t *keymaster1_dev = 0;
+
+    if (ftr->keymaster_blob_size) {
+        SLOGI("Already have key");
+        return 0;
+    }
 
     if (keymaster_init(&keymaster0_dev, &keymaster1_dev)) {
         SLOGE("Failed to init keymaster");
@@ -597,6 +606,16 @@ static int get_crypt_ftr_info(char **metadata_fname, off64_t *off)
   return rc;
 }
 
+/* Set sha256 checksum in structure */
+static void set_ftr_sha(struct crypt_mnt_ftr *crypt_ftr)
+{
+    SHA256_CTX c;
+    SHA256_Init(&c);
+    memset(crypt_ftr->sha256, 0, sizeof(crypt_ftr->sha256));
+    SHA256_Update(&c, crypt_ftr, sizeof(*crypt_ftr));
+    SHA256_Final(crypt_ftr->sha256, &c);
+}
+
 /* key or salt can be NULL, in which case just skip writing that value.  Useful to
  * update the failed mount count but not change the key.
  */
@@ -611,6 +630,8 @@ static int put_crypt_ftr_and_key(struct crypt_mnt_ftr *crypt_ftr)
   int rc = -1;
   char *fname = NULL;
   struct stat statbuf;
+
+  set_ftr_sha(crypt_ftr);
 
   if (get_crypt_ftr_info(&fname, &starting_off)) {
     SLOGE("Unable to get crypt_ftr_info\n");
@@ -652,6 +673,14 @@ errout:
   close(fd);
   return rc;
 
+}
+
+static bool check_ftr_sha(const struct crypt_mnt_ftr *crypt_ftr)
+{
+    struct crypt_mnt_ftr copy;
+    memcpy(&copy, crypt_ftr, sizeof(copy));
+    set_ftr_sha(&copy);
+    return memcmp(copy.sha256, crypt_ftr->sha256, sizeof(copy.sha256)) == 0;
 }
 
 static inline int unix_read(int  fd, void*  buff, int  len)
@@ -2034,13 +2063,41 @@ int cryptfs_check_passwd(char *passwd)
     int rc;
 
     rc = check_unmounted_and_get_ftr(&crypt_ftr);
-    if (rc)
+    if (rc) {
+        SLOGE("Could not get footer");
         return rc;
+    }
 
     rc = test_mount_encrypted_fs(&crypt_ftr, passwd,
-                                 DATA_MNT_POINT, "userdata");
+                                 DATA_MNT_POINT, CRYPTO_BLOCK_DEVICE);
+    if (rc) {
+        SLOGE("Password did not match");
+        return rc;
+    }
 
-    if (rc == 0 && crypt_ftr.crypt_type != CRYPT_TYPE_DEFAULT) {
+    if (crypt_ftr.flags & CRYPT_FORCE_COMPLETE) {
+        // Here we have a default actual password but a real password
+        // we must test against the scrypted value
+        // First, we must delete the crypto block device that
+        // test_mount_encrypted_fs leaves behind as a side effect
+        delete_crypto_blk_dev(CRYPTO_BLOCK_DEVICE);
+        rc = test_mount_encrypted_fs(&crypt_ftr, DEFAULT_PASSWORD,
+                                     DATA_MNT_POINT, CRYPTO_BLOCK_DEVICE);
+        if (rc) {
+            SLOGE("Default password did not match on reboot encryption");
+            return rc;
+        }
+
+        crypt_ftr.flags &= ~CRYPT_FORCE_COMPLETE;
+        put_crypt_ftr_and_key(&crypt_ftr);
+        rc = cryptfs_changepw(crypt_ftr.crypt_type, passwd);
+        if (rc) {
+            SLOGE("Could not change password on reboot encryption");
+            return rc;
+        }
+    }
+
+    if (crypt_ftr.crypt_type != CRYPT_TYPE_DEFAULT) {
         cryptfs_clear_password();
         password = strdup(passwd);
         struct timespec now;
@@ -2912,6 +2969,7 @@ int cryptfs_enable_internal(char *howarg, int crypt_type, char *passwd,
     char key_loc[PROPERTY_VALUE_MAX];
     int num_vols;
     off64_t previously_encrypted_upto = 0;
+    bool rebootEncryption = false;
 
     if (!strcmp(howarg, "wipe")) {
       how = CRYPTO_ENABLE_WIPE;
@@ -2922,21 +2980,33 @@ int cryptfs_enable_internal(char *howarg, int crypt_type, char *passwd,
       goto error_unencrypted;
     }
 
-    /* See if an encryption was underway and interrupted */
     if (how == CRYPTO_ENABLE_INPLACE
-          && get_crypt_ftr_and_key(&crypt_ftr) == 0
-          && (crypt_ftr.flags & CRYPT_ENCRYPTION_IN_PROGRESS)) {
-        previously_encrypted_upto = crypt_ftr.encrypted_upto;
-        crypt_ftr.encrypted_upto = 0;
-        crypt_ftr.flags &= ~CRYPT_ENCRYPTION_IN_PROGRESS;
+          && get_crypt_ftr_and_key(&crypt_ftr) == 0) {
+        if (crypt_ftr.flags & CRYPT_ENCRYPTION_IN_PROGRESS) {
+            /* An encryption was underway and was interrupted */
+            previously_encrypted_upto = crypt_ftr.encrypted_upto;
+            crypt_ftr.encrypted_upto = 0;
+            crypt_ftr.flags &= ~CRYPT_ENCRYPTION_IN_PROGRESS;
 
-        /* At this point, we are in an inconsistent state. Until we successfully
-           complete encryption, a reboot will leave us broken. So mark the
-           encryption failed in case that happens.
-           On successfully completing encryption, remove this flag */
-        crypt_ftr.flags |= CRYPT_INCONSISTENT_STATE;
+            /* At this point, we are in an inconsistent state. Until we successfully
+               complete encryption, a reboot will leave us broken. So mark the
+               encryption failed in case that happens.
+               On successfully completing encryption, remove this flag */
+            crypt_ftr.flags |= CRYPT_INCONSISTENT_STATE;
 
-        put_crypt_ftr_and_key(&crypt_ftr);
+            put_crypt_ftr_and_key(&crypt_ftr);
+        } else if (crypt_ftr.flags & CRYPT_FORCE_ENCRYPTION) {
+            if (!check_ftr_sha(&crypt_ftr)) {
+                memset(&crypt_ftr, 0, sizeof(crypt_ftr));
+                put_crypt_ftr_and_key(&crypt_ftr);
+                goto error_unencrypted;
+            }
+
+            /* Doing a reboot-encryption*/
+            crypt_ftr.flags &= ~CRYPT_FORCE_ENCRYPTION;
+            crypt_ftr.flags |= CRYPT_FORCE_COMPLETE;
+            rebootEncryption = true;
+        }
     }
 
     property_get("ro.crypto.state", encrypted_state, "");
@@ -2996,13 +3066,23 @@ int cryptfs_enable_internal(char *howarg, int crypt_type, char *passwd,
         SLOGE("Failed to unmount all vold managed devices");
     }
 
-    /* Now unmount the /data partition. */
-    if (wait_and_unmount(DATA_MNT_POINT, false)) {
-        goto error_unencrypted;
+    /* no_ui means we are being called from init, not settings.
+       Now we always reboot from settings, so !no_ui means reboot
+     */
+    bool onlyCreateHeader = false;
+    if (!no_ui) {
+        /* Try fallback, which is to reboot and try there */
+        onlyCreateHeader = true;
+        FILE* breadcrumb = fopen(BREADCRUMB_FILE, "we");
+        if (breadcrumb == 0) {
+            SLOGE("Failed to create breadcrumb file");
+            goto error_shutting_down;
+        }
+        fclose(breadcrumb);
     }
 
     /* Do extra work for a better UX when doing the long inplace encryption */
-    if (how == CRYPTO_ENABLE_INPLACE) {
+    if (how == CRYPTO_ENABLE_INPLACE && !onlyCreateHeader) {
         /* Now that /data is unmounted, we need to mount a tmpfs
          * /data, set a property saying we're doing inplace encryption,
          * and restart the framework.
@@ -3029,7 +3109,7 @@ int cryptfs_enable_internal(char *howarg, int crypt_type, char *passwd,
 
     /* Start the actual work of making an encrypted filesystem */
     /* Initialize a crypt_mnt_ftr for the partition */
-    if (previously_encrypted_upto == 0) {
+    if (previously_encrypted_upto == 0 && !rebootEncryption) {
         if (cryptfs_init_crypt_mnt_ftr(&crypt_ftr)) {
             goto error_shutting_down;
         }
@@ -3044,7 +3124,11 @@ int cryptfs_enable_internal(char *howarg, int crypt_type, char *passwd,
            complete encryption, a reboot will leave us broken. So mark the
            encryption failed in case that happens.
            On successfully completing encryption, remove this flag */
-        crypt_ftr.flags |= CRYPT_INCONSISTENT_STATE;
+        if (onlyCreateHeader) {
+            crypt_ftr.flags |= CRYPT_FORCE_ENCRYPTION;
+        } else {
+            crypt_ftr.flags |= CRYPT_INCONSISTENT_STATE;
+        }
         crypt_ftr.crypt_type = crypt_type;
 #ifndef CONFIG_HW_DISK_ENCRYPTION
         strlcpy((char *)crypt_ftr.crypto_type_name, "aes-cbc-essiv:sha256", MAX_CRYPTO_TYPE_NAME_LEN);
@@ -3065,9 +3149,19 @@ int cryptfs_enable_internal(char *howarg, int crypt_type, char *passwd,
 #endif
 
         /* Make an encrypted master key */
-        if (create_encrypted_random_key(passwd, crypt_ftr.master_key, crypt_ftr.salt, &crypt_ftr)) {
+        if (create_encrypted_random_key(onlyCreateHeader ? DEFAULT_PASSWORD : passwd,
+                                        crypt_ftr.master_key, crypt_ftr.salt, &crypt_ftr)) {
             SLOGE("Cannot create encrypted master key\n");
             goto error_shutting_down;
+        }
+
+        /* Replace scrypted intermediate key if we are preparing for a reboot */
+        if (onlyCreateHeader) {
+            unsigned char fake_master_key[KEY_LEN_BYTES];
+            unsigned char encrypted_fake_master_key[KEY_LEN_BYTES];
+            memset(fake_master_key, 0, sizeof(fake_master_key));
+            encrypt_master_key(passwd, crypt_ftr.salt, fake_master_key,
+                               encrypted_fake_master_key, &crypt_ftr);
         }
 
         /* Write the key to the end of the partition */
@@ -3088,7 +3182,12 @@ int cryptfs_enable_internal(char *howarg, int crypt_type, char *passwd,
         }
     }
 
-    if (how == CRYPTO_ENABLE_INPLACE && !no_ui) {
+    if (onlyCreateHeader) {
+        sleep(2);
+        cryptfs_reboot(reboot);
+    }
+
+    if (how == CRYPTO_ENABLE_INPLACE && (!no_ui || rebootEncryption)) {
         /* startup service classes main and late_start */
         property_set("vold.decrypt", "trigger_restart_min_framework");
         SLOGD("Just triggered restart_min_framework\n");
@@ -3102,7 +3201,7 @@ int cryptfs_enable_internal(char *howarg, int crypt_type, char *passwd,
 
     decrypt_master_key(passwd, decrypted_master_key, &crypt_ftr, 0, 0);
     create_crypto_blk_dev(&crypt_ftr, decrypted_master_key, real_blkdev, crypto_blkdev,
-                          "userdata");
+                          CRYPTO_BLOCK_DEVICE);
 
     /* If we are continuing, check checksums match */
     rc = 0;
@@ -3135,7 +3234,7 @@ int cryptfs_enable_internal(char *howarg, int crypt_type, char *passwd,
     }
 
     /* Undo the dm-crypt mapping whether we succeed or not */
-    delete_crypto_blk_dev("userdata");
+    delete_crypto_blk_dev(CRYPTO_BLOCK_DEVICE);
 
     if (! rc) {
         /* Success */
@@ -3158,8 +3257,16 @@ int cryptfs_enable_internal(char *howarg, int crypt_type, char *passwd,
             /* default encryption - continue first boot sequence */
             property_set("ro.crypto.state", "encrypted");
             release_wake_lock(lockid);
-            cryptfs_check_passwd(DEFAULT_PASSWORD);
-            cryptfs_restart_internal(1);
+            if (rebootEncryption && crypt_ftr.crypt_type != CRYPT_TYPE_DEFAULT) {
+                // Bring up cryptkeeper that will check the password and set it
+                property_set("vold.decrypt", "trigger_shutdown_framework");
+                sleep(2);
+                property_set("vold.encrypt_progress", "");
+                cryptfs_trigger_restart_min_framework();
+            } else {
+                cryptfs_check_passwd(DEFAULT_PASSWORD);
+                cryptfs_restart_internal(1);
+            }
             return 0;
           } else {
             sleep(2); /* Give the UI a chance to show 100% progress */

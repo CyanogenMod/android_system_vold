@@ -52,6 +52,16 @@
                                         correctly marked partial encryption */
 #define CRYPT_DATA_CORRUPT 0x8 /* Set when encryption is fine, but the
                                   underlying volume is corrupt */
+#define CRYPT_FORCE_ENCRYPTION 0x10 /* Set when it is time to encrypt this
+                                       volume on boot. Everything in this
+                                       structure is set up correctly as
+                                       though device is encrypted except
+                                       that the master key is encrypted with the
+                                       default password. */
+#define CRYPT_FORCE_COMPLETE 0x20 /* Set when the above encryption cycle is
+                                     complete. On next cryptkeeper entry, match
+                                     the password. If it matches fix the master
+                                     key and remove this flag. */
 
 /* Allowed values for type in the structure below */
 #define CRYPT_TYPE_PASSWORD 0 /* master_key is encrypted with a password
@@ -94,7 +104,7 @@ struct crypt_mnt_ftr {
   __le32 keysize;       /* in bytes */
   __le32 crypt_type;    /* how master_key is encrypted. Must be a
                          * CRYPT_TYPE_XXX value */
-  __le64 fs_size;	/* Size of the encrypted fs, in 512 byte sectors */
+  __le64 fs_size;       /* Size of the encrypted fs, in 512 byte sectors */
   __le32 failed_decrypt_count; /* count of # of failed attempts to decrypt and
                                   mount, set to 0 on successful mount */
   unsigned char crypto_type_name[MAX_CRYPTO_TYPE_NAME_LEN]; /* The type of encryption
@@ -145,6 +155,12 @@ struct crypt_mnt_ftr {
      then we will be OK.
    */
   unsigned char scrypted_intermediate_key[SCRYPT_LEN];
+
+  /* sha of this structure with this element set to zero
+     Used when encrypting on reboot to validate structure before doing something
+     fatal
+   */
+  unsigned char sha256[SHA256_DIGEST_LENGTH];
 };
 
 /* Persistant data that should be available before decryption.
