@@ -45,7 +45,7 @@ static const unsigned int kMajorBlockMmc = 179;
 
 PrivateVolume::PrivateVolume(dev_t device, const std::string& keyRaw) :
         VolumeBase(Type::kPrivate), mRawDevice(device), mKeyRaw(keyRaw) {
-    setId(StringPrintf("private:%u,%u", major(device), minor(device)));
+    setId(StringPrintf("private:%u_%u", major(device), minor(device)));
     mRawDevPath = StringPrintf("/dev/block/vold/%s", getId().c_str());
 }
 
