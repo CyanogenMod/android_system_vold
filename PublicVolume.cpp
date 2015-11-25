@@ -251,11 +251,14 @@ status_t PublicVolume::doUnmount(bool detach /* = false */) {
         mFusePid = 0;
     }
 
+#ifndef MINIVOLD
     ForceUnmount(kAsecPath);
 
     ForceUnmount(mFuseDefault);
     ForceUnmount(mFuseRead);
     ForceUnmount(mFuseWrite);
+#endif
+
     ForceUnmount(mRawPath, detach);
 
     rmdir(mFuseDefault.c_str());
