@@ -255,11 +255,14 @@ status_t PublicVolume::doUnmount(bool detach /* = false */) {
     // error code and might cause broken behaviour in applications.
     KillProcessesUsingPath(getPath());
 
+#ifndef MINIVOLD
     ForceUnmount(kAsecPath);
 
     ForceUnmount(mFuseDefault);
     ForceUnmount(mFuseRead);
     ForceUnmount(mFuseWrite);
+#endif
+
     ForceUnmount(mRawPath, detach);
 
     if (mFusePid > 0) {
