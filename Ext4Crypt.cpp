@@ -78,6 +78,8 @@ namespace {
         time_t expiry_time;
     };
     std::map<std::string, keys> s_key_store;
+    // Maps the key paths of ephemeral keys to the keys
+    std::map<std::string, std::string> s_ephemeral_user_keys;
 
     // ext4enc:TODO get these consts from somewhere good
     const int SHA512_LENGTH = 64;
@@ -553,12 +555,22 @@ static std::string get_key_path(const char *mount_path, userid_t user_id) {
     return StringPrintf("%s/%d", key_dir.c_str(), user_id);
 }
 
+static bool e4crypt_is_key_ephemeral(const std::string &key_path) {
+    return s_ephemeral_user_keys.find(key_path) != s_ephemeral_user_keys.end();
+}
+
 // ext4enc:TODO this can't be the only place keys are read from /dev/urandom
 // we should unite those places.
 static std::string e4crypt_get_key(
     const std::string &key_path,
-    bool create_if_absent)
+    bool create_if_absent,
+    bool create_ephemeral)
 {
+    const auto ephemeral_key_it = s_ephemeral_user_keys.find(key_path);
+    if (ephemeral_key_it != s_ephemeral_user_keys.end()) {
+        return ephemeral_key_it->second;
+    }
+
     std::string content;
     if (android::base::ReadFileToString(key_path, &content)) {
         if (content.size() != key_length/8) {
@@ -584,7 +596,10 @@ static std::string e4crypt_get_key(
         return "";
     }
     std::string key(key_bytes, sizeof(key_bytes));
-    if (!android::base::WriteStringToFile(key, key_path)) {
+    if (create_ephemeral) {
+        // If the key should be created as ephemeral, store it in memory only.
+        s_ephemeral_user_keys[key_path] = key;
+    } else if (!android::base::WriteStringToFile(key, key_path)) {
         SLOGE("Unable to write key to %s (%s)",
                 key_path.c_str(), strerror(errno));
         return "";
@@ -593,10 +608,10 @@ static std::string e4crypt_get_key(
 }
 
 static int e4crypt_set_user_policy(const char *mount_path, userid_t user_id,
-        const char *path, bool create_if_absent) {
+        const char *path, bool create_if_absent, bool create_ephemeral) {
     SLOGD("e4crypt_set_user_policy for %d", user_id);
     auto user_key = e4crypt_get_key(get_key_path(mount_path, user_id),
-            create_if_absent);
+            create_if_absent, create_ephemeral);
     if (user_key.empty()) {
         return -1;
     }
@@ -639,7 +654,7 @@ int e4crypt_set_user_crypto_policies(const char *dir)
         auto user_id = atoi(result->d_name);
         auto user_dir = std::string() + dir + "/" + result->d_name;
         // ext4enc:TODO don't hardcode /data
-        if (e4crypt_set_user_policy("/data", user_id, user_dir.c_str(), false)) {
+        if (e4crypt_set_user_policy("/data", user_id, user_dir.c_str(), false, false)) {
             // ext4enc:TODO If this function fails, stop the boot: we must
             // deliver on promised encryption.
             SLOGE("Unable to set policy on %s\n", user_dir.c_str());
@@ -648,10 +663,11 @@ int e4crypt_set_user_crypto_policies(const char *dir)
     return 0;
 }
 
-int e4crypt_create_user_key(userid_t user_id) {
+int e4crypt_create_user_key(userid_t user_id, bool ephemeral) {
     SLOGD("e4crypt_create_user_key(%d)", user_id);
     // TODO: create second key for user_de data
-    if (e4crypt_get_key(get_key_path(DATA_MNT_POINT, user_id), true).empty()) {
+    if (e4crypt_get_key(
+            get_key_path(DATA_MNT_POINT, user_id), true, ephemeral).empty()) {
         return -1;
     } else {
         return 0;
@@ -662,7 +678,7 @@ int e4crypt_destroy_user_key(userid_t user_id) {
     SLOGD("e4crypt_destroy_user_key(%d)", user_id);
     // TODO: destroy second key for user_de data
     auto key_path = get_key_path(DATA_MNT_POINT, user_id);
-    auto key = e4crypt_get_key(key_path, false);
+    auto key = e4crypt_get_key(key_path, false, false);
     auto ext4_key = fill_key(key);
     auto ref = keyname(generate_key_ref(ext4_key.raw, ext4_key.size));
     auto key_serial = keyctl_search(e4crypt_keyring(), "logon", ref.c_str(), 0);
@@ -671,6 +687,10 @@ int e4crypt_destroy_user_key(userid_t user_id) {
     } else {
         SLOGE("Failed to revoke key with serial %ld ref %s: %s\n",
             key_serial, ref.c_str(), strerror(errno));
+    }
+    if (e4crypt_is_key_ephemeral(key_path)) {
+        s_ephemeral_user_keys.erase(key_path);
+        return 0;
     }
     int pid = fork();
     if (pid < 0) {
@@ -694,7 +714,7 @@ int e4crypt_destroy_user_key(userid_t user_id) {
 
 int e4crypt_unlock_user_key(userid_t user_id, const char* token) {
     if (e4crypt_is_native()) {
-        auto user_key = e4crypt_get_key(get_key_path(DATA_MNT_POINT, user_id), false);
+        auto user_key = e4crypt_get_key(get_key_path(DATA_MNT_POINT, user_id), false, false);
         if (user_key.empty()) {
             return -1;
         }
@@ -733,7 +753,7 @@ int e4crypt_lock_user_key(userid_t user_id) {
     return 0;
 }
 
-int e4crypt_prepare_user_storage(const char* volume_uuid, userid_t user_id) {
+int e4crypt_prepare_user_storage(const char* volume_uuid, userid_t user_id, bool ephemeral) {
     std::string system_ce_path(android::vold::BuildDataSystemCePath(user_id));
     std::string user_ce_path(android::vold::BuildDataUserPath(volume_uuid, user_id));
     std::string user_de_path(android::vold::BuildDataUserDePath(volume_uuid, user_id));
@@ -752,8 +772,16 @@ int e4crypt_prepare_user_storage(const char* volume_uuid, userid_t user_id) {
     }
 
     if (e4crypt_crypto_complete(DATA_MNT_POINT) == 0) {
-        if (e4crypt_set_user_policy(DATA_MNT_POINT, user_id, system_ce_path.c_str(), true)
-                || e4crypt_set_user_policy(DATA_MNT_POINT, user_id, user_ce_path.c_str(), true)) {
+        if (e4crypt_set_user_policy(DATA_MNT_POINT,
+                                    user_id,
+                                    system_ce_path.c_str(),
+                                    true,
+                                    ephemeral)
+                || e4crypt_set_user_policy(DATA_MNT_POINT,
+                                           user_id,
+                                           user_ce_path.c_str(),
+                                           true,
+                                           ephemeral)) {
             return -1;
         }
     }

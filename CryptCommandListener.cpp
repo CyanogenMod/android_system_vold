@@ -363,9 +363,10 @@ int CryptCommandListener::CryptfsCmd::runCommand(SocketClient *cli,
         dumpArgs(argc, argv, -1);
         rc = cryptfs_isConvertibleToFBE();
 
-    } else if (cmd == "create_user_key" && argc > 3) {
-        // create_user_key [user] [serial]
-        return sendGenericOkFail(cli, e4crypt_create_user_key(atoi(argv[2])));
+    } else if (cmd == "create_user_key" && argc > 4) {
+        // create_user_key [user] [serial] [ephemeral]
+        return sendGenericOkFail(cli,
+                e4crypt_create_user_key(atoi(argv[2]), atoi(argv[3]) != 0));
 
     } else if (cmd == "destroy_user_key" && argc > 2) {
         // destroy_user_key [user]
@@ -379,10 +380,10 @@ int CryptCommandListener::CryptfsCmd::runCommand(SocketClient *cli,
         // lock_user_key [user]
         return sendGenericOkFail(cli, e4crypt_lock_user_key(atoi(argv[2])));
 
-    } else if (cmd == "prepare_user_storage" && argc > 4) {
-        // prepare_user_storage [uuid] [user] [serial]
-        return sendGenericOkFail(cli,
-                e4crypt_prepare_user_storage(parseNull(argv[2]), atoi(argv[3])));
+    } else if (cmd == "prepare_user_storage" && argc > 5) {
+        // prepare_user_storage [uuid] [user] [serial] [ephemeral]
+        return sendGenericOkFail(cli, e4crypt_prepare_user_storage(
+                parseNull(argv[2]), atoi(argv[3]), atoi(argv[4]) != 0));
 
     } else {
         dumpArgs(argc, argv, -1);
