@@ -198,10 +198,6 @@ status_t BindMount(const std::string& source, const std::string& target) {
 
 static status_t readMetadata(const std::string& path, std::string& fsType,
         std::string& fsUuid, std::string& fsLabel, bool untrusted) {
-    fsType.clear();
-    fsUuid.clear();
-    fsLabel.clear();
-
     std::vector<std::string> cmd;
     cmd.push_back(kBlkidPath);
 #ifndef MINIVOLD
