@@ -17,5 +17,5 @@
 #include "vold.h"
 
 int main(int argc, char **argv) {
-    return vold_main();
+    return vold_main(argc, argv);
 }
