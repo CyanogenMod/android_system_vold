@@ -34,6 +34,8 @@ namespace f2fs {
 static const char* kMkfsPath = "/system/bin/make_f2fs";
 static const char* kFsckPath = "/system/bin/fsck.f2fs";
 
+static const char* privatePathPrefix = "/mnt/expand/";
+
 bool IsSupported() {
     return access(kMkfsPath, X_OK) == 0
             && access(kFsckPath, X_OK) == 0
@@ -53,7 +55,12 @@ status_t Check(const std::string& source) {
 status_t Mount(const std::string& source, const std::string& target) {
     const char* c_source = source.c_str();
     const char* c_target = target.c_str();
-    unsigned long flags = MS_NOATIME | MS_NODEV | MS_NOSUID | MS_DIRSYNC;
+    unsigned long flags = MS_NOATIME | MS_NODEV | MS_NOSUID;
+
+    // Only use MS_DIRSYNC if we're not mounting adopted storage
+    if (strncmp(c_target, privatePathPrefix, strlen(privatePathPrefix))) {
+        flags |= MS_DIRSYNC;
+    }
 
     int res = mount(c_source, c_target, "f2fs", flags, NULL);
     if (res != 0) {
