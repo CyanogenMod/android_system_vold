@@ -132,7 +132,8 @@ status_t Check(const std::string& source, const std::string& target, bool truste
 }
 
 status_t Mount(const std::string& source, const std::string& target, bool ro,
-        bool remount, bool executable, const std::string& opts /* = "" */) {
+        bool remount, bool executable, const std::string& opts /* = "" */,
+        bool trusted) {
     int rc;
     unsigned long flags;
 
@@ -140,7 +141,12 @@ status_t Mount(const std::string& source, const std::string& target, bool ro,
     const char* c_target = target.c_str();
     const char* c_opts = opts.c_str();
 
-    flags = MS_NOATIME | MS_NODEV | MS_NOSUID | MS_DIRSYNC;
+    flags = MS_NOATIME | MS_NODEV | MS_NOSUID;
+
+    // Only use MS_DIRSYNC if we're not mounting adopted storage
+    if (!trusted) {
+        flags |= MS_DIRSYNC;
+    }
 
     flags |= (executable ? 0 : MS_NOEXEC);
     flags |= (ro ? MS_RDONLY : 0);
