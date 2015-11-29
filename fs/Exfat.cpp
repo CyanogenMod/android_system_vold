@@ -31,12 +31,22 @@ namespace android {
 namespace vold {
 namespace exfat {
 
+#ifdef MINIVOLD
+static const char* kMkfsPath = "/sbin/mkfs.exfat";
+static const char* kFsckPath = "/sbin/fsck.exfat";
+#ifdef CONFIG_KERNEL_HAVE_EXFAT
+static const char* kMountPath = "/sbin/mount";
+#else
+static const char* kMountPath = "/sbin/mount.exfat";
+#endif
+#else
 static const char* kMkfsPath = "/system/bin/mkfs.exfat";
 static const char* kFsckPath = "/system/bin/fsck.exfat";
 #ifdef CONFIG_KERNEL_HAVE_EXFAT
 static const char* kMountPath = "/system/bin/mount";
 #else
 static const char* kMountPath = "/system/bin/mount.exfat";
+#endif
 #endif
 
 bool IsSupported() {
