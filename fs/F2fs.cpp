@@ -31,7 +31,7 @@ namespace android {
 namespace vold {
 namespace f2fs {
 
-static const char* kMkfsPath = "/system/bin/make_f2fs";
+static const char* kMkfsPath = "/system/bin/mkfs.f2fs";
 static const char* kFsckPath = "/system/bin/fsck.f2fs";
 
 bool IsSupported() {
