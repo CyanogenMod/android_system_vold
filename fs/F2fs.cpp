@@ -33,8 +33,13 @@ namespace android {
 namespace vold {
 namespace f2fs {
 
+#ifdef MINIVOLD
+static const char* kMkfsPath = "/sbin/mkfs.f2fs";
+static const char* kFsckPath = "/sbin/fsck.f2fs";
+#else
 static const char* kMkfsPath = "/system/bin/mkfs.f2fs";
 static const char* kFsckPath = "/system/bin/fsck.f2fs";
+#endif
 
 bool IsSupported() {
     return access(kMkfsPath, X_OK) == 0
