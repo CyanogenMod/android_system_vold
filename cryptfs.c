@@ -111,6 +111,12 @@ static struct crypt_persist_data *persist_data = NULL;
 #ifdef MINIVOLD
 inline int release_wake_lock(const char* id) { return 0; }
 inline int acquire_wake_lock(int lock, const char* id) { return 0; }
+
+static const char* kMkExt4fsPath = "/sbin/mke2fs";
+static const char* kMkF2fsPath = "/sbin/mkfs.f2fs";
+#else
+static const char* kMkExt4fsPath = "/system/bin/make_ext4fs";
+static const char* kMkF2fsPath = "/system/bin/mkfs.f2fs";
 #endif
 
 #ifndef MINIVOLD // no HALs in recovery...
@@ -2204,7 +2210,7 @@ static int cryptfs_enable_wipe(char *crypto_blkdev, off64_t size, int type)
     int rc = -1;
 
     if (type == EXT4_FS) {
-        args[0] = "/system/bin/make_ext4fs";
+        args[0] = kMkExt4fsPath;
         args[1] = "-a";
         args[2] = "/data";
         args[3] = "-l";
@@ -2215,7 +2221,7 @@ static int cryptfs_enable_wipe(char *crypto_blkdev, off64_t size, int type)
         SLOGI("Making empty filesystem with command %s %s %s %s %s %s\n",
               args[0], args[1], args[2], args[3], args[4], args[5]);
     } else if (type == F2FS_FS) {
-        args[0] = "/system/bin/mkfs.f2fs";
+        args[0] = kMkF2fsPath;
         args[1] = "-t";
         args[2] = "-d1";
         args[3] = crypto_blkdev;
