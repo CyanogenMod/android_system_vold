@@ -31,9 +31,15 @@ namespace android {
 namespace vold {
 namespace ntfs {
 
+#ifdef MINIVOLD
+static const char* kMkfsPath = "/sbin/mkfs.ntfs";
+static const char* kFsckPath = "/sbin/fsck.ntfs";
+static const char* kMountPath = "/sbin/mount.ntfs";
+#else
 static const char* kMkfsPath = "/system/bin/mkfs.ntfs";
 static const char* kFsckPath = "/system/bin/fsck.ntfs";
 static const char* kMountPath = "/system/bin/mount.ntfs";
+#endif
 
 bool IsSupported() {
     return access(kMkfsPath, X_OK) == 0

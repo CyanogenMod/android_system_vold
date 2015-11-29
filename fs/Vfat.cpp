@@ -55,8 +55,13 @@ namespace android {
 namespace vold {
 namespace vfat {
 
+#ifdef MINIVOLD
+static const char* kMkfsPath = "/sbin/newfs_msdos";
+static const char* kFsckPath = "/sbin/fsck_msdos";
+#else
 static const char* kMkfsPath = "/system/bin/newfs_msdos";
 static const char* kFsckPath = "/system/bin/fsck_msdos";
+#endif
 
 bool IsSupported() {
     return access(kMkfsPath, X_OK) == 0
