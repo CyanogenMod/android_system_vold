@@ -52,7 +52,7 @@
 
 using android::base::StringPrintf;
 
-static const char* kPropEmulateFbe = "persist.vold.emulate_fbe";
+static const char* kPropEmulateFbe = "persist.sys.emulate_fbe";
 
 namespace {
     // Key length in bits
