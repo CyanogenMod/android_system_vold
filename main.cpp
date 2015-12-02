@@ -45,7 +45,11 @@ static void parse_args(int argc, char** argv);
 
 struct fstab *fstab;
 
+#ifdef MINIVOLD
+extern struct selabel_handle *sehandle;
+#else
 struct selabel_handle *sehandle;
+#endif
 
 using android::base::StringPrintf;
 

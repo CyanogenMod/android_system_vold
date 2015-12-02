@@ -153,7 +153,7 @@ include $(BUILD_EXECUTABLE)
 
 include $(CLEAR_VARS)
 LOCAL_ADDITIONAL_DEPENDENCIES := $(LOCAL_PATH)/Android.mk
-LOCAL_MODULE := libminivold
+LOCAL_MODULE := libminivold_static
 LOCAL_CLANG := true
 LOCAL_SRC_FILES := $(common_src_files)
 LOCAL_C_INCLUDES := $(common_c_includes) system/core/fs_mgr/include system/core/logwrapper/include
@@ -163,25 +163,3 @@ LOCAL_MODULE_TAGS := eng tests
 LOCAL_CFLAGS := $(vold_cflags) -DMINIVOLD -DHELPER_PATH=\"/sbin/\"
 LOCAL_CONLYFLAGS := $(vold_conlyflags)
 include $(BUILD_STATIC_LIBRARY)
-
-include $(CLEAR_VARS)
-LOCAL_ADDITIONAL_DEPENDENCIES := $(LOCAL_PATH)/Android.mk
-LOCAL_MODULE := minivold
-LOCAL_CLANG := true
-LOCAL_SRC_FILES := vold.c
-LOCAL_C_INCLUDES := $(common_c_includes)
-LOCAL_CFLAGS := $(vold_cflags) -DMINIVOLD
-LOCAL_CONLYFLAGS := $(vold_conlyflags)
-LOCAL_STATIC_LIBRARIES := libminivold
-LOCAL_STATIC_LIBRARIES += libc libc++_static libm
-LOCAL_STATIC_LIBRARIES += libbase
-LOCAL_STATIC_LIBRARIES += $(common_static_libraries) $(common_libraries)
-LOCAL_STATIC_LIBRARIES += libcrypto_static libext2_uuid libvold
-LOCAL_STATIC_LIBRARIES += libnl
-LOCAL_SHARED_LIBRARIES := $(common_shared_libraries)
-LOCAL_FORCE_STATIC_EXECUTABLE := true
-LOCAL_PACK_MODULE_RELOCATIONS := false
-LOCAL_MODULE_CLASS := RECOVERY_EXECUTABLES
-LOCAL_MODULE_PATH := $(TARGET_RECOVERY_ROOT_OUT)/sbin
-LOCAL_MODULE_TAGS := optional
-include $(BUILD_EXECUTABLE)
