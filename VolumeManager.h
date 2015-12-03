@@ -143,9 +143,9 @@ public:
     /* ASEC */
     int findAsec(const char *id, char *asecPath = NULL, size_t asecPathLen = 0,
             const char **directory = NULL) const;
-    int createAsec(const char *id, unsigned numSectors, const char *fstype,
+    int createAsec(const char *id, unsigned long numSectors, const char *fstype,
                    const char *key, const int ownerUid, bool isExternal);
-    int resizeAsec(const char *id, unsigned numSectors, const char *key);
+    int resizeAsec(const char *id, unsigned long numSectors, const char *key);
     int finalizeAsec(const char *id);
 
     /**
