@@ -151,17 +151,17 @@ status_t Mount(const std::string& source, const std::string& target, bool ro,
     return rc;
 }
 
-status_t Resize(const std::string& source, unsigned int numSectors) {
+status_t Resize(const std::string& source, unsigned long numSectors) {
     std::vector<std::string> cmd;
     cmd.push_back(kResizefsPath);
     cmd.push_back("-f");
     cmd.push_back(source);
-    cmd.push_back(StringPrintf("%u", numSectors));
+    cmd.push_back(StringPrintf("%lu", numSectors));
 
     return ForkExecvp(cmd);
 }
 
-status_t Format(const std::string& source, unsigned int numSectors,
+status_t Format(const std::string& source, unsigned long numSectors,
         const std::string& target) {
     std::vector<std::string> cmd;
     cmd.push_back(kMkfsPath);
@@ -172,7 +172,7 @@ status_t Format(const std::string& source, unsigned int numSectors,
 
     if (numSectors) {
         cmd.push_back("-l");
-        cmd.push_back(StringPrintf("%u", numSectors * 512));
+        cmd.push_back(StringPrintf("%lu", numSectors * 512));
     }
 
     // Always generate a real UUID
