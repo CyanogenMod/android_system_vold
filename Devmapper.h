@@ -25,7 +25,7 @@ class SocketClient;
 class Devmapper {
 public:
     static int create(const char *name, const char *loopFile, const char *key,
-                      unsigned int numSectors, char *buffer, size_t len);
+                      unsigned long numSectors, char *buffer, size_t len);
     static int destroy(const char *name);
     static int lookupActive(const char *name, char *buffer, size_t len);
     static int dumpState(SocketClient *c);
