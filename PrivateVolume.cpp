@@ -23,8 +23,8 @@
 #include "ResponseCode.h"
 #include "cryptfs.h"
 
-#include <base/stringprintf.h>
-#include <base/logging.h>
+#include <android-base/stringprintf.h>
+#include <android-base/logging.h>
 #include <cutils/fs.h>
 #include <private/android_filesystem_config.h>
 
