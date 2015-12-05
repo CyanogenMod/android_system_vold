@@ -37,8 +37,8 @@
 
 #define LOG_TAG "Vold"
 
-#include <base/logging.h>
-#include <base/stringprintf.h>
+#include <android-base/logging.h>
+#include <android-base/stringprintf.h>
 #include <cutils/log.h>
 #include <cutils/properties.h>
 #include <selinux/selinux.h>

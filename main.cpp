@@ -22,8 +22,8 @@
 #include "cryptfs.h"
 #include "sehandle.h"
 
-#include <base/logging.h>
-#include <base/stringprintf.h>
+#include <android-base/logging.h>
+#include <android-base/stringprintf.h>
 #include <cutils/klog.h>
 #include <cutils/properties.h>
 #include <cutils/sockets.h>
