@@ -19,8 +19,8 @@
 #include "VolumeManager.h"
 #include "ResponseCode.h"
 
-#include <base/stringprintf.h>
-#include <base/logging.h>
+#include <android-base/stringprintf.h>
+#include <android-base/logging.h>
 
 #include <fcntl.h>
 #include <stdlib.h>
