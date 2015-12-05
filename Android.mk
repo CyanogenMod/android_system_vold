@@ -85,6 +85,10 @@ common_static_libraries := \
 vold_conlyflags := -std=c11
 vold_cflags := -Werror -Wall -Wno-missing-field-initializers -Wno-unused-variable -Wno-unused-parameter
 
+ifeq ($(TARGET_KERNEL_HAVE_EXFAT),true)
+vold_cflags += -DCONFIG_KERNEL_HAVE_EXFAT
+endif
+
 include $(CLEAR_VARS)
 
 LOCAL_ADDITIONAL_DEPENDENCIES := $(LOCAL_PATH)/Android.mk
@@ -119,10 +123,6 @@ TARGET_CRYPTFS_HW_PATH ?= device/qcom/common/cryptfs_hw
 LOCAL_C_INCLUDES += $(TARGET_CRYPTFS_HW_PATH)
 common_shared_libraries += libcryptfs_hw
 LOCAL_CFLAGS += -DCONFIG_HW_DISK_ENCRYPTION
-endif
-
-ifeq ($(TARGET_KERNEL_HAVE_EXFAT),true)
-LOCAL_CFLAGS += -DCONFIG_KERNEL_HAVE_EXFAT
 endif
 
 LOCAL_SHARED_LIBRARIES := $(common_shared_libraries)
