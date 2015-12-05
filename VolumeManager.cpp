@@ -35,8 +35,8 @@
 
 #include <openssl/md5.h>
 
-#include <base/logging.h>
-#include <base/stringprintf.h>
+#include <android-base/logging.h>
+#include <android-base/stringprintf.h>
 #include <cutils/fs.h>
 #include <cutils/log.h>
 

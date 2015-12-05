@@ -20,8 +20,8 @@
 #include "VolumeManager.h"
 #include "ResponseCode.h"
 
-#include <base/stringprintf.h>
-#include <base/logging.h>
+#include <android-base/stringprintf.h>
+#include <android-base/logging.h>
 #include <cutils/properties.h>
 #include <fs_mgr.h>
 #include <private/android_filesystem_config.h>
