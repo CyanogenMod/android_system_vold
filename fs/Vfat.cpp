@@ -108,6 +108,11 @@ status_t Check(const std::string& source) {
             errno = EIO;
             return -1;
 
+        case 8:
+            SLOGE("Filesystem check failed (no filesystem)");
+            errno = ENODATA;
+            return -1;
+
         default:
             SLOGE("Filesystem check failed (unknown exit code %d)", rc);
             errno = EIO;
