@@ -31,7 +31,7 @@ status_t Check(const std::string& source);
 status_t Mount(const std::string& source, const std::string& target, bool ro,
         bool remount, bool executable, int ownerUid, int ownerGid, int permMask,
         bool createLost);
-status_t Format(const std::string& source, unsigned int numSectors);
+status_t Format(const std::string& source, unsigned long numSectors);
 
 }  // namespace vfat
 }  // namespace vold

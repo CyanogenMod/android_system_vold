@@ -164,7 +164,7 @@ int Devmapper::lookupActive(const char *name, char *ubuffer, size_t len) {
 }
 
 int Devmapper::create(const char *name, const char *loopFile, const char *key,
-                      unsigned int numSectors, char *ubuffer, size_t len) {
+                      unsigned long numSectors, char *ubuffer, size_t len) {
     char *buffer = (char *) malloc(DEVMAPPER_BUFFER_SIZE);
     if (!buffer) {
         SLOGE("Error allocating memory (%s)", strerror(errno));

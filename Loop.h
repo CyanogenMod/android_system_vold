@@ -31,8 +31,8 @@ public:
     static int create(const char *id, const char *loopFile, char *loopDeviceBuffer, size_t len);
     static int destroyByDevice(const char *loopDevice);
     static int destroyByFile(const char *loopFile);
-    static int createImageFile(const char *file, unsigned int numSectors);
-    static int resizeImageFile(const char *file, unsigned int numSectors);
+    static int createImageFile(const char *file, unsigned long numSectors);
+    static int resizeImageFile(const char *file, unsigned long numSectors);
 
     static int dumpState(SocketClient *c);
 };
