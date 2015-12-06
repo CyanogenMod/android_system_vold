@@ -148,9 +148,9 @@ status_t PublicVolume::doMount() {
     if (mFsType == "exfat") {
         ret = exfat::Check(mDevPath);
     } else if (mFsType == "ext4") {
-        ret = ext4::Check(mDevPath, mRawPath);
+        ret = ext4::Check(mDevPath, mRawPath, false);
     } else if (mFsType == "f2fs") {
-        ret = f2fs::Check(mDevPath);
+        ret = f2fs::Check(mDevPath, false);
     } else if (mFsType == "ntfs") {
         ret = ntfs::Check(mDevPath);
     } else if (mFsType == "vfat") {
