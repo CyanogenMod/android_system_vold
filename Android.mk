@@ -89,6 +89,10 @@ ifeq ($(TARGET_KERNEL_HAVE_EXFAT),true)
 vold_cflags += -DCONFIG_KERNEL_HAVE_EXFAT
 endif
 
+ifeq ($(TARGET_KERNEL_HAVE_NTFS),true)
+vold_cflags += -DCONFIG_KERNEL_HAVE_NTFS
+endif
+
 include $(CLEAR_VARS)
 
 LOCAL_ADDITIONAL_DEPENDENCIES := $(LOCAL_PATH)/Android.mk
