@@ -115,6 +115,10 @@ ifeq ($(TARGET_KERNEL_HAVE_EXFAT),true)
 LOCAL_CFLAGS += -DCONFIG_KERNEL_HAVE_EXFAT
 endif
 
+ifeq ($(TARGET_KERNEL_HAVE_NTFS),true)
+LOCAL_CFLAGS += -DCONFIG_KERNEL_HAVE_NTFS
+endif
+
 LOCAL_SHARED_LIBRARIES := $(common_shared_libraries)
 LOCAL_STATIC_LIBRARIES := libvold $(common_static_libraries)
 
