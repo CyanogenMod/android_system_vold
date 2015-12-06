@@ -51,7 +51,8 @@ status_t Check(const std::string& source) {
     cmd.push_back(kFsckPath);
     cmd.push_back(source);
 
-    return ForkExecvp(cmd, sFsckContext);
+    // Exfat devices are currently always untrusted
+    return ForkExecvp(cmd, sFsckUntrustedContext);
 }
 
 status_t Mount(const std::string& source, const std::string& target, bool ro,

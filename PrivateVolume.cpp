@@ -105,7 +105,7 @@ status_t PrivateVolume::doMount() {
     }
 
     if (mFsType == "ext4") {
-        int res = ext4::Check(mDmDevPath, mPath);
+        int res = ext4::Check(mDmDevPath, mPath, true);
         if (res == 0 || res == 1) {
             LOG(DEBUG) << getId() << " passed filesystem check";
         } else {
@@ -119,7 +119,7 @@ status_t PrivateVolume::doMount() {
         }
 
     } else if (mFsType == "f2fs") {
-        int res = f2fs::Check(mDmDevPath);
+        int res = f2fs::Check(mDmDevPath, true);
         if (res == 0) {
             LOG(DEBUG) << getId() << " passed filesystem check";
         } else {
