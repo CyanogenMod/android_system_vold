@@ -15,7 +15,9 @@
  */
 
 #include <stdlib.h>
+#include <sys/mount.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
 #include <sys/types.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
@@ -57,6 +59,7 @@ CommandListener::CommandListener() :
     registerCmd(new ObbCmd());
     registerCmd(new StorageCmd());
     registerCmd(new FstrimCmd());
+    registerCmd(new AppFuseCmd());
 }
 
 #if DUMP_ARGS
@@ -618,4 +621,66 @@ int CommandListener::FstrimCmd::runCommand(SocketClient *cli,
 
     (new android::vold::TrimTask(flags))->start();
     return sendGenericOkFail(cli, 0);
+}
+
+CommandListener::AppFuseCmd::AppFuseCmd() : VoldCommand("appfuse") {}
+
+int CommandListener::AppFuseCmd::runCommand(SocketClient *cli,
+                                            int argc,
+                                            char **argv) {
+    if (argc < 2) {
+        cli->sendMsg(
+            ResponseCode::CommandSyntaxError, "Missing argument", false);
+        return 0;
+    }
+
+    const std::string command(argv[1]);
+
+    if (command == "mount" && argc == 4) {
+        const uid_t uid = atoi(argv[2]);
+        const std::string name(argv[3]);
+        const int device_fd = open("/dev/fuse", O_RDWR);
+        if (device_fd < 0) {
+            sendGenericOkFail(cli, device_fd);
+            return 0;
+        }
+
+        // TODO: Create appfuse directory and mount it.
+        const int result = sendFd(cli, device_fd);
+        close(device_fd);
+        return result;
+    }
+
+    return cli->sendMsg(ResponseCode::CommandSyntaxError, nullptr, false);
+}
+
+int CommandListener::AppFuseCmd::sendFd(SocketClient *cli, int fd) {
+    struct iovec data;
+    char dataBuffer[128];
+    char controlBuffer[CMSG_SPACE(sizeof(int))];
+    struct msghdr message;
+
+    // Message.
+    memset(&message, 0, sizeof(struct msghdr));
+    message.msg_iov = &data;
+    message.msg_iovlen = 1;
+    message.msg_control = controlBuffer;
+    message.msg_controllen = CMSG_SPACE(sizeof(int));
+
+    // Data.
+    data.iov_base = dataBuffer;
+    data.iov_len = snprintf(dataBuffer,
+                            sizeof(dataBuffer),
+                            "200 %d AppFuse command succeeded",
+                            cli->getCmdNum()) + 1;
+
+    // Control.
+    struct cmsghdr* const controlMessage = CMSG_FIRSTHDR(&message);
+    memset(controlBuffer, 0, CMSG_SPACE(sizeof(int)));
+    controlMessage->cmsg_level = SOL_SOCKET;
+    controlMessage->cmsg_type = SCM_RIGHTS;
+    controlMessage->cmsg_len = CMSG_LEN(sizeof(int));
+    *((int *) CMSG_DATA(controlMessage)) = fd;
+
+    return TEMP_FAILURE_RETRY(sendmsg(cli->getSocket(), &message, 0));
 }

@@ -73,6 +73,15 @@ private:
         virtual ~FstrimCmd() {}
         int runCommand(SocketClient *c, int argc, char ** argv);
     };
+
+    class AppFuseCmd : public VoldCommand {
+    public:
+        AppFuseCmd();
+        virtual ~AppFuseCmd() {}
+        int runCommand(SocketClient *c, int argc, char ** argv);
+    private:
+        int sendFd(SocketClient *c, int fd);
+    };
 };
 
 #endif
