@@ -576,6 +576,12 @@ std::string BuildDataPath(const char* volumeUuid) {
     }
 }
 
+std::string BuildDataMediaPath(const char* volumeUuid, userid_t userId) {
+    // TODO: unify with installd path generation logic
+    std::string data(BuildDataPath(volumeUuid));
+    return StringPrintf("%s/media/%u", data.c_str(), userId);
+}
+
 std::string BuildDataUserPath(const char* volumeUuid, userid_t userId) {
     // TODO: unify with installd path generation logic
     std::string data(BuildDataPath(volumeUuid));

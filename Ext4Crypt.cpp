@@ -52,7 +52,15 @@
 
 using android::base::StringPrintf;
 
-static const char* kPropEmulateFbe = "persist.sys.emulate_fbe";
+static bool e4crypt_is_native() {
+    char value[PROPERTY_VALUE_MAX];
+    property_get("ro.crypto.type", value, "none");
+    return !strcmp(value, "file");
+}
+
+static bool e4crypt_is_emulated() {
+    return property_get_bool("persist.sys.emulate_fbe", false);
+}
 
 namespace {
     // Key length in bits
@@ -685,14 +693,7 @@ int e4crypt_destroy_user_key(userid_t user_id) {
 }
 
 int e4crypt_unlock_user_key(userid_t user_id, const char* token) {
-    if (property_get_bool(kPropEmulateFbe, false)) {
-        // When in emulation mode, we just use chmod
-        if (chmod(android::vold::BuildDataSystemCePath(user_id).c_str(), 0771) ||
-                chmod(android::vold::BuildDataUserPath(nullptr, user_id).c_str(), 0771)) {
-            PLOG(ERROR) << "Failed to unlock user " << user_id;
-            return -1;
-        }
-    } else {
+    if (e4crypt_is_native()) {
         auto user_key = e4crypt_get_key(get_key_path(DATA_MNT_POINT, user_id), false);
         if (user_key.empty()) {
             return -1;
@@ -701,21 +702,34 @@ int e4crypt_unlock_user_key(userid_t user_id, const char* token) {
         if (raw_ref.empty()) {
             return -1;
         }
+    } else {
+        // When in emulation mode, we just use chmod. However, we also
+        // unlock directories when not in emulation mode, to bring devices
+        // back into a known-good state.
+        if (chmod(android::vold::BuildDataSystemCePath(user_id).c_str(), 0771) ||
+                chmod(android::vold::BuildDataMediaPath(nullptr, user_id).c_str(), 0770) ||
+                chmod(android::vold::BuildDataUserPath(nullptr, user_id).c_str(), 0771)) {
+            PLOG(ERROR) << "Failed to unlock user " << user_id;
+            return -1;
+        }
     }
+
     return 0;
 }
 
 int e4crypt_lock_user_key(userid_t user_id) {
-    if (property_get_bool(kPropEmulateFbe, false)) {
+    if (e4crypt_is_native()) {
+        // TODO: remove from kernel keyring
+    } else if (e4crypt_is_emulated()) {
         // When in emulation mode, we just use chmod
         if (chmod(android::vold::BuildDataSystemCePath(user_id).c_str(), 0000) ||
+                chmod(android::vold::BuildDataMediaPath(nullptr, user_id).c_str(), 0000) ||
                 chmod(android::vold::BuildDataUserPath(nullptr, user_id).c_str(), 0000)) {
             PLOG(ERROR) << "Failed to lock user " << user_id;
             return -1;
         }
-    } else {
-        // TODO: remove from kernel keyring
     }
+
     return 0;
 }
 

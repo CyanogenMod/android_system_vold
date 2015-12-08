@@ -97,6 +97,7 @@ std::string BuildKeyPath(const std::string& partGuid);
 std::string BuildDataSystemCePath(userid_t userid);
 
 std::string BuildDataPath(const char* volumeUuid);
+std::string BuildDataMediaPath(const char* volumeUuid, userid_t userid);
 std::string BuildDataUserPath(const char* volumeUuid, userid_t userid);
 std::string BuildDataUserDePath(const char* volumeUuid, userid_t userid);
 
