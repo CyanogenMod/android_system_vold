@@ -137,33 +137,55 @@ status_t ForceUnmount(const std::string& path, bool detach /* = false */) {
     if (!umount2(cpath, UMOUNT_NOFOLLOW) || errno == EINVAL || errno == ENOENT) {
         return OK;
     }
-    PLOG(WARNING) << "Failed to unmount " << path;
-
+    // Apps might still be handling eject request, so wait before
+    // we start sending signals
     sleep(5);
+
     Process::killProcessesWithOpenFiles(cpath, SIGINT);
-
+    sleep(5);
     if (!umount2(cpath, UMOUNT_NOFOLLOW) || errno == EINVAL || errno == ENOENT) {
         return OK;
     }
-    PLOG(WARNING) << "Failed to unmount " << path;
 
-    sleep(5);
     Process::killProcessesWithOpenFiles(cpath, SIGTERM);
-
-    if (!umount2(cpath, UMOUNT_NOFOLLOW) || errno == EINVAL || errno == ENOENT) {
-        return OK;
-    }
-    PLOG(WARNING) << "Failed to unmount " << path;
-
     sleep(5);
-    Process::killProcessesWithOpenFiles(cpath, SIGKILL);
-
     if (!umount2(cpath, UMOUNT_NOFOLLOW) || errno == EINVAL || errno == ENOENT) {
         return OK;
     }
-    PLOG(ERROR) << "Failed to unmount " << path;
+
+    Process::killProcessesWithOpenFiles(cpath, SIGKILL);
+    sleep(5);
+    if (!umount2(cpath, UMOUNT_NOFOLLOW) || errno == EINVAL || errno == ENOENT) {
+        return OK;
+    }
 
     return -errno;
+}
+
+status_t KillProcessesUsingPath(const std::string& path) {
+    const char* cpath = path.c_str();
+    if (Process::killProcessesWithOpenFiles(cpath, SIGINT) == 0) {
+        return OK;
+    }
+    sleep(5);
+
+    if (Process::killProcessesWithOpenFiles(cpath, SIGTERM) == 0) {
+        return OK;
+    }
+    sleep(5);
+
+    if (Process::killProcessesWithOpenFiles(cpath, SIGKILL) == 0) {
+        return OK;
+    }
+    sleep(5);
+
+    // Send SIGKILL a second time to determine if we've
+    // actually killed everyone with open files
+    if (Process::killProcessesWithOpenFiles(cpath, SIGKILL) == 0) {
+        return OK;
+    }
+    PLOG(ERROR) << "Failed to kill processes using " << path;
+    return -EBUSY;
 }
 
 status_t BindMount(const std::string& source, const std::string& target) {
@@ -422,7 +444,7 @@ status_t NormalizeHex(const std::string& in, std::string& out) {
 uint64_t GetFreeBytes(const std::string& path) {
     struct statvfs sb;
     if (statvfs(path.c_str(), &sb) == 0) {
-        return sb.f_bfree * sb.f_bsize;
+        return (uint64_t)sb.f_bfree * sb.f_bsize;
     } else {
         return -1;
     }

@@ -125,6 +125,7 @@ status_t EmulatedVolume::doUnmount(bool detach /* = false */) {
         mFusePid = 0;
     }
 
+    KillProcessesUsingPath(getPath());
     ForceUnmount(mFuseDefault);
     ForceUnmount(mFuseRead);
     ForceUnmount(mFuseWrite);
