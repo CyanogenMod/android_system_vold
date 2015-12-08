@@ -348,9 +348,23 @@ status_t Disk::unmountAll() {
 }
 
 status_t Disk::partitionPublic() {
+    int res;
+
     // TODO: improve this code
     destroyAllVolumes();
     mJustPartitioned = true;
+
+    // First nuke any existing partition table
+    std::vector<std::string> cmd;
+    cmd.push_back(kSgdiskPath);
+    cmd.push_back("--zap-all");
+    cmd.push_back(mDevPath);
+
+    // Zap sometimes returns an error when it actually succeeded, so
+    // just log as warning and keep rolling forward.
+    if ((res = ForkExecvp(cmd)) != 0) {
+        LOG(WARNING) << "Failed to zap; status " << res;
+    }
 
     struct disk_info dinfo;
     memset(&dinfo, 0, sizeof(dinfo));
