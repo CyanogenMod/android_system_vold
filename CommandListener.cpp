@@ -29,6 +29,7 @@
 #include <string.h>
 #include <stdint.h>
 #include <inttypes.h>
+#include <ctype.h>
 
 #define LOG_TAG "VoldCmdListener"
 
@@ -623,6 +624,8 @@ int CommandListener::FstrimCmd::runCommand(SocketClient *cli,
     return sendGenericOkFail(cli, 0);
 }
 
+static size_t kAppFuseMaxMountPointName = 32;
+
 CommandListener::AppFuseCmd::AppFuseCmd() : VoldCommand("appfuse") {}
 
 int CommandListener::AppFuseCmd::runCommand(SocketClient *cli,
@@ -639,19 +642,74 @@ int CommandListener::AppFuseCmd::runCommand(SocketClient *cli,
     if (command == "mount" && argc == 4) {
         const uid_t uid = atoi(argv[2]);
         const std::string name(argv[3]);
+
+        // Check mount point name.
+        bool invalidName = false;
+        if (name.size() > kAppFuseMaxMountPointName) {
+            invalidName = true;
+        }
+        for (size_t i = 0; i < name.size(); i++) {
+            if (!isalnum(name[i])) {
+                invalidName = true;
+                break;
+            }
+        }
+        if (invalidName) {
+            return cli->sendMsg(
+                    ResponseCode::CommandParameterError,
+                    "Invalid mount point name.",
+                    false);
+        }
+
+        // Create directories.
+        char path[PATH_MAX];
+        {
+            snprintf(path, PATH_MAX, "/mnt/appfuse/%d_%s", uid, name.c_str());
+            umount2(path, UMOUNT_NOFOLLOW | MNT_DETACH);
+            const int result = android::vold::PrepareDir(path, 0700, 0, 0);
+            if (result != 0) {
+                return sendGenericOkFail(cli, result);
+            }
+        }
+
+        // Open device FD.
         const int device_fd = open("/dev/fuse", O_RDWR);
         if (device_fd < 0) {
             sendGenericOkFail(cli, device_fd);
             return 0;
         }
 
-        // TODO: Create appfuse directory and mount it.
+        // Mount.
+        {
+            char opts[256];
+            snprintf(
+                    opts,
+                    sizeof(opts),
+                    "fd=%i,"
+                    "rootmode=40000,"
+                    "default_permissions,"
+                    "user_id=%d,group_id=%d",
+                    device_fd,
+                    uid,
+                    uid);
+            // TODO: Make it bound mount in application namespace.
+            // TODO: Add context= option to opts.
+            const int result = mount(
+                    "/dev/fuse", path, "fuse",
+                    MS_NOSUID | MS_NODEV | MS_NOEXEC | MS_NOATIME, opts);
+            if (result != 0) {
+                sendGenericOkFail(cli, 1);
+                return 0;
+            }
+        }
+
         const int result = sendFd(cli, device_fd);
         close(device_fd);
         return result;
     }
 
-    return cli->sendMsg(ResponseCode::CommandSyntaxError, nullptr, false);
+    return cli->sendMsg(
+            ResponseCode::CommandSyntaxError,  "Unknown appfuse cmd", false);
 }
 
 int CommandListener::AppFuseCmd::sendFd(SocketClient *cli, int fd) {
