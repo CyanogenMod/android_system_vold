@@ -366,7 +366,9 @@ int CryptCommandListener::CryptfsCmd::runCommand(SocketClient *cli,
     } else if (cmd == "create_user_key" && argc > 4) {
         // create_user_key [user] [serial] [ephemeral]
         return sendGenericOkFail(cli,
-                e4crypt_create_user_key(atoi(argv[2]), atoi(argv[3]) != 0));
+                                 e4crypt_create_user_key(atoi(argv[2]),
+                                                         atoi(argv[3]),
+                                                         atoi(argv[4]) != 0));
 
     } else if (cmd == "destroy_user_key" && argc > 2) {
         // destroy_user_key [user]

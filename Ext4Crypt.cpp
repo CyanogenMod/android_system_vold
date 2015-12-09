@@ -663,7 +663,7 @@ int e4crypt_set_user_crypto_policies(const char *dir)
     return 0;
 }
 
-int e4crypt_create_user_key(userid_t user_id, bool ephemeral) {
+int e4crypt_create_user_key(userid_t user_id, int serial, bool ephemeral) {
     SLOGD("e4crypt_create_user_key(%d)", user_id);
     // TODO: create second key for user_de data
     if (e4crypt_get_key(
