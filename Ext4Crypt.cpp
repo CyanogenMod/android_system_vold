@@ -630,12 +630,12 @@ static bool is_numeric(const char *name) {
     return true;
 }
 
-int e4crypt_set_user_crypto_policies(const char *dir)
+int e4crypt_vold_set_user_crypto_policies(const char *dir)
 {
     if (e4crypt_crypto_complete(DATA_MNT_POINT) != 0) {
         return 0;
     }
-    SLOGD("e4crypt_set_user_crypto_policies");
+    SLOGD("e4crypt_vold_set_user_crypto_policies");
     std::unique_ptr<DIR, int(*)(DIR*)> dirp(opendir(dir), closedir);
     if (!dirp) {
         SLOGE("Unable to read directory %s, error %s\n",
@@ -663,8 +663,8 @@ int e4crypt_set_user_crypto_policies(const char *dir)
     return 0;
 }
 
-int e4crypt_create_user_key(userid_t user_id, int serial, bool ephemeral) {
-    SLOGD("e4crypt_create_user_key(%d)", user_id);
+int e4crypt_vold_create_user_key(userid_t user_id, int serial, bool ephemeral) {
+    SLOGD("e4crypt_vold_create_user_key(%d)", user_id);
     // TODO: create second key for user_de data
     if (e4crypt_get_key(
             get_key_path(DATA_MNT_POINT, user_id), true, ephemeral).empty()) {

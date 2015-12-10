@@ -350,7 +350,7 @@ int CryptCommandListener::CryptfsCmd::runCommand(SocketClient *cli,
         }
         SLOGD("cryptfs setusercryptopolicies");
         dumpArgs(argc, argv, -1);
-        rc = e4crypt_set_user_crypto_policies(argv[2]);
+        rc = e4crypt_vold_set_user_crypto_policies(argv[2]);
 
     } else if (!strcmp(argv[1], "isConvertibleToFBE")) {
         if (argc != 2) {
@@ -366,9 +366,9 @@ int CryptCommandListener::CryptfsCmd::runCommand(SocketClient *cli,
     } else if (cmd == "create_user_key" && argc > 4) {
         // create_user_key [user] [serial] [ephemeral]
         return sendGenericOkFail(cli,
-                                 e4crypt_create_user_key(atoi(argv[2]),
-                                                         atoi(argv[3]),
-                                                         atoi(argv[4]) != 0));
+                                 e4crypt_vold_create_user_key(atoi(argv[2]),
+                                                              atoi(argv[3]),
+                                                              atoi(argv[4]) != 0));
 
     } else if (cmd == "destroy_user_key" && argc > 2) {
         // destroy_user_key [user]
