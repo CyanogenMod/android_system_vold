@@ -98,7 +98,7 @@ int main(int argc, char** argv) {
     }
 
     // Prepare owner storage
-    e4crypt_prepare_user_storage(nullptr, 0, false);
+    e4crypt_prepare_user_storage(nullptr, 0, 0, false);
 
     cl = new CommandListener();
     ccl = new CryptCommandListener();

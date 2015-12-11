@@ -366,8 +366,11 @@ int CryptCommandListener::CryptfsCmd::runCommand(SocketClient *cli,
 
     } else if (subcommand == "prepare_user_storage") {
         CHECK_ARGC(6, "prepare_user_storage <uuid> <user> <serial> <ephemeral>");
-        return sendGenericOkFail(cli, e4crypt_prepare_user_storage(
-                parseNull(argv[2]), atoi(argv[3]), atoi(argv[4]) != 0));
+        return sendGenericOkFail(cli,
+                                 e4crypt_prepare_user_storage(parseNull(argv[2]),
+                                                              atoi(argv[3]),
+                                                              atoi(argv[4]),
+                                                              atoi(argv[5]) != 0));
 
     } else {
         dumpArgs(argc, argv, -1);

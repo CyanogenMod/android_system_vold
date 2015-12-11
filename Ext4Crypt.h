@@ -44,6 +44,9 @@ int e4crypt_destroy_user_key(userid_t user_id);
 int e4crypt_unlock_user_key(userid_t user_id, const char* token);
 int e4crypt_lock_user_key(userid_t user_id);
 
-int e4crypt_prepare_user_storage(const char* volume_uuid, userid_t user_id, bool ephemeral);
+int e4crypt_prepare_user_storage(const char* volume_uuid,
+                                 userid_t user_id,
+                                 int serial,
+                                 bool ephemeral);
 
 __END_DECLS
