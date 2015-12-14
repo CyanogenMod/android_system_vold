@@ -29,6 +29,8 @@
 #include <stdint.h>
 #include <inttypes.h>
 
+#include <algorithm>
+
 #define LOG_TAG "VoldCryptCmdListener"
 
 #include <android-base/logging.h>
@@ -122,13 +124,25 @@ static char* parseNull(char* arg) {
     }
 }
 
-#define CHECK_ARGC(expected, error) \
-    do { \
-        if (argc != (expected)) { \
-            cli->sendMsg(ResponseCode::CommandSyntaxError, ("Usage: cryptfs " error), false); \
-            return 0; \
-        } \
-    } while (0)
+static bool check_argc(SocketClient *cli, const std::string &subcommand, int argc,
+        int expected, std::string usage) {
+    assert(expected >= 2);
+    if (expected == 2) {
+        assert(usage.empty());
+    } else {
+        assert(!usage.empty());
+        assert(std::count(usage.begin(), usage.end(), ' ') + 3 == expected);
+    }
+    if (argc == expected) {
+        return true;
+    }
+    auto message = std::string() + "Usage: cryptfs " + subcommand;
+    if (!usage.empty()) {
+        message += " " + usage;
+    }
+    cli->sendMsg(ResponseCode::CommandSyntaxError, message.c_str(), false);
+    return false;
+}
 
 int CryptCommandListener::CryptfsCmd::runCommand(SocketClient *cli,
                                                  int argc, char **argv) {
@@ -138,7 +152,7 @@ int CryptCommandListener::CryptfsCmd::runCommand(SocketClient *cli,
     }
 
     if (argc < 2) {
-        cli->sendMsg(ResponseCode::CommandSyntaxError, "Missing Argument", false);
+        cli->sendMsg(ResponseCode::CommandSyntaxError, "Missing subcommand", false);
         return 0;
     }
 
@@ -146,15 +160,15 @@ int CryptCommandListener::CryptfsCmd::runCommand(SocketClient *cli,
 
     std::string subcommand(argv[1]);
     if (subcommand == "checkpw") {
-        CHECK_ARGC(3, "checkpw <passwd>");
+        if (!check_argc(cli, subcommand, argc, 3, "<passwd>")) return 0;
         dumpArgs(argc, argv, 2);
         rc = cryptfs_check_passwd(argv[2]);
     } else if (subcommand == "restart") {
-        CHECK_ARGC(2, "restart");
+        if (!check_argc(cli, subcommand, argc, 2, "")) return 0;
         dumpArgs(argc, argv, -1);
         rc = cryptfs_restart();
     } else if (subcommand == "cryptocomplete") {
-        CHECK_ARGC(2, "cryptocomplete");
+        if (!check_argc(cli, subcommand, argc, 2, "")) return 0;
         dumpArgs(argc, argv, -1);
         rc = cryptfs_crypto_complete();
     } else if (subcommand == "enablecrypto") {
@@ -228,7 +242,7 @@ int CryptCommandListener::CryptfsCmd::runCommand(SocketClient *cli,
             }
         }
     } else if (subcommand == "enablefilecrypto") {
-        CHECK_ARGC(2, "enablefilecrypto");
+        if (!check_argc(cli, subcommand, argc, 2, "")) return 0;
         dumpArgs(argc, argv, -1);
         rc = cryptfs_enable_file();
     } else if (subcommand == "changepw") {
@@ -251,11 +265,11 @@ int CryptCommandListener::CryptfsCmd::runCommand(SocketClient *cli,
         SLOGD("cryptfs changepw %s {}", argv[2]);
         rc = cryptfs_changepw(type, password);
     } else if (subcommand == "verifypw") {
-        CHECK_ARGC(3, "verifypw <passwd>");
+        if (!check_argc(cli, subcommand, argc, 3, "<passwd>")) return 0;
         SLOGD("cryptfs verifypw {}");
         rc = cryptfs_verify_passwd(argv[2]);
     } else if (subcommand == "getfield") {
-        CHECK_ARGC(3, "getfield <fieldname>");
+        if (!check_argc(cli, subcommand, argc, 3, "<fieldname>")) return 0;
         char *valbuf;
         int valbuf_len = PROPERTY_VALUE_MAX;
 
@@ -280,16 +294,16 @@ int CryptCommandListener::CryptfsCmd::runCommand(SocketClient *cli,
         }
         free(valbuf);
     } else if (subcommand == "setfield") {
-        CHECK_ARGC(4, "setfield <fieldname> <value>");
+        if (!check_argc(cli, subcommand, argc, 4, "<fieldname> <value>")) return 0;
         dumpArgs(argc, argv, -1);
         rc = cryptfs_setfield(argv[2], argv[3]);
     } else if (subcommand == "mountdefaultencrypted") {
-        CHECK_ARGC(2, "mountdefaultencrypted");
+        if (!check_argc(cli, subcommand, argc, 2, "")) return 0;
         SLOGD("cryptfs mountdefaultencrypted");
         dumpArgs(argc, argv, -1);
         rc = cryptfs_mount_default_encrypted();
     } else if (subcommand == "getpwtype") {
-        CHECK_ARGC(2, "getpwtype");
+        if (!check_argc(cli, subcommand, argc, 2, "")) return 0;
         SLOGD("cryptfs getpwtype");
         dumpArgs(argc, argv, -1);
         switch(cryptfs_get_password_type()) {
@@ -311,7 +325,7 @@ int CryptCommandListener::CryptfsCmd::runCommand(SocketClient *cli,
             return 0;
         }
     } else if (subcommand == "getpw") {
-        CHECK_ARGC(2, "getpw");
+        if (!check_argc(cli, subcommand, argc, 2, "")) return 0;
         SLOGD("cryptfs getpw");
         dumpArgs(argc, argv, -1);
         const char* password = cryptfs_get_password();
@@ -327,45 +341,45 @@ int CryptCommandListener::CryptfsCmd::runCommand(SocketClient *cli,
         }
         rc = -1;
     } else if (subcommand == "clearpw") {
-        CHECK_ARGC(2, "clearpw");
+        if (!check_argc(cli, subcommand, argc, 2, "")) return 0;
         SLOGD("cryptfs clearpw");
         dumpArgs(argc, argv, -1);
         cryptfs_clear_password();
         rc = 0;
     } else if (subcommand == "setusercryptopolicies") {
-        CHECK_ARGC(3, "setusercryptopolicies <path>");
+        if (!check_argc(cli, subcommand, argc, 3, "<path>")) return 0;
         SLOGD("cryptfs setusercryptopolicies");
         dumpArgs(argc, argv, -1);
         rc = e4crypt_vold_set_user_crypto_policies(argv[2]);
 
     } else if (subcommand == "isConvertibleToFBE") {
-        CHECK_ARGC(2, "isConvertibleToFBE");
+        if (!check_argc(cli, subcommand, argc, 2, "")) return 0;
         // ext4enc:TODO: send a CommandSyntaxError if argv[2] not an integer
         SLOGD("cryptfs isConvertibleToFBE");
         dumpArgs(argc, argv, -1);
         rc = cryptfs_isConvertibleToFBE();
 
     } else if (subcommand == "create_user_key") {
-        CHECK_ARGC(5, "create_user_key <user> <serial> <ephemeral>");
+        if (!check_argc(cli, subcommand, argc, 5, "<user> <serial> <ephemeral>")) return 0;
         return sendGenericOkFail(cli,
                                  e4crypt_vold_create_user_key(atoi(argv[2]),
                                                               atoi(argv[3]),
                                                               atoi(argv[4]) != 0));
 
     } else if (subcommand == "destroy_user_key") {
-        CHECK_ARGC(3, "destroy_user_key <user>");
+        if (!check_argc(cli, subcommand, argc, 3, "<user>")) return 0;
         return sendGenericOkFail(cli, e4crypt_destroy_user_key(atoi(argv[2])));
 
     } else if (subcommand == "unlock_user_key") {
-        CHECK_ARGC(5, "unlock_user_key <user> <serial> <token>");
+        if (!check_argc(cli, subcommand, argc, 5, "<user> <serial> <token>")) return 0;
         return sendGenericOkFail(cli, e4crypt_unlock_user_key(atoi(argv[2]), parseNull(argv[4])));
 
     } else if (subcommand == "lock_user_key") {
-        CHECK_ARGC(3, "lock_user_key <user>");
+        if (!check_argc(cli, subcommand, argc, 3, "<user>")) return 0;
         return sendGenericOkFail(cli, e4crypt_lock_user_key(atoi(argv[2])));
 
     } else if (subcommand == "prepare_user_storage") {
-        CHECK_ARGC(6, "prepare_user_storage <uuid> <user> <serial> <ephemeral>");
+        if (!check_argc(cli, subcommand, argc, 6, "<uuid> <user> <serial> <ephemeral>")) return 0;
         return sendGenericOkFail(cli,
                                  e4crypt_prepare_user_storage(parseNull(argv[2]),
                                                               atoi(argv[3]),
