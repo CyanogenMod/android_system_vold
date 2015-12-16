@@ -626,6 +626,18 @@ int CommandListener::FstrimCmd::runCommand(SocketClient *cli,
 
 static size_t kAppFuseMaxMountPointName = 32;
 
+static bool isValidAppFuseMountName(const std::string& name) {
+    if (name.size() > kAppFuseMaxMountPointName) {
+        return false;
+    }
+    for (size_t i = 0; i < name.size(); i++) {
+        if (!isalnum(name[i])) {
+            return false;
+        }
+    }
+    return true;
+}
+
 CommandListener::AppFuseCmd::AppFuseCmd() : VoldCommand("appfuse") {}
 
 int CommandListener::AppFuseCmd::runCommand(SocketClient *cli,
@@ -644,17 +656,7 @@ int CommandListener::AppFuseCmd::runCommand(SocketClient *cli,
         const std::string name(argv[3]);
 
         // Check mount point name.
-        bool invalidName = false;
-        if (name.size() > kAppFuseMaxMountPointName) {
-            invalidName = true;
-        }
-        for (size_t i = 0; i < name.size(); i++) {
-            if (!isalnum(name[i])) {
-                invalidName = true;
-                break;
-            }
-        }
-        if (invalidName) {
+        if (!isValidAppFuseMountName(name)) {
             return cli->sendMsg(
                     ResponseCode::CommandParameterError,
                     "Invalid mount point name.",
@@ -706,6 +708,24 @@ int CommandListener::AppFuseCmd::runCommand(SocketClient *cli,
         const int result = sendFd(cli, device_fd);
         close(device_fd);
         return result;
+    } else if (command == "unmount" && argc == 4) {
+        const uid_t uid = atoi(argv[2]);
+        const std::string name(argv[3]);
+
+        // Check mount point name.
+        if (!isValidAppFuseMountName(name)) {
+            return cli->sendMsg(
+                    ResponseCode::CommandParameterError,
+                    "Invalid mount point name.",
+                    false);
+        }
+
+        // Unmount directory.
+        char path[PATH_MAX];
+        snprintf(path, PATH_MAX, "/mnt/appfuse/%d_%s", uid, name.c_str());
+        umount2(path, UMOUNT_NOFOLLOW | MNT_DETACH);
+
+        return sendGenericOkFail(cli, /* success */ 0);
     }
 
     return cli->sendMsg(
