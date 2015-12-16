@@ -123,10 +123,7 @@ status_t PublicVolume::doMount() {
         setPath(mRawPath);
     }
 
-    if (fs_prepare_dir(mRawPath.c_str(), 0700, AID_ROOT, AID_ROOT) ||
-            fs_prepare_dir(mFuseDefault.c_str(), 0700, AID_ROOT, AID_ROOT) ||
-            fs_prepare_dir(mFuseRead.c_str(), 0700, AID_ROOT, AID_ROOT) ||
-            fs_prepare_dir(mFuseWrite.c_str(), 0700, AID_ROOT, AID_ROOT)) {
+    if (fs_prepare_dir(mRawPath.c_str(), 0700, AID_ROOT, AID_ROOT)) {
         PLOG(ERROR) << getId() << " failed to create mount points";
         return -errno;
     }
@@ -144,6 +141,13 @@ status_t PublicVolume::doMount() {
     if (!(getMountFlags() & MountFlags::kVisible)) {
         // Not visible to apps, so no need to spin up FUSE
         return OK;
+    }
+
+    if (fs_prepare_dir(mFuseDefault.c_str(), 0700, AID_ROOT, AID_ROOT) ||
+            fs_prepare_dir(mFuseRead.c_str(), 0700, AID_ROOT, AID_ROOT) ||
+            fs_prepare_dir(mFuseWrite.c_str(), 0700, AID_ROOT, AID_ROOT)) {
+        PLOG(ERROR) << getId() << " failed to create FUSE mount points";
+        return -errno;
     }
 
     dev_t before = GetDevice(mFuseWrite);
