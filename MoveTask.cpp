@@ -198,7 +198,7 @@ void MoveTask::run() {
 
     // Step 3: perform actual copy
     if (execCp(fromPath, toPath, 20, 60) != OK) {
-        goto fail;
+        goto copy_fail;
     }
 
     // NOTE: MountService watches for this magic value to know
@@ -218,6 +218,12 @@ void MoveTask::run() {
     notifyProgress(kMoveSucceeded);
     release_wake_lock(kWakeLock);
     return;
+
+copy_fail:
+    // if we failed to copy the data we should not leave it laying around
+    // in target location. Do not check return value, we can not do any
+    // useful anyway.
+    execRm(toPath, 80, 1);
 fail:
     {
         std::lock_guard<std::mutex> lock(VolumeManager::Instance()->getLock());
