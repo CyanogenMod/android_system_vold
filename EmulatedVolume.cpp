@@ -50,7 +50,7 @@ EmulatedVolume::EmulatedVolume(const std::string& rawPath) :
 
 EmulatedVolume::EmulatedVolume(const std::string& rawPath, dev_t device,
         const std::string& fsUuid) : VolumeBase(Type::kEmulated), mFusePid(0) {
-    setId(StringPrintf("emulated:%u,%u", major(device), minor(device)));
+    setId(StringPrintf("emulated:%u_%u", major(device), minor(device)));
     mRawPath = rawPath;
     mLabel = fsUuid;
 }
