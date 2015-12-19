@@ -608,7 +608,7 @@ static std::string e4crypt_get_key(
 }
 
 static int e4crypt_set_user_policy(const char *mount_path, userid_t user_id,
-        const char *path, bool create_if_absent, bool create_ephemeral) {
+        std::string& path, bool create_if_absent, bool create_ephemeral) {
     SLOGD("e4crypt_set_user_policy for %d", user_id);
     auto user_key = e4crypt_get_key(get_key_path(mount_path, user_id),
             create_if_absent, create_ephemeral);
@@ -619,7 +619,7 @@ static int e4crypt_set_user_policy(const char *mount_path, userid_t user_id,
     if (raw_ref.empty()) {
         return -1;
     }
-    return do_policy_set(path, raw_ref.c_str(), raw_ref.size());
+    return do_policy_set(path.c_str(), raw_ref.c_str(), raw_ref.size());
 }
 
 static bool is_numeric(const char *name) {
@@ -654,7 +654,7 @@ int e4crypt_vold_set_user_crypto_policies(const char *dir)
         auto user_id = atoi(result->d_name);
         auto user_dir = std::string() + dir + "/" + result->d_name;
         // ext4enc:TODO don't hardcode /data
-        if (e4crypt_set_user_policy("/data", user_id, user_dir.c_str(), false, false)) {
+        if (e4crypt_set_user_policy("/data", user_id, user_dir, false, false)) {
             // ext4enc:TODO If this function fails, stop the boot: we must
             // deliver on promised encryption.
             SLOGE("Unable to set policy on %s\n", user_dir.c_str());
@@ -758,11 +758,16 @@ int e4crypt_prepare_user_storage(const char* volume_uuid,
                                  int serial,
                                  bool ephemeral) {
     std::string system_ce_path(android::vold::BuildDataSystemCePath(user_id));
+    std::string media_ce_path(android::vold::BuildDataMediaPath(volume_uuid, user_id));
     std::string user_ce_path(android::vold::BuildDataUserPath(volume_uuid, user_id));
     std::string user_de_path(android::vold::BuildDataUserDePath(volume_uuid, user_id));
 
     if (fs_prepare_dir(system_ce_path.c_str(), 0700, AID_SYSTEM, AID_SYSTEM)) {
         PLOG(ERROR) << "Failed to prepare " << system_ce_path;
+        return -1;
+    }
+    if (fs_prepare_dir(media_ce_path.c_str(), 0770, AID_MEDIA_RW, AID_MEDIA_RW)) {
+        PLOG(ERROR) << "Failed to prepare " << media_ce_path;
         return -1;
     }
     if (fs_prepare_dir(user_ce_path.c_str(), 0771, AID_SYSTEM, AID_SYSTEM)) {
@@ -775,16 +780,10 @@ int e4crypt_prepare_user_storage(const char* volume_uuid,
     }
 
     if (e4crypt_crypto_complete(DATA_MNT_POINT) == 0) {
-        if (e4crypt_set_user_policy(DATA_MNT_POINT,
-                                    user_id,
-                                    system_ce_path.c_str(),
-                                    true,
-                                    ephemeral)
-                || e4crypt_set_user_policy(DATA_MNT_POINT,
-                                           user_id,
-                                           user_ce_path.c_str(),
-                                           true,
-                                           ephemeral)) {
+        if (e4crypt_set_user_policy(DATA_MNT_POINT, user_id, system_ce_path, true, ephemeral)
+                || e4crypt_set_user_policy(DATA_MNT_POINT, user_id, media_ce_path, true, ephemeral)
+                || e4crypt_set_user_policy(DATA_MNT_POINT, user_id, user_ce_path, true,
+                        ephemeral)) {
             return -1;
         }
     }
