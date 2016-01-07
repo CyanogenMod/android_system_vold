@@ -688,6 +688,7 @@ int CommandListener::AppFuseCmd::runCommand(SocketClient *cli,
                     "fd=%i,"
                     "rootmode=40000,"
                     "default_permissions,"
+                    "allow_other,"
                     "user_id=%d,group_id=%d",
                     device_fd,
                     uid,
