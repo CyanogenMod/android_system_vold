@@ -28,8 +28,7 @@
 #include <linux/fiemap.h>
 #include <mntent.h>
 
-#define LOG_TAG "secdiscard"
-#include "cutils/log.h"
+#include <android-base/logging.h>
 
 #include <AutoCloseFD.h>
 
@@ -53,21 +52,21 @@ std::string block_device_for_path(const std::string &path);
 }
 
 int main(int argc, const char * const argv[]) {
+    android::base::InitLogging(const_cast<char **>(argv));
     Options options;
     if (!read_command_line(argc, argv, options)) {
         usage(argv[0]);
         return -1;
     }
     for (auto target: options.targets) {
-        SLOGD("Securely discarding '%s' unlink=%d", target.c_str(), options.unlink);
+        LOG(DEBUG) << "Securely discarding '" << target << "' unlink=" << options.unlink;
         secdiscard_path(target);
         if (options.unlink) {
             if (unlink(target.c_str()) != 0 && errno != ENOENT) {
-                SLOGE("Unable to unlink %s: %s",
-                    target.c_str(), strerror(errno));
+                PLOG(ERROR) << "Unable to unlink: " << target;
             }
         }
-        SLOGD("Discarded %s", target.c_str());
+        LOG(DEBUG) << "Discarded: " << target;
     }
     return 0;
 }
@@ -107,7 +106,7 @@ int secdiscard_path(const std::string &path) {
     }
     AutoCloseFD fs_fd(block_device, O_RDWR | O_LARGEFILE);
     if (!fs_fd) {
-        SLOGE("Failed to open device %s: %s", block_device.c_str(), strerror(errno));
+        PLOG(ERROR) << "Failed to open device " << block_device;
         return -1;
     }
     for (uint32_t i = 0; i < fiemap->fm_mapped_extents; i++) {
@@ -115,7 +114,7 @@ int secdiscard_path(const std::string &path) {
         range[0] = fiemap->fm_extents[i].fe_physical;
         range[1] = fiemap->fm_extents[i].fe_length;
         if (ioctl(fs_fd.get(), BLKSECDISCARD, range) == -1) {
-            SLOGE("Unable to BLKSECDISCARD %s: %s", path.c_str(), strerror(errno));
+            PLOG(ERROR) << "Unable to BLKSECDISCARD " << path;
             return -1;
         }
     }
@@ -128,20 +127,21 @@ std::unique_ptr<struct fiemap> path_fiemap(const std::string &path, uint32_t ext
     AutoCloseFD fd(path);
     if (!fd) {
         if (errno == ENOENT) {
-            SLOGD("Unable to open %s: %s", path.c_str(), strerror(errno));
+            PLOG(DEBUG) << "Unable to open " << path;
         } else {
-            SLOGE("Unable to open %s: %s", path.c_str(), strerror(errno));
+            PLOG(ERROR) << "Unable to open " << path;
         }
         return nullptr;
     }
     auto fiemap = alloc_fiemap(extent_count);
     if (ioctl(fd.get(), FS_IOC_FIEMAP, fiemap.get()) != 0) {
-        SLOGE("Unable to FIEMAP %s: %s", path.c_str(), strerror(errno));
+        PLOG(ERROR) << "Unable to FIEMAP " << path;
         return nullptr;
     }
     auto mapped = fiemap->fm_mapped_extents;
     if (mapped < 1 || mapped > extent_count) {
-        SLOGE("Extent count not in bounds 1 <= %u <= %u in %s", mapped, extent_count, path.c_str());
+        LOG(ERROR) << "Extent count not in bounds 1 <= " << mapped << " <= " << extent_count
+            << " in " << path;
         return nullptr;
     }
     return fiemap;
@@ -151,13 +151,13 @@ std::unique_ptr<struct fiemap> path_fiemap(const std::string &path, uint32_t ext
 bool check_fiemap(const struct fiemap &fiemap, const std::string &path) {
     auto mapped = fiemap.fm_mapped_extents;
     if (!(fiemap.fm_extents[mapped - 1].fe_flags & FIEMAP_EXTENT_LAST)) {
-        SLOGE("Extent %u was not the last in %s", mapped - 1, path.c_str());
+        LOG(ERROR) << "Extent " << mapped -1 << " was not the last in " << path;
         return false;
     }
     for (uint32_t i = 0; i < mapped; i++) {
         auto flags = fiemap.fm_extents[i].fe_flags;
         if (flags & (FIEMAP_EXTENT_UNKNOWN | FIEMAP_EXTENT_DELALLOC | FIEMAP_EXTENT_NOT_ALIGNED)) {
-            SLOGE("Extent %u has unexpected flags %ulx: %s", i, flags, path.c_str());
+            LOG(ERROR) << "Extent " << i << " has unexpected flags " << flags << ": " << path;
             return false;
         }
     }
@@ -182,7 +182,7 @@ std::string block_device_for_path(const std::string &path)
 {
     std::unique_ptr<FILE, int(*)(FILE*)> mnts(setmntent("/proc/mounts", "re"), endmntent);
     if (!mnts) {
-        SLOGE("Unable to open /proc/mounts: %s", strerror(errno));
+        PLOG(ERROR) << "Unable to open /proc/mounts";
         return "";
     }
     std::string result;
@@ -199,10 +199,10 @@ std::string block_device_for_path(const std::string &path)
         }
     }
     if (result.empty()) {
-        SLOGE("Didn't find a mountpoint to match path %s", path.c_str());
+        LOG(ERROR) <<"Didn't find a mountpoint to match path " << path;
         return "";
     }
-    SLOGD("For path %s block device is %s", path.c_str(), result.c_str());
+    LOG(DEBUG) << "For path " << path << " block device is " << result;
     return result;
 }
 

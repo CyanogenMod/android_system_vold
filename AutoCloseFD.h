@@ -21,6 +21,8 @@
 #include <fcntl.h>
 #include <unistd.h>
 
+#include <android-base/logging.h>
+
 // File descriptor which is automatically closed when this object is destroyed.
 // Cannot be copied, since that would cause double-closes.
 class AutoCloseFD {
@@ -33,7 +35,7 @@ public:
         if (fd != -1) {
             int preserve_errno = errno;
             if (close(fd) == -1) {
-                SLOGE("close(2) failed: %s", strerror(errno));
+                PLOG(ERROR) << "close(2) failed";
             };
             errno = preserve_errno;
         }
