@@ -2428,7 +2428,8 @@ static int encrypt_groups(struct encryptGroupsData* data)
         data->count = 0;
 
         for (block = 0; block < block_count; block++) {
-            int used = bitmap_get_bit(block_bitmap, block);
+            int used = (aux_info.bg_desc[i].bg_flags & EXT4_BG_BLOCK_UNINIT) ?
+                    0 : bitmap_get_bit(block_bitmap, block);
             update_progress(data, used);
             if (used) {
                 if (data->count == 0) {
