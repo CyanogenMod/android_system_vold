@@ -106,6 +106,12 @@ LOCAL_MODULE_TAGS := eng tests
 LOCAL_CFLAGS := $(vold_cflags)
 LOCAL_CONLYFLAGS := $(vold_conlyflags)
 
+ifeq ($(TARGET_HW_DISK_ENCRYPTION),true)
+TARGET_CRYPTFS_HW_PATH ?= device/qcom/common/cryptfs_hw
+LOCAL_C_INCLUDES += $(TARGET_CRYPTFS_HW_PATH)
+LOCAL_CFLAGS += -DCONFIG_HW_DISK_ENCRYPTION
+endif
+
 include $(BUILD_STATIC_LIBRARY)
 
 include $(CLEAR_VARS)
@@ -122,15 +128,12 @@ LOCAL_C_INCLUDES := $(common_c_includes)
 LOCAL_CFLAGS := $(vold_cflags)
 LOCAL_CONLYFLAGS := $(vold_conlyflags)
 
-ifeq ($(TARGET_HW_DISK_ENCRYPTION),true)
-TARGET_CRYPTFS_HW_PATH ?= device/qcom/common/cryptfs_hw
-LOCAL_C_INCLUDES += $(TARGET_CRYPTFS_HW_PATH)
-common_shared_libraries += libcryptfs_hw
-LOCAL_CFLAGS += -DCONFIG_HW_DISK_ENCRYPTION
-endif
-
 LOCAL_SHARED_LIBRARIES := $(common_shared_libraries)
 LOCAL_STATIC_LIBRARIES := libvold $(common_static_libraries)
+
+ifeq ($(TARGET_HW_DISK_ENCRYPTION),true)
+LOCAL_SHARED_LIBRARIES += libcryptfs_hw
+endif
 
 include $(BUILD_EXECUTABLE)
 
