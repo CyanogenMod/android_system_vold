@@ -106,7 +106,8 @@ LOCAL_ADDITIONAL_DEPENDENCIES := $(LOCAL_PATH)/Android.mk
 LOCAL_MODULE:= vold
 LOCAL_CLANG := true
 LOCAL_SRC_FILES := \
-	vold.c
+	vold.c \
+        $(common_src_files)
 
 LOCAL_C_INCLUDES := $(common_c_includes)
 LOCAL_CFLAGS := $(vold_cflags)
