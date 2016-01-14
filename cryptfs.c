@@ -172,17 +172,22 @@ static int verify_and_update_hw_fde_passwd(char *passwd,
              * Each nible of passwd was encoded as a byte, so allocate memory
              * twice of password len plus one more byte for null termination
              */
-            new_passwd = (char*)malloc(strlen(passwd)*2+1);
-            if (new_passwd == NULL) {
-                SLOGE("System out of memory. Password verification  incomplete");
-                goto out;
-            }
-
-            if (crypt_ftr->crypt_type == CRYPT_TYPE_DEFAULT)
+            if (crypt_ftr->crypt_type == CRYPT_TYPE_DEFAULT) {
+                new_passwd = (char*)malloc(strlen(DEFAULT_HEX_PASSWORD) + 1);
+                if (new_passwd == NULL) {
+                    SLOGE("System out of memory. Password verification  incomplete");
+                    goto out;
+                }
                 strlcpy(new_passwd, DEFAULT_HEX_PASSWORD, strlen(DEFAULT_HEX_PASSWORD) + 1);
-            else
+            } else {
+                new_passwd = (char*)malloc(strlen(passwd) * 2 + 1);
+                if (new_passwd == NULL) {
+                    SLOGE("System out of memory. Password verification  incomplete");
+                    goto out;
+                }
                 convert_key_to_hex_ascii((const unsigned char*)passwd,
                                        strlen(passwd), new_passwd);
+            }
             key_index = set_hw_device_encryption_key((const char*)new_passwd,
                                        (char*) crypt_ftr->crypto_type_name);
             if (key_index >=0) {
@@ -3287,6 +3292,31 @@ int cryptfs_enable_internal(char *howarg, int crypt_type, char *passwd,
         }
     }
 
+    /* Do extra work for a better UX when doing the long inplace encryption */
+    if (how == CRYPTO_ENABLE_INPLACE) {
+        /* Now that /data is unmounted, we need to mount a tmpfs
+         * /data, set a property saying we're doing inplace encryption,
+         * and restart the framework.
+         */
+        if (fs_mgr_do_tmpfs_mount(DATA_MNT_POINT)) {
+            goto error_shutting_down;
+        }
+        /* Tells the framework that inplace encryption is starting */
+        property_set("vold.encrypt_progress", "0");
+
+        /* restart the framework. */
+        /* Create necessary paths on /data */
+        if (prep_data_fs()) {
+            goto error_shutting_down;
+        }
+
+        /* Ugh, shutting down the framework is not synchronous, so until it
+         * can be fixed, this horrible hack will wait a moment for it all to
+         * shut down before proceeding.  Without it, some devices cannot
+         * restart the graphics services.
+         */
+        sleep(2);
+    }
 
     if (how == CRYPTO_ENABLE_INPLACE && !no_ui) {
         /* startup service classes main and late_start */
