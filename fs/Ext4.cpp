@@ -42,6 +42,7 @@
 #include <cutils/log.h>
 #include <cutils/properties.h>
 #include <logwrap/logwrap.h>
+#include <private/android_filesystem_config.h>
 #include <selinux/selinux.h>
 
 #include "Ext4.h"
@@ -133,13 +134,22 @@ status_t Check(const std::string& source, const std::string& target, bool truste
 
 status_t Mount(const std::string& source, const std::string& target, bool ro,
         bool remount, bool executable, const std::string& opts /* = "" */,
-        bool trusted) {
+        bool trusted, bool portable) {
     int rc;
     unsigned long flags;
 
+    std::string data(opts);
+
+    if (portable) {
+        if (!data.empty()) {
+            data += ",";
+        }
+        data += "context=u:object_r:sdcard_posix:s0";
+    }
+
     const char* c_source = source.c_str();
     const char* c_target = target.c_str();
-    const char* c_opts = opts.c_str();
+    const char* c_data = data.c_str();
 
     flags = MS_NOATIME | MS_NODEV | MS_NOSUID;
 
@@ -152,12 +162,17 @@ status_t Mount(const std::string& source, const std::string& target, bool ro,
     flags |= (ro ? MS_RDONLY : 0);
     flags |= (remount ? MS_REMOUNT : 0);
 
-    rc = mount(c_source, c_target, "ext4", flags, c_opts);
+    rc = mount(c_source, c_target, "ext4", flags, c_data);
+
+    if (portable && rc == 0) {
+        chown(c_target, AID_MEDIA_RW, AID_MEDIA_RW);
+        chmod(c_target, 0755);
+    }
 
     if (rc && errno == EROFS) {
         SLOGE("%s appears to be a read only filesystem - retrying mount RO", c_source);
         flags |= MS_RDONLY;
-        rc = mount(c_source, c_target, "ext4", flags, NULL);
+        rc = mount(c_source, c_target, "ext4", flags, c_data);
     }
 
     return rc;
