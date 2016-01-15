@@ -932,7 +932,7 @@ int VolumeManager::createAsec(const char *id, unsigned int numSectors, const cha
         int mountStatus;
         if (usingExt4) {
             mountStatus = android::vold::ext4::Mount(dmDevice, mountPoint,
-                    false, false, false);
+                    false, false, false, false);
         } else {
             mountStatus = android::vold::vfat::Mount(dmDevice, mountPoint,
                     false, false, false, ownerUid, 0, 0000, false);
@@ -1152,7 +1152,7 @@ int VolumeManager::finalizeAsec(const char *id) {
     int result = 0;
     if (sb.c_opts & ASEC_SB_C_OPTS_EXT4) {
         result = android::vold::ext4::Mount(loopDevice, mountPoint,
-                true, true, true);
+                true, true, true, false);
     } else {
         result = android::vold::vfat::Mount(loopDevice, mountPoint,
                 true, true, true, 0, 0, 0227, false);
@@ -1222,7 +1222,8 @@ int VolumeManager::fixupAsecPermissions(const char *id, gid_t gid, const char* f
     int ret = android::vold::ext4::Mount(loopDevice, mountPoint,
             false /* read-only */,
             true  /* remount */,
-            false /* executable */);
+            false /* executable */,
+            false /* sdcard */);
     if (ret) {
         SLOGE("Unable remount to fix permissions for %s (%s)", id, strerror(errno));
         return -1;
@@ -1284,7 +1285,8 @@ int VolumeManager::fixupAsecPermissions(const char *id, gid_t gid, const char* f
     result |= android::vold::ext4::Mount(loopDevice, mountPoint,
             true /* read-only */,
             true /* remount */,
-            true /* execute */);
+            true /* execute */,
+            false /* sdcard */);
 
     if (result) {
         SLOGE("ASEC fix permissions failed (%s)", strerror(errno));
@@ -1718,7 +1720,7 @@ int VolumeManager::mountAsec(const char *id, const char *key, int ownerUid, bool
     int result;
     if (sb.c_opts & ASEC_SB_C_OPTS_EXT4) {
         result = android::vold::ext4::Mount(dmDevice, mountPoint,
-                readOnly, false, readOnly);
+                readOnly, false, readOnly, false);
     } else {
         result = android::vold::vfat::Mount(dmDevice, mountPoint,
                 readOnly, false, readOnly, ownerUid, 0, 0222, false);
