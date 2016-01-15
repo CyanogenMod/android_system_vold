@@ -171,7 +171,7 @@ status_t PublicVolume::doMount() {
                 AID_MEDIA_RW, AID_MEDIA_RW, 0007);
     } else if (mFsType == "ext4") {
         ret = ext4::Mount(mDevPath, mRawPath, false, false, true, mMntOpts,
-                false);
+                false, true);
     } else if (mFsType == "f2fs") {
         ret = f2fs::Mount(mDevPath, mRawPath, false);
     } else if (mFsType == "ntfs") {
