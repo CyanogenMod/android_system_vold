@@ -225,13 +225,14 @@ int CryptCommandListener::CryptfsCmd::runCommand(SocketClient *cli,
         rc = cryptfs_enable_file();
     } else if (!strcmp(argv[1], "changepw")) {
         const char* syntax = "Usage: cryptfs changepw "
-                             "default|password|pin|pattern [currentpasswd] "
-                             "default|password|pin|pattern [newpasswd]";
+                             "default|password|pin|pattern [[currentpasswd] newpasswd]";
         const char* password;
-        const char* currentpassword;
-        if (argc == 4) {
-            currentpassword = "";
+        const char* currentpassword = "";
+        if (argc == 3) {
             password = "";
+        }
+        else if (argc == 4) {
+            password = argv[3];
         } else if (argc == 5) {
             currentpassword = argv[3];
             password = argv[4];
