@@ -1796,7 +1796,10 @@ int VolumeManager::unmountVolume(const char *label, bool force, bool revert, boo
         return UNMOUNT_NOT_MOUNTED_ERR;
     }
 
-    cleanupAsec(v, force);
+    bool providesAsec = (v->getFlags() & VOL_PROVIDES_ASEC) != 0;
+    if (providesAsec) {
+        cleanupAsec(v, force);
+    }
 
     return v->unmountVol(force, revert, detach);
 }
