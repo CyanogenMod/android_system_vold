@@ -97,9 +97,6 @@ int main(int argc, char** argv) {
         vm->setDebug(true);
     }
 
-    // Prepare owner storage
-    e4crypt_prepare_user_storage(nullptr, 0, 0, false);
-
     cl = new CommandListener();
     ccl = new CryptCommandListener();
     vm->setBroadcaster((SocketListener *) cl);

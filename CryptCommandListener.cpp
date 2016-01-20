@@ -346,11 +346,6 @@ int CryptCommandListener::CryptfsCmd::runCommand(SocketClient *cli,
         dumpArgs(argc, argv, -1);
         cryptfs_clear_password();
         rc = 0;
-    } else if (subcommand == "setusercryptopolicies") {
-        if (!check_argc(cli, subcommand, argc, 3, "<path>")) return 0;
-        SLOGD("cryptfs setusercryptopolicies");
-        dumpArgs(argc, argv, -1);
-        rc = e4crypt_vold_set_user_crypto_policies(argv[2]);
 
     } else if (subcommand == "isConvertibleToFBE") {
         if (!check_argc(cli, subcommand, argc, 2, "")) return 0;
@@ -372,7 +367,8 @@ int CryptCommandListener::CryptfsCmd::runCommand(SocketClient *cli,
 
     } else if (subcommand == "unlock_user_key") {
         if (!check_argc(cli, subcommand, argc, 5, "<user> <serial> <token>")) return 0;
-        return sendGenericOkFail(cli, e4crypt_unlock_user_key(atoi(argv[2]), parseNull(argv[4])));
+        return sendGenericOkFail(cli, e4crypt_unlock_user_key(
+            atoi(argv[2]), atoi(argv[3]), parseNull(argv[4])));
 
     } else if (subcommand == "lock_user_key") {
         if (!check_argc(cli, subcommand, argc, 3, "<user>")) return 0;
