@@ -50,9 +50,10 @@ status_t Check(const std::string& source, bool trusted) {
 }
 
 status_t Mount(const std::string& source, const std::string& target,
-        bool trusted) {
+        const std::string& opts /* = "" */, bool trusted) {
     const char* c_source = source.c_str();
     const char* c_target = target.c_str();
+    const char* c_opts = opts.c_str();
     unsigned long flags = MS_NOATIME | MS_NODEV | MS_NOSUID;
 
     // Only use MS_DIRSYNC if we're not mounting adopted storage
@@ -60,7 +61,7 @@ status_t Mount(const std::string& source, const std::string& target,
         flags |= MS_DIRSYNC;
     }
 
-    int res = mount(c_source, c_target, "f2fs", flags, NULL);
+    int res = mount(c_source, c_target, "f2fs", flags, c_opts);
     if (res != 0) {
         PLOG(ERROR) << "Failed to mount " << source;
         if (errno == EROFS) {
