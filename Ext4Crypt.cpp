@@ -696,12 +696,14 @@ static int emulated_lock(const std::string& path) {
 static int emulated_unlock(const std::string& path, mode_t mode) {
     if (chmod(path.c_str(), mode) != 0) {
         PLOG(ERROR) << "Failed to chmod " << path;
-        return -1;
+        // FIXME temporary workaround for b/26713622
+        if (e4crypt_is_emulated()) return -1;
     }
 #if EMULATED_USES_SELINUX
     if (selinux_android_restorecon(path.c_str(), SELINUX_ANDROID_RESTORECON_FORCE) != 0) {
         PLOG(WARNING) << "Failed to restorecon " << path;
-        return -1;
+        // FIXME temporary workaround for b/26713622
+        if (e4crypt_is_emulated()) return -1;
     }
 #endif
     return 0;
