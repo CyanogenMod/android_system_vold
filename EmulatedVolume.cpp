@@ -107,16 +107,20 @@ status_t EmulatedVolume::doMount() {
 }
 
 status_t EmulatedVolume::doUnmount() {
+    // Unmount the storage before we kill the FUSE process. If we kill
+    // the FUSE process first, most file system operations will return
+    // ENOTCONN until the unmount completes. This is an exotic and unusual
+    // error code and might cause broken behaviour in applications.
+    KillProcessesUsingPath(getPath());
+    ForceUnmount(mFuseDefault);
+    ForceUnmount(mFuseRead);
+    ForceUnmount(mFuseWrite);
+
     if (mFusePid > 0) {
         kill(mFusePid, SIGTERM);
         TEMP_FAILURE_RETRY(waitpid(mFusePid, nullptr, 0));
         mFusePid = 0;
     }
-
-    KillProcessesUsingPath(getPath());
-    ForceUnmount(mFuseDefault);
-    ForceUnmount(mFuseRead);
-    ForceUnmount(mFuseWrite);
 
     rmdir(mFuseDefault.c_str());
     rmdir(mFuseRead.c_str());
