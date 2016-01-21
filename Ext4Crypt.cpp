@@ -16,11 +16,11 @@
 
 #include "Ext4Crypt.h"
 
+#include "KeyStorage.h"
 #include "Utils.h"
 
 #include <iomanip>
 #include <map>
-#include <fstream>
 #include <string>
 #include <sstream>
 
@@ -557,40 +557,20 @@ static bool e4crypt_is_key_ephemeral(const std::string &key_path) {
     return s_ephemeral_user_keys.find(key_path) != s_ephemeral_user_keys.end();
 }
 
-static std::string read_user_key(userid_t user_id)
+static bool read_user_key(userid_t user_id, std::string &key)
 {
     const auto key_path = get_key_path(user_id);
     const auto ephemeral_key_it = s_ephemeral_user_keys.find(key_path);
     if (ephemeral_key_it != s_ephemeral_user_keys.end()) {
-        return ephemeral_key_it->second;
+        key = ephemeral_key_it->second;
+        return true;
     }
-
-    std::string content;
-    if (!android::base::ReadFileToString(key_path, &content)) {
-        return "";
+    if (!android::vold::RetrieveKey(key_path, key)) return false;
+    if (key.size() != key_length/8) {
+        LOG(ERROR) << "Wrong size key " << key.size() << " in " << key_path;
+        return false;
     }
-    if (content.size() != key_length/8) {
-        LOG(ERROR) << "Wrong size key " << content.size() << " in " << key_path;
-        return "";
-    }
-    return content;
-}
-
-// ext4enc:TODO this can't be the only place keys are read from /dev/urandom
-// we should unite those places.
-static std::string get_random_string(size_t length) {
-    std::ifstream urandom("/dev/urandom");
-    if (!urandom) {
-        PLOG(ERROR) << "Unable to open /dev/urandom";
-        return "";
-    }
-    std::string res(length, '\0');
-    urandom.read(&res[0], length);
-    if (!urandom) {
-        PLOG(ERROR) << "Unable to read from /dev/urandom";
-        return "";
-    }
-    return res;
+    return true;
 }
 
 static bool create_user_key(userid_t user_id, bool create_ephemeral) {
@@ -599,15 +579,16 @@ static bool create_user_key(userid_t user_id, bool create_ephemeral) {
         return false;
     }
     const auto key_path = get_key_path(user_id);
-    auto key = get_random_string(key_length / 8);
-    if (key.empty()) {
+    std::string key;
+    if (android::vold::ReadRandomBytes(key_length / 8, key) != 0) {
+        // TODO status_t plays badly with PLOG, fix it.
+        LOG(ERROR) << "Random read failed";
         return false;
     }
     if (create_ephemeral) {
         // If the key should be created as ephemeral, store it in memory only.
         s_ephemeral_user_keys[key_path] = key;
-    } else if (!android::base::WriteStringToFile(key, key_path)) {
-        PLOG(ERROR) << "Unable to write key to " << key_path;
+    } else if (!android::vold::StoreKey(key_path, key)) {
         return false;
     }
     LOG(DEBUG) << "Created key " << key_path;
@@ -627,7 +608,8 @@ static int e4crypt_set_user_policy(userid_t user_id, int serial, std::string& pa
 
 int e4crypt_vold_create_user_key(userid_t user_id, int serial, bool ephemeral) {
     LOG(DEBUG) << "e4crypt_vold_create_user_key for " << user_id << " serial " << serial;
-    if (!read_user_key(user_id).empty()) {
+    std::string key;
+    if (read_user_key(user_id, key)) {
         LOG(ERROR) << "Already exists, can't e4crypt_vold_create_user_key for "
             << user_id << " serial " << serial;
         // FIXME should we fail the command?
@@ -643,40 +625,34 @@ int e4crypt_vold_create_user_key(userid_t user_id, int serial, bool ephemeral) {
     return 0;
 }
 
-int e4crypt_destroy_user_key(userid_t user_id) {
-    LOG(DEBUG) << "e4crypt_destroy_user_key(" << user_id << ")";
-    // TODO: destroy second key for user_de data
+static bool evict_user_key(userid_t user_id) {
     auto key_path = get_key_path(user_id);
-    auto key = read_user_key(user_id);
+    std::string key;
+    if (!read_user_key(user_id, key)) return false;
     auto ext4_key = fill_key(key);
     auto ref = keyname(generate_key_ref(ext4_key.raw, ext4_key.size));
     auto key_serial = keyctl_search(e4crypt_keyring(), "logon", ref.c_str(), 0);
-    if (keyctl_revoke(key_serial) == 0) {
-        LOG(DEBUG) << "Revoked key with serial " << key_serial << " ref " << ref;
-    } else {
+    if (keyctl_revoke(key_serial) != 0) {
         PLOG(ERROR) << "Failed to revoke key with serial " << key_serial << " ref " << ref;
+        return false;
     }
+    LOG(DEBUG) << "Revoked key with serial " << key_serial << " ref " << ref;
+    return true;
+}
+
+int e4crypt_destroy_user_key(userid_t user_id) {
+    LOG(DEBUG) << "e4crypt_destroy_user_key(" << user_id << ")";
+    // TODO: destroy second key for user_de data
+    bool evict_success = evict_user_key(user_id);
+    auto key_path = get_key_path(user_id);
     if (e4crypt_is_key_ephemeral(key_path)) {
         s_ephemeral_user_keys.erase(key_path);
-        return 0;
+    } else {
+        if (!android::vold::DestroyKey(key_path)) {
+            return -1;
+        }
     }
-    int pid = fork();
-    if (pid < 0) {
-        PLOG(ERROR) << "Unable to fork";
-        return -1;
-    }
-    if (pid == 0) {
-        LOG(DEBUG) << "Forked for secdiscard";
-        execl("/system/bin/secdiscard",
-            "/system/bin/secdiscard",
-            "--",
-            key_path.c_str(),
-            NULL);
-        PLOG(ERROR) << "Unable to launch secdiscard on " << key_path;
-        exit(-1);
-    }
-    // ext4enc:TODO reap the zombie
-    return 0;
+    return evict_success ? 0 : -1;
 }
 
 static int emulated_lock(const std::string& path) {
@@ -712,8 +688,8 @@ static int emulated_unlock(const std::string& path, mode_t mode) {
 int e4crypt_unlock_user_key(userid_t user_id, int serial, const char* token) {
     LOG(DEBUG) << "e4crypt_unlock_user_key " << user_id << " " << (token != nullptr);
     if (e4crypt_is_native()) {
-        auto user_key = read_user_key(user_id);
-        if (user_key.empty()) {
+        std::string user_key;
+        if (!read_user_key(user_id, user_key)) {
             // FIXME special case for user 0
             if (user_id != 0) {
                 LOG(ERROR) << "Couldn't read key for " << user_id;
@@ -723,8 +699,7 @@ int e4crypt_unlock_user_key(userid_t user_id, int serial, const char* token) {
             if (!create_user_key(user_id, false)) {
                 return -1;
             }
-            user_key = read_user_key(user_id);
-            if (user_key.empty()) {
+            if (!read_user_key(user_id, user_key)) {
                 LOG(ERROR) << "Couldn't read just-created key for " << user_id;
                 return -1;
             }
