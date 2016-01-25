@@ -106,7 +106,11 @@ LOCAL_SHARED_LIBRARIES := $(common_shared_libraries)
 LOCAL_STATIC_LIBRARIES := $(common_static_libraries)
 
 ifeq ($(TARGET_HW_DISK_ENCRYPTION),true)
+ifneq ($(call project-path-for, qcom-device-tree),)
+LOCAL_C_INCLUDES += $(call project-path-for, qcom-device-tree)/common/cryptfs_hw
+else
 LOCAL_C_INCLUDES += device/qcom/common/cryptfs_hw
+endif
 LOCAL_SHARED_LIBRARIES += libcryptfs_hw
 LOCAL_CFLAGS += -DCONFIG_HW_DISK_ENCRYPTION
 endif
@@ -130,7 +134,11 @@ LOCAL_SHARED_LIBRARIES := $(common_shared_libraries)
 LOCAL_STATIC_LIBRARIES := libvold $(common_static_libraries)
 
 ifeq ($(TARGET_HW_DISK_ENCRYPTION),true)
+ifneq ($(call project-path-for, qcom-device-tree),)
+LOCAL_C_INCLUDES += $(call project-path-for, qcom-device-tree)/common/cryptfs_hw
+else
 LOCAL_C_INCLUDES += device/qcom/common/cryptfs_hw
+endif
 LOCAL_SHARED_LIBRARIES += libcryptfs_hw
 LOCAL_CFLAGS += -DCONFIG_HW_DISK_ENCRYPTION
 endif
