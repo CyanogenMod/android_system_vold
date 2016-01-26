@@ -651,7 +651,9 @@ static android::status_t mountInNamespace(uid_t uid, int device_fd, const std::s
             "rootmode=40000,"
             "default_permissions,"
             "allow_other,"
-            "user_id=%d,group_id=%d",
+            "user_id=%d,group_id=%d,"
+            "context=\"u:object_r:app_fuse_file:s0\","
+            "fscontext=u:object_r:app_fusefs:s0",
             device_fd,
             uid,
             uid);
