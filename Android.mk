@@ -27,6 +27,8 @@ common_src_files := \
 	MoveTask.cpp \
 	Benchmark.cpp \
 	TrimTask.cpp \
+	Keymaster.cpp \
+	KeyStorage.cpp \
 
 common_c_includes := \
 	system/extras/ext4_utils \
@@ -52,7 +54,9 @@ common_shared_libraries := \
 	libutils \
 	libhardware \
 	libsoftkeymaster \
-	libbase
+	libbase \
+	libkeymaster1 \
+	libkeymaster_messages \
 
 common_static_libraries := \
 	libfs_mgr \
@@ -61,7 +65,7 @@ common_static_libraries := \
 	libsquashfs_utils \
 	libscrypt_static \
 	libmincrypt \
-	libbatteryservice
+	libbatteryservice \
 
 vold_conlyflags := -std=c11
 vold_cflags := -Werror -Wall -Wno-missing-field-initializers -Wno-unused-variable -Wno-unused-parameter
