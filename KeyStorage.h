@@ -26,13 +26,13 @@ namespace vold {
 // in such a way that it can only be retrieved via Keymaster and
 // can be securely deleted.
 // It's safe to move/rename the directory after creation.
-bool StoreKey(const std::string &target_dir, const std::string &key);
+bool storeKey(const std::string &dir, const std::string &key);
 
 // Retrieve the key from the named directory.
-bool RetrieveKey(const std::string &dir, std::string &key);
+bool retrieveKey(const std::string &dir, std::string &key);
 
 // Securely destroy the key stored in the named directory and delete the directory.
-bool DestroyKey(const std::string &dir);
+bool destroyKey(const std::string &dir);
 
 }  // namespace vold
 }  // namespace android

@@ -49,7 +49,7 @@ static const char* kFn_keymaster_key_blob = "keymaster_key_blob";
 static const char* kFn_encrypted_key = "encrypted_key";
 static const char* kFn_secdiscardable = "secdiscardable";
 
-static bool CheckSize(const std::string& kind, size_t actual, size_t expected) {
+static bool checkSize(const std::string& kind, size_t actual, size_t expected) {
     if (actual != expected) {
         LOG(ERROR) << "Wrong number of bytes in " << kind << ", expected " << expected
             << " got " << actual;
@@ -58,172 +58,158 @@ static bool CheckSize(const std::string& kind, size_t actual, size_t expected) {
     return true;
 }
 
-static std::string HashSecdiscardable(const std::string &secdiscardable) {
+static std::string hashSecdiscardable(const std::string &secdiscardable) {
     SHA512_CTX c;
 
     SHA512_Init(&c);
     // Personalise the hashing by introducing a fixed prefix.
     // Hashing applications should use personalization except when there is a
     // specific reason not to; see section 4.11 of https://www.schneier.com/skein1.3.pdf
-    std::string secdiscardable_hashing_prefix = "Android secdiscardable SHA512";
-    secdiscardable_hashing_prefix.resize(SHA512_CBLOCK);
-    SHA512_Update(&c, secdiscardable_hashing_prefix.data(), secdiscardable_hashing_prefix.size());
+    std::string secdiscardableHashingPrefix = "Android secdiscardable SHA512";
+    secdiscardableHashingPrefix.resize(SHA512_CBLOCK);
+    SHA512_Update(&c, secdiscardableHashingPrefix.data(), secdiscardableHashingPrefix.size());
     SHA512_Update(&c, secdiscardable.data(), secdiscardable.size());
     std::string res(SHA512_DIGEST_LENGTH, '\0');
     SHA512_Final(reinterpret_cast<uint8_t *>(&res[0]), &c);
     return res;
 }
 
-static bool GenerateKeymasterKey(Keymaster &keymaster,
-        const keymaster::AuthorizationSet &extra_params,
+static bool generateKeymasterKey(Keymaster &keymaster,
+        const keymaster::AuthorizationSet &extraParams,
         std::string &key) {
-    keymaster::AuthorizationSetBuilder param_builder;
-    param_builder
+    auto params = keymaster::AuthorizationSetBuilder()
         .AesEncryptionKey(AES_KEY_BYTES * 8)
         .Authorization(keymaster::TAG_BLOCK_MODE, KM_MODE_GCM)
         .Authorization(keymaster::TAG_MIN_MAC_LENGTH, GCM_MAC_BYTES * 8)
         .Authorization(keymaster::TAG_PADDING, KM_PAD_NONE)
-        .Authorization(keymaster::TAG_NO_AUTH_REQUIRED); // FIXME integrate with gatekeeper
-    auto params = param_builder.build();
-    params.push_back(extra_params);
-    return keymaster.GenerateKey(params, key);
+        .Authorization(keymaster::TAG_NO_AUTH_REQUIRED) // FIXME integrate with gatekeeper
+        .build();
+    params.push_back(extraParams);
+    return keymaster.generateKey(params, key);
 }
 
-static bool EncryptWithKeymasterKey(
+static bool encryptWithKeymasterKey(
         Keymaster &keymaster,
         const std::string &key,
-        const keymaster::AuthorizationSet &extra_params,
+        const keymaster::AuthorizationSet &extraParams,
         const std::string &message,
         std::string &ciphertext) {
     // FIXME fix repetition
-    keymaster::AuthorizationSetBuilder param_builder;
-    param_builder
+    auto params = keymaster::AuthorizationSetBuilder()
         .Authorization(keymaster::TAG_BLOCK_MODE, KM_MODE_GCM)
         .Authorization(keymaster::TAG_MAC_LENGTH, GCM_MAC_BYTES * 8)
-        .Authorization(keymaster::TAG_PADDING, KM_PAD_NONE);
-    auto params = param_builder.build();
-    params.push_back(extra_params);
-    keymaster::AuthorizationSet out_params;
-    auto op_handle = keymaster.Begin(KM_PURPOSE_ENCRYPT, key, params, out_params);
-    if (!op_handle) return false;
-    keymaster_blob_t nonce_blob;
-    if (!out_params.GetTagValue(keymaster::TAG_NONCE, &nonce_blob)) {
+        .Authorization(keymaster::TAG_PADDING, KM_PAD_NONE)
+        .build();
+    params.push_back(extraParams);
+    keymaster::AuthorizationSet outParams;
+    auto opHandle = keymaster.begin(KM_PURPOSE_ENCRYPT, key, params, outParams);
+    if (!opHandle) return false;
+    keymaster_blob_t nonceBlob;
+    if (!outParams.GetTagValue(keymaster::TAG_NONCE, &nonceBlob)) {
         LOG(ERROR) << "GCM encryption but no nonce generated";
         return false;
     }
-    // nonce_blob here is just a pointer into existing data, must not be freed
-    std::string nonce(reinterpret_cast<const char *>(nonce_blob.data), nonce_blob.data_length);
-    if (!CheckSize("nonce", nonce.size(), GCM_NONCE_BYTES)) return false;
+    // nonceBlob here is just a pointer into existing data, must not be freed
+    std::string nonce(reinterpret_cast<const char *>(nonceBlob.data), nonceBlob.data_length);
+    if (!checkSize("nonce", nonce.size(), GCM_NONCE_BYTES)) return false;
     std::string body;
-    if (!op_handle.UpdateCompletely(message, body)) return false;
+    if (!opHandle.updateCompletely(message, body)) return false;
 
     std::string mac;
-    if (!op_handle.FinishWithOutput(mac)) return false;
-    if (!CheckSize("mac", mac.size(), GCM_MAC_BYTES)) return false;
+    if (!opHandle.finishWithOutput(mac)) return false;
+    if (!checkSize("mac", mac.size(), GCM_MAC_BYTES)) return false;
     ciphertext = nonce + body + mac;
     return true;
 }
 
-static bool DecryptWithKeymasterKey(
+static bool decryptWithKeymasterKey(
         Keymaster &keymaster, const std::string &key,
-        const keymaster::AuthorizationSet &extra_params,
+        const keymaster::AuthorizationSet &extraParams,
         const std::string &ciphertext,
         std::string &message) {
     auto nonce = ciphertext.substr(0, GCM_NONCE_BYTES);
-    auto body_mac = ciphertext.substr(GCM_NONCE_BYTES);
+    auto bodyAndMac = ciphertext.substr(GCM_NONCE_BYTES);
     // FIXME fix repetition
-    keymaster::AuthorizationSetBuilder param_builder;
-    param_builder
+    auto params = addStringParam(keymaster::AuthorizationSetBuilder(), keymaster::TAG_NONCE, nonce)
         .Authorization(keymaster::TAG_BLOCK_MODE, KM_MODE_GCM)
         .Authorization(keymaster::TAG_MAC_LENGTH, GCM_MAC_BYTES * 8)
-        .Authorization(keymaster::TAG_PADDING, KM_PAD_NONE);
-    AddStringParam(param_builder, keymaster::TAG_NONCE, nonce);
-    auto params = param_builder.build();
-    params.push_back(extra_params);
+        .Authorization(keymaster::TAG_PADDING, KM_PAD_NONE)
+        .build();
+    params.push_back(extraParams);
 
-    auto op_handle = keymaster.Begin(KM_PURPOSE_DECRYPT, key, params);
-    if (!op_handle) return false;
-    if (!op_handle.UpdateCompletely(body_mac, message)) return false;
-    if (!op_handle.Finish()) return false;
+    auto opHandle = keymaster.begin(KM_PURPOSE_DECRYPT, key, params);
+    if (!opHandle) return false;
+    if (!opHandle.updateCompletely(bodyAndMac, message)) return false;
+    if (!opHandle.finish()) return false;
     return true;
 }
 
-bool StoreKey(const std::string &dir, const std::string &key) {
+static bool readFileToString(const std::string &filename, std::string &result) {
+    if (!android::base::ReadFileToString(filename, &result)) {
+         PLOG(ERROR) << "Failed to read from " << filename;
+         return false;
+    }
+    return true;
+}
+
+static bool writeStringToFile(const std::string &payload, const std::string &filename) {
+    if (!android::base::WriteStringToFile(payload, filename)) {
+         PLOG(ERROR) << "Failed to write to " << filename;
+         return false;
+    }
+    return true;
+}
+
+bool storeKey(const std::string &dir, const std::string &key) {
     if (TEMP_FAILURE_RETRY(mkdir(dir.c_str(), 0700)) == -1) {
         PLOG(ERROR) << "key mkdir " << dir;
         return false;
     }
     std::string secdiscardable;
-    if (ReadRandomBytes(SECDISCARDABLE_BYTES, secdiscardable) != 0) {
+    if (ReadRandomBytes(SECDISCARDABLE_BYTES, secdiscardable) != OK) {
         // TODO status_t plays badly with PLOG, fix it.
         LOG(ERROR) << "Random read failed";
         return false;
     }
-    // FIXME create a wrapper around reads and writes which handles error logging
-    if (!android::base::WriteStringToFile(secdiscardable, dir + "/" + kFn_secdiscardable)) {
-         PLOG(ERROR) << "Unable to write secdiscardable to " << dir;
-         return false;
-    }
-    keymaster::AuthorizationSetBuilder param_builder;
-    AddStringParam(param_builder, keymaster::TAG_APPLICATION_ID,
-        HashSecdiscardable(secdiscardable));
-    auto extra_params = param_builder.build();
+    if (!writeStringToFile(secdiscardable, dir + "/" + kFn_secdiscardable)) return false;
+    auto extraParams = addStringParam(keymaster::AuthorizationSetBuilder(),
+            keymaster::TAG_APPLICATION_ID, hashSecdiscardable(secdiscardable)).build();
     Keymaster keymaster;
     if (!keymaster) return false;
-    std::string km_key;
-    if (!GenerateKeymasterKey(keymaster, extra_params, km_key)) return false;
-    std::string encrypted_key;
-    if (!EncryptWithKeymasterKey(
-        keymaster, km_key, extra_params, key, encrypted_key)) return false;
-    if (!android::base::WriteStringToFile(km_key, dir + "/" + kFn_keymaster_key_blob)) {
-        PLOG(ERROR) << "Unable to write keymaster_key_blob to " << dir;
-        return false;
-    }
-    if (!android::base::WriteStringToFile(encrypted_key, dir + "/" + kFn_encrypted_key)) {
-        PLOG(ERROR) << "Unable to write encrypted_key to " << dir;
-        return false;
-    }
+    std::string kmKey;
+    if (!generateKeymasterKey(keymaster, extraParams, kmKey)) return false;
+    std::string encryptedKey;
+    if (!encryptWithKeymasterKey(
+        keymaster, kmKey, extraParams, key, encryptedKey)) return false;
+    if (!writeStringToFile(kmKey, dir + "/" + kFn_keymaster_key_blob)) return false;
+    if (!writeStringToFile(encryptedKey, dir + "/" + kFn_encrypted_key)) return false;
     return true;
 }
 
-bool RetrieveKey(const std::string &dir, std::string &key) {
+bool retrieveKey(const std::string &dir, std::string &key) {
     std::string secdiscardable;
-    if (!android::base::ReadFileToString(dir + "/" + kFn_secdiscardable, &secdiscardable)) {
-         PLOG(ERROR) << "Unable to read secdiscardable from " << dir;
-         return false;
-    }
-    keymaster::AuthorizationSetBuilder param_builder;
-    AddStringParam(param_builder, keymaster::TAG_APPLICATION_ID,
-        HashSecdiscardable(secdiscardable));
-    auto extra_params = param_builder.build();
-    std::string km_key;
-    if (!android::base::ReadFileToString(dir + "/" + kFn_keymaster_key_blob, &km_key)) {
-         PLOG(ERROR) << "Unable to read keymaster_key_blob from " << dir;
-         return false;
-    }
-    std::string encrypted_message;
-    if (!android::base::ReadFileToString(dir + "/" + kFn_encrypted_key, &encrypted_message)) {
-         PLOG(ERROR) << "Unable to read encrypted_key to " << dir;
-         return false;
-    }
+    if (!readFileToString(dir + "/" + kFn_secdiscardable, secdiscardable)) return false;
+    auto extraParams = addStringParam(keymaster::AuthorizationSetBuilder(),
+            keymaster::TAG_APPLICATION_ID, hashSecdiscardable(secdiscardable)).build();
+    std::string kmKey;
+    if (!readFileToString(dir + "/" + kFn_keymaster_key_blob, kmKey)) return false;
+    std::string encryptedMessage;
+    if (!readFileToString(dir + "/" + kFn_encrypted_key, encryptedMessage)) return false;
     Keymaster keymaster;
     if (!keymaster) return false;
-    return DecryptWithKeymasterKey(keymaster, km_key, extra_params, encrypted_message, key);
+    return decryptWithKeymasterKey(keymaster, kmKey, extraParams, encryptedMessage, key);
 }
 
-static bool DeleteKey(const std::string &dir) {
-    std::string km_key;
-    if (!android::base::ReadFileToString(dir + "/" + kFn_keymaster_key_blob, &km_key)) {
-         PLOG(ERROR) << "Unable to read keymaster_key_blob from " << dir;
-         return false;
-    }
+static bool deleteKey(const std::string &dir) {
+    std::string kmKey;
+    if (!readFileToString(dir + "/" + kFn_keymaster_key_blob, kmKey)) return false;
     Keymaster keymaster;
     if (!keymaster) return false;
-    if (!keymaster.DeleteKey(km_key)) return false;
+    if (!keymaster.deleteKey(kmKey)) return false;
     return true;
 }
 
-static bool SecdiscardSecdiscardable(const std::string &dir) {
+static bool secdiscardSecdiscardable(const std::string &dir) {
     if (ForkExecvp(std::vector<std::string> {
             kSecdiscardPath, "--", dir + "/" + kFn_secdiscardable}) != 0) {
         LOG(ERROR) << "secdiscard failed";
@@ -232,7 +218,7 @@ static bool SecdiscardSecdiscardable(const std::string &dir) {
     return true;
 }
 
-static bool RecursiveDeleteKey(const std::string &dir) {
+static bool recursiveDeleteKey(const std::string &dir) {
     if (ForkExecvp(std::vector<std::string> {
             kRmPath, "-rf", dir}) != 0) {
         LOG(ERROR) << "recursive delete failed";
@@ -241,12 +227,12 @@ static bool RecursiveDeleteKey(const std::string &dir) {
     return true;
 }
 
-bool DestroyKey(const std::string &dir) {
+bool destroyKey(const std::string &dir) {
     bool success = true;
     // Try each thing, even if previous things failed.
-    success &= DeleteKey(dir);
-    success &= SecdiscardSecdiscardable(dir);
-    success &= RecursiveDeleteKey(dir);
+    success &= deleteKey(dir);
+    success &= secdiscardSecdiscardable(dir);
+    success &= recursiveDeleteKey(dir);
     return success;
 }
 

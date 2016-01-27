@@ -40,36 +40,28 @@ using namespace keymaster;
 // to LOG(ERROR).
 class KeymasterOperation {
 public:
-    ~KeymasterOperation() { if (device) device->abort(device, op_handle); }
+    ~KeymasterOperation() { if (mDevice) mDevice->abort(mDevice, mOpHandle); }
     // Is this instance valid? This is false if creation fails, and becomes
     // false on finish or if an update fails.
-    explicit operator bool() {return device != nullptr;}
-    // Call "update" repeatedly until all of the input is consumed, and 
+    explicit operator bool() {return mDevice != nullptr;}
+    // Call "update" repeatedly until all of the input is consumed, and
     // concatenate the output. Return true on success.
-    bool UpdateCompletely(const std::string &input, std::string &output);
-    // Finish; pass nullptr for the "output" param. 
-    bool Finish();
+    bool updateCompletely(const std::string &input, std::string &output);
+    // Finish; pass nullptr for the "output" param.
+    bool finish();
     // Finish and write the output to this string.
-    bool FinishWithOutput(std::string &output);
+    bool finishWithOutput(std::string &output);
     // Move constructor
     KeymasterOperation(KeymasterOperation&& rhs) {
-        op_handle = rhs.op_handle;
-        device = rhs.device;
-        rhs.device = nullptr;
+        mOpHandle = rhs.mOpHandle;
+        mDevice = rhs.mDevice;
+        rhs.mDevice = nullptr;
     }
-    // Move assignation.
-    KeymasterOperation& operator=(KeymasterOperation&& rhs) {
-        op_handle = rhs.op_handle;
-        device = rhs.device;
-        rhs.device = nullptr;
-        return *this;
-    }
-
 private:
     KeymasterOperation(keymaster1_device_t *d, keymaster_operation_handle_t h):
-        device {d}, op_handle {h} {}
-    keymaster1_device_t *device;
-    keymaster_operation_handle_t op_handle;
+        mDevice {d}, mOpHandle {h} {}
+    keymaster1_device_t *mDevice;
+    keymaster_operation_handle_t mOpHandle;
     DISALLOW_COPY_AND_ASSIGN(KeymasterOperation);
     friend class Keymaster;
 };
@@ -79,31 +71,31 @@ private:
 class Keymaster {
 public:
     Keymaster();
-    ~Keymaster() { if (device) keymaster1_close(device); }
+    ~Keymaster() { if (mDevice) keymaster1_close(mDevice); }
     // false if we failed to open the keymaster device.
-    explicit operator bool() {return device != nullptr;}
+    explicit operator bool() {return mDevice != nullptr;}
     // Generate a key in the keymaster from the given params.
-    bool GenerateKey(const AuthorizationSet &in_params, std::string &key);
+    bool generateKey(const AuthorizationSet &inParams, std::string &key);
     // If the keymaster supports it, permanently delete a key.
-    bool DeleteKey(const std::string &key);
+    bool deleteKey(const std::string &key);
     // Begin a new cryptographic operation, collecting output parameters.
-    KeymasterOperation Begin(
+    KeymasterOperation begin(
             keymaster_purpose_t purpose,
             const std::string &key,
-            const AuthorizationSet &in_params,
-            AuthorizationSet &out_params);
+            const AuthorizationSet &inParams,
+            AuthorizationSet &outParams);
     // Begin a new cryptographic operation; don't collect output parameters.
-    KeymasterOperation Begin(
+    KeymasterOperation begin(
             keymaster_purpose_t purpose,
             const std::string &key,
-            const AuthorizationSet &in_params);
+            const AuthorizationSet &inParams);
 private:
-    keymaster1_device_t *device;
+    keymaster1_device_t *mDevice;
     DISALLOW_COPY_AND_ASSIGN(Keymaster);
 };
 
 template <keymaster_tag_t Tag>
-inline AuthorizationSetBuilder& AddStringParam(AuthorizationSetBuilder &params,
+inline AuthorizationSetBuilder& addStringParam(AuthorizationSetBuilder &&params,
         TypedTag<KM_BYTES, Tag> tag, const std::string& val) {
     return params.Authorization(tag, val.data(), val.size());
 }

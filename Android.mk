@@ -55,7 +55,6 @@ common_shared_libraries := \
 	libhardware \
 	libsoftkeymaster \
 	libbase \
-	libkeymaster1 \
 	libkeymaster_messages \
 
 common_static_libraries := \

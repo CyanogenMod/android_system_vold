@@ -550,7 +550,7 @@ int e4crypt_set_field(const char* path, const char* fieldname,
 }
 
 static std::string get_key_path(userid_t user_id) {
-    return StringPrintf("%s/%d", user_key_dir.c_str(), user_id);
+    return StringPrintf("%s/user_%d/current", user_key_dir.c_str(), user_id);
 }
 
 static bool e4crypt_is_key_ephemeral(const std::string &key_path) {
@@ -565,7 +565,7 @@ static bool read_user_key(userid_t user_id, std::string &key)
         key = ephemeral_key_it->second;
         return true;
     }
-    if (!android::vold::RetrieveKey(key_path, key)) return false;
+    if (!android::vold::retrieveKey(key_path, key)) return false;
     if (key.size() != key_length/8) {
         LOG(ERROR) << "Wrong size key " << key.size() << " in " << key_path;
         return false;
@@ -573,11 +573,15 @@ static bool read_user_key(userid_t user_id, std::string &key)
     return true;
 }
 
-static bool create_user_key(userid_t user_id, bool create_ephemeral) {
-    if (fs_prepare_dir(user_key_dir.c_str(), 0700, AID_ROOT, AID_ROOT)) {
-        PLOG(ERROR) << "Failed to prepare " << user_key_dir;
+static bool prepare_dir(const std::string &dir, mode_t mode, uid_t uid, gid_t gid) {
+    if (fs_prepare_dir(dir.c_str(), mode, uid, gid) != 0) {
+        PLOG(ERROR) << "Failed to prepare " << dir;
         return false;
     }
+    return true;
+}
+
+static bool create_user_key(userid_t user_id, bool create_ephemeral) {
     const auto key_path = get_key_path(user_id);
     std::string key;
     if (android::vold::ReadRandomBytes(key_length / 8, key) != 0) {
@@ -588,8 +592,11 @@ static bool create_user_key(userid_t user_id, bool create_ephemeral) {
     if (create_ephemeral) {
         // If the key should be created as ephemeral, store it in memory only.
         s_ephemeral_user_keys[key_path] = key;
-    } else if (!android::vold::StoreKey(key_path, key)) {
-        return false;
+    } else {
+        if (!prepare_dir(user_key_dir, 0700, AID_ROOT, AID_ROOT)) return false;
+        if (!prepare_dir(user_key_dir + "/user_" + std::to_string(user_id),
+            0700, AID_ROOT, AID_ROOT)) return false;
+        if (!android::vold::storeKey(key_path, key)) return false;
     }
     LOG(DEBUG) << "Created key " << key_path;
     return true;
@@ -648,7 +655,7 @@ int e4crypt_destroy_user_key(userid_t user_id) {
     if (e4crypt_is_key_ephemeral(key_path)) {
         s_ephemeral_user_keys.erase(key_path);
     } else {
-        if (!android::vold::DestroyKey(key_path)) {
+        if (!android::vold::destroyKey(key_path)) {
             return -1;
         }
     }
@@ -755,27 +762,15 @@ int e4crypt_prepare_user_storage(const char* volume_uuid,
     } else {
         LOG(DEBUG) << "e4crypt_prepare_user_storage, null volume " << user_id;
     }
-    std::string system_ce_path(android::vold::BuildDataSystemCePath(user_id));
-    std::string media_ce_path(android::vold::BuildDataMediaPath(volume_uuid, user_id));
-    std::string user_ce_path(android::vold::BuildDataUserPath(volume_uuid, user_id));
-    std::string user_de_path(android::vold::BuildDataUserDePath(volume_uuid, user_id));
+    auto system_ce_path = android::vold::BuildDataSystemCePath(user_id);
+    auto media_ce_path = android::vold::BuildDataMediaPath(volume_uuid, user_id);
+    auto user_ce_path = android::vold::BuildDataUserPath(volume_uuid, user_id);
+    auto user_de_path = android::vold::BuildDataUserDePath(volume_uuid, user_id);
 
-    if (fs_prepare_dir(system_ce_path.c_str(), 0700, AID_SYSTEM, AID_SYSTEM)) {
-        PLOG(ERROR) << "Failed to prepare " << system_ce_path;
-        return -1;
-    }
-    if (fs_prepare_dir(media_ce_path.c_str(), 0770, AID_MEDIA_RW, AID_MEDIA_RW)) {
-        PLOG(ERROR) << "Failed to prepare " << media_ce_path;
-        return -1;
-    }
-    if (fs_prepare_dir(user_ce_path.c_str(), 0771, AID_SYSTEM, AID_SYSTEM)) {
-        PLOG(ERROR) << "Failed to prepare " << user_ce_path;
-        return -1;
-    }
-    if (fs_prepare_dir(user_de_path.c_str(), 0771, AID_SYSTEM, AID_SYSTEM)) {
-        PLOG(ERROR) << "Failed to prepare " << user_de_path;
-        return -1;
-    }
+    if (!prepare_dir(system_ce_path, 0700, AID_SYSTEM, AID_SYSTEM)) return -1;
+    if (!prepare_dir(media_ce_path, 0770, AID_MEDIA_RW, AID_MEDIA_RW)) return -1;
+    if (!prepare_dir(user_ce_path, 0771, AID_SYSTEM, AID_SYSTEM)) return -1;
+    if (!prepare_dir(user_de_path, 0771, AID_SYSTEM, AID_SYSTEM)) return -1;
 
     if (e4crypt_crypto_complete(DATA_MNT_POINT) == 0) {
         if (e4crypt_set_user_policy(user_id, serial, system_ce_path)
