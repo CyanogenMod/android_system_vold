@@ -615,6 +615,9 @@ static int e4crypt_set_user_policy(userid_t user_id, int serial, std::string& pa
 
 int e4crypt_vold_create_user_key(userid_t user_id, int serial, bool ephemeral) {
     LOG(DEBUG) << "e4crypt_vold_create_user_key for " << user_id << " serial " << serial;
+    if (!e4crypt_is_native()) {
+        return 0;
+    }
     std::string key;
     if (read_user_key(user_id, key)) {
         LOG(ERROR) << "Already exists, can't e4crypt_vold_create_user_key for "
@@ -649,6 +652,9 @@ static bool evict_user_key(userid_t user_id) {
 
 int e4crypt_destroy_user_key(userid_t user_id) {
     LOG(DEBUG) << "e4crypt_destroy_user_key(" << user_id << ")";
+    if (!e4crypt_is_native()) {
+        return 0;
+    }
     // TODO: destroy second key for user_de data
     bool evict_success = evict_user_key(user_id);
     auto key_path = get_key_path(user_id);
