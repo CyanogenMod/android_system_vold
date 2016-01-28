@@ -21,9 +21,11 @@
 
 #include <iomanip>
 #include <map>
+#include <set>
 #include <string>
 #include <sstream>
 
+#include <stdio.h>
 #include <errno.h>
 #include <dirent.h>
 #include <sys/mount.h>
@@ -75,6 +77,7 @@ namespace {
     const int password_max_age_seconds = 60;
 
     const std::string user_key_dir = std::string() + DATA_MNT_POINT + "/misc/vold/user_keys";
+    const std::string user_key_temp = user_key_dir + "/temp";
 
     // How is device encrypted
     struct keys {
@@ -83,10 +86,10 @@ namespace {
         time_t expiry_time;
     };
     std::map<std::string, keys> s_key_store;
-    // Maps the key paths of ephemeral keys to the keys
-    std::map<std::string, std::string> s_ephemeral_user_keys;
-    // Map user serial numbers to key references
-    std::map<int, std::string> s_key_raw_refs;
+    // Some users are ephemeral, don't try to wipe their keys from disk
+    std::set<userid_t> s_ephemeral_users;
+    // Map user ids to key references
+    std::map<userid_t, std::string> s_ce_key_raw_refs;
 
     // ext4enc:TODO get this const from somewhere good
     const int EXT4_KEY_DESCRIPTOR_SIZE = 8;
@@ -120,7 +123,7 @@ namespace {
     }
 }
 
-static std::string e4crypt_install_key(const std::string &key);
+static bool install_key(const std::string &key, std::string &raw_ref);
 
 static int put_crypt_ftr_and_key(const crypt_mnt_ftr& crypt_ftr,
                                  UnencryptedProperties& props)
@@ -382,10 +385,11 @@ int e4crypt_check_passwd(const char* path, const char* password)
     clock_gettime(CLOCK_BOOTTIME, &now);
     s_key_store[path] = keys{master_key, password,
                              now.tv_sec + password_max_age_seconds};
-    auto raw_ref = e4crypt_install_key(master_key);
-    if (raw_ref.empty()) {
+    std::string raw_ref;
+    if (!install_key(master_key, raw_ref)) {
         return -1;
     }
+    SLOGD("Installed master key");
 
     // Save reference to key so we can set policy later
     if (!props.Set(properties::ref, raw_ref)) {
@@ -427,32 +431,28 @@ static key_serial_t e4crypt_keyring()
     return keyctl_search(KEY_SPEC_SESSION_KEYRING, "keyring", "e4crypt", 0);
 }
 
-static int e4crypt_install_key(const ext4_encryption_key &ext4_key, const std::string &ref)
+// Install password into global keyring
+// Return raw key reference for use in policy
+static bool install_key(const std::string &key, std::string &raw_ref)
 {
+    if (key.size() != key_length/8) {
+        LOG(ERROR) << "Wrong size key " << key.size();
+        return false;
+    }
+    auto ext4_key = fill_key(key);
+    raw_ref = generate_key_ref(ext4_key.raw, ext4_key.size);
+    auto ref = keyname(raw_ref);
     key_serial_t device_keyring = e4crypt_keyring();
     key_serial_t key_id = add_key("logon", ref.c_str(),
                                   (void*)&ext4_key, sizeof(ext4_key),
                                   device_keyring);
     if (key_id == -1) {
         PLOG(ERROR) << "Failed to insert key into keyring " << device_keyring;
-        return -1;
+        return false;
     }
     LOG(INFO) << "Added key " << key_id << " (" << ref << ") to keyring "
         << device_keyring << " in process " << getpid();
-    return 0;
-}
-
-// Install password into global keyring
-// Return raw key reference for use in policy
-static std::string e4crypt_install_key(const std::string &key)
-{
-    auto ext4_key = fill_key(key);
-    auto raw_ref = generate_key_ref(ext4_key.raw, ext4_key.size);
-    auto ref = keyname(raw_ref);
-    if (e4crypt_install_key(ext4_key, ref) == -1) {
-        return "";
-    }
-    return raw_ref;
+    return true;
 }
 
 int e4crypt_restart(const char* path)
@@ -549,31 +549,31 @@ int e4crypt_set_field(const char* path, const char* fieldname,
         .Set(fieldname, std::string(value)) ? 0 : -1;
 }
 
-static std::string get_key_path(userid_t user_id) {
+static std::string get_ce_key_path(userid_t user_id) {
     return StringPrintf("%s/user_%d/current", user_key_dir.c_str(), user_id);
 }
 
-static bool e4crypt_is_key_ephemeral(const std::string &key_path) {
-    return s_ephemeral_user_keys.find(key_path) != s_ephemeral_user_keys.end();
+static bool read_and_install_key(const std::string &key_path, std::string &raw_ref)
+{
+    std::string key;
+    if (!android::vold::retrieveKey(key_path, key)) return false;
+    if (!install_key(key, raw_ref)) return false;
+    return true;
 }
 
-static bool read_user_key(userid_t user_id, std::string &key)
+static bool read_and_install_user_ce_key(userid_t user_id)
 {
-    const auto key_path = get_key_path(user_id);
-    const auto ephemeral_key_it = s_ephemeral_user_keys.find(key_path);
-    if (ephemeral_key_it != s_ephemeral_user_keys.end()) {
-        key = ephemeral_key_it->second;
-        return true;
-    }
-    if (!android::vold::retrieveKey(key_path, key)) return false;
-    if (key.size() != key_length/8) {
-        LOG(ERROR) << "Wrong size key " << key.size() << " in " << key_path;
-        return false;
-    }
+    if (s_ce_key_raw_refs.count(user_id) != 0) return true;
+    const auto key_path = get_ce_key_path(user_id);
+    std::string raw_ref;
+    if (!read_and_install_key(key_path, raw_ref)) return false;
+    s_ce_key_raw_refs[user_id] = raw_ref;
+    LOG(DEBUG) << "Installed ce key for user " << user_id;
     return true;
 }
 
 static bool prepare_dir(const std::string &dir, mode_t mode, uid_t uid, gid_t gid) {
+    LOG(DEBUG) << "Preparing: " << dir;
     if (fs_prepare_dir(dir.c_str(), mode, uid, gid) != 0) {
         PLOG(ERROR) << "Failed to prepare " << dir;
         return false;
@@ -581,59 +581,88 @@ static bool prepare_dir(const std::string &dir, mode_t mode, uid_t uid, gid_t gi
     return true;
 }
 
-static bool create_user_key(userid_t user_id, bool create_ephemeral) {
-    const auto key_path = get_key_path(user_id);
-    std::string key;
+static bool random_key(std::string &key) {
     if (android::vold::ReadRandomBytes(key_length / 8, key) != 0) {
         // TODO status_t plays badly with PLOG, fix it.
         LOG(ERROR) << "Random read failed";
         return false;
     }
-    if (create_ephemeral) {
-        // If the key should be created as ephemeral, store it in memory only.
-        s_ephemeral_user_keys[key_path] = key;
-    } else {
-        if (!prepare_dir(user_key_dir + "/user_" + std::to_string(user_id),
-            0700, AID_ROOT, AID_ROOT)) return false;
-        if (!android::vold::storeKey(key_path, key)) return false;
+    return true;
+}
+
+static bool path_exists(const std::string &path) {
+    return access(path.c_str(), F_OK) == 0;
+}
+
+// NB this assumes that there is only one thread listening for crypt commands, because
+// it creates keys in a fixed location.
+static bool store_key(const std::string &key_path, const std::string &key) {
+    if (path_exists(key_path)) {
+        LOG(ERROR) << "Already exists, cannot create key at: " << key_path;
+        return false;
+    }
+    if (path_exists(user_key_temp)) {
+        android::vold::destroyKey(user_key_temp);
+    }
+    if (!android::vold::storeKey(user_key_temp, key)) return false;
+    if (rename(user_key_temp.c_str(), key_path.c_str()) != 0) {
+        PLOG(ERROR) << "Unable to move new key to location: " << key_path;
+        return false;
     }
     LOG(DEBUG) << "Created key " << key_path;
     return true;
 }
 
-static int e4crypt_set_user_policy(userid_t user_id, int serial, std::string& path) {
-    LOG(DEBUG) << "e4crypt_set_user_policy for " << user_id << " serial " << serial;
-    if (s_key_raw_refs.count(serial) != 1) {
-        LOG(ERROR) << "Key unknown, can't e4crypt_set_user_policy for "
-            << user_id << " serial " << serial;
-        return -1;
+static bool create_and_install_user_key(userid_t user_id, bool create_ephemeral) {
+    std::string ce_key;
+    if (!random_key(ce_key)) return false;
+    if (create_ephemeral) {
+        // If the key should be created as ephemeral, don't store it.
+        s_ephemeral_users.insert(user_id);
+    } else {
+        if (!prepare_dir(user_key_dir + "/user_" + std::to_string(user_id),
+            0700, AID_ROOT, AID_ROOT)) return false;
+        if (!store_key(get_ce_key_path(user_id), ce_key)) return false;
     }
-    auto raw_ref = s_key_raw_refs[serial];
-    return do_policy_set(path.c_str(), raw_ref.data(), raw_ref.size());
+    std::string ce_raw_ref;
+    if (!install_key(ce_key, ce_raw_ref)) return false;
+    s_ce_key_raw_refs[user_id] = ce_raw_ref;
+    LOG(DEBUG) << "Created key for user " << user_id;
+    return true;
+}
+
+static bool lookup_key_ref(const std::map<userid_t, std::string> &key_map,
+        userid_t user_id, std::string &raw_ref) {
+    auto refi = key_map.find(user_id);
+    if (refi == key_map.end()) {
+        LOG(ERROR) << "Cannot find key for " << user_id;
+        return false;
+    }
+    raw_ref = refi->second;
+    return true;
+}
+
+static bool set_policy(const std::string &raw_ref, const std::string& path) {
+    if (do_policy_set(path.c_str(), raw_ref.data(), raw_ref.size()) != 0) {
+        LOG(ERROR) << "Failed to set policy on: " << path;
+        return false;
+    }
+    return true;
 }
 
 int e4crypt_init_user0() {
     LOG(DEBUG) << "e4crypt_init_user0";
     if (e4crypt_is_native()) {
         if (!prepare_dir(user_key_dir, 0700, AID_ROOT, AID_ROOT)) return -1;
-        std::string user_key;
-        if (!read_user_key(0, user_key)) {
-            // FIXME if the key exists and we just failed to read it, this destroys it.
-            if (!create_user_key(0, false)) {
-                return -1;
-            }
-            if (!read_user_key(0, user_key)) {
-                LOG(ERROR) << "Couldn't read just-created key for user 0";
-                return -1;
-            }
+        auto ce_path = get_ce_key_path(0);
+        if (!path_exists(ce_path)) {
+            if (!create_and_install_user_key(0, false)) return -1;
         }
-        auto raw_ref = e4crypt_install_key(user_key);
-        if (raw_ref.empty()) {
-            return -1;
-        }
-        s_key_raw_refs[0] = raw_ref;
     }
     // Ignore failures. FIXME this is horrid
+    // FIXME: we need an idempotent policy-setting call, which simply verifies the
+    // policy is already set on a second run, even if the directory is nonempty.
+    // Then we need to call it all the time.
     e4crypt_prepare_user_storage(nullptr, 0, 0, false);
     return 0;
 }
@@ -643,29 +672,22 @@ int e4crypt_vold_create_user_key(userid_t user_id, int serial, bool ephemeral) {
     if (!e4crypt_is_native()) {
         return 0;
     }
-    std::string key;
-    if (read_user_key(user_id, key)) {
+    // FIXME test for existence of key that is not loaded yet
+    if (s_ce_key_raw_refs.count(user_id) != 0) {
         LOG(ERROR) << "Already exists, can't e4crypt_vold_create_user_key for "
             << user_id << " serial " << serial;
         // FIXME should we fail the command?
         return 0;
     }
-    if (!create_user_key(user_id, ephemeral)) {
-        return -1;
-    }
-    if (e4crypt_unlock_user_key(user_id, serial, nullptr) != 0) {
+    if (!create_and_install_user_key(user_id, ephemeral)) {
         return -1;
     }
     // TODO: create second key for user_de data
     return 0;
 }
 
-static bool evict_user_key(userid_t user_id) {
-    auto key_path = get_key_path(user_id);
-    std::string key;
-    if (!read_user_key(user_id, key)) return false;
-    auto ext4_key = fill_key(key);
-    auto ref = keyname(generate_key_ref(ext4_key.raw, ext4_key.size));
+static bool evict_key(const std::string &raw_ref) {
+    auto ref = keyname(raw_ref);
     auto key_serial = keyctl_search(e4crypt_keyring(), "logon", ref.c_str(), 0);
     if (keyctl_revoke(key_serial) != 0) {
         PLOG(ERROR) << "Failed to revoke key with serial " << key_serial << " ref " << ref;
@@ -681,16 +703,16 @@ int e4crypt_destroy_user_key(userid_t user_id) {
         return 0;
     }
     // TODO: destroy second key for user_de data
-    bool evict_success = evict_user_key(user_id);
-    auto key_path = get_key_path(user_id);
-    if (e4crypt_is_key_ephemeral(key_path)) {
-        s_ephemeral_user_keys.erase(key_path);
+    bool success = true;
+    std::string raw_ref;
+    success &= lookup_key_ref(s_ce_key_raw_refs, user_id, raw_ref) && evict_key(raw_ref);
+    auto it = s_ephemeral_users.find(user_id);
+    if (it != s_ephemeral_users.end()) {
+        s_ephemeral_users.erase(it);
     } else {
-        if (!android::vold::destroyKey(key_path)) {
-            return -1;
-        }
+        success &= android::vold::destroyKey(get_ce_key_path(user_id));
     }
-    return evict_success ? 0 : -1;
+    return success ? 0 : -1;
 }
 
 static int emulated_lock(const std::string& path) {
@@ -726,16 +748,10 @@ static int emulated_unlock(const std::string& path, mode_t mode) {
 int e4crypt_unlock_user_key(userid_t user_id, int serial, const char* token) {
     LOG(DEBUG) << "e4crypt_unlock_user_key " << user_id << " " << (token != nullptr);
     if (e4crypt_is_native()) {
-        std::string user_key;
-        if (!read_user_key(user_id, user_key)) {
+        if (!read_and_install_user_ce_key(user_id)) {
             LOG(ERROR) << "Couldn't read key for " << user_id;
             return -1;
         }
-        auto raw_ref = e4crypt_install_key(user_key);
-        if (raw_ref.empty()) {
-            return -1;
-        }
-        s_key_raw_refs[serial] = raw_ref;
     } else {
         // When in emulation mode, we just use chmod. However, we also
         // unlock directories when not in emulation mode, to bring devices
@@ -787,11 +803,12 @@ int e4crypt_prepare_user_storage(const char* volume_uuid,
     if (!prepare_dir(user_de_path, 0771, AID_SYSTEM, AID_SYSTEM)) return -1;
 
     if (e4crypt_crypto_complete(DATA_MNT_POINT) == 0) {
-        if (e4crypt_set_user_policy(user_id, serial, system_ce_path)
-                || e4crypt_set_user_policy(user_id, serial, media_ce_path)
-                || e4crypt_set_user_policy(user_id, serial, user_ce_path)) {
-            return -1;
-        }
+        std::string ce_raw_ref;
+        if (!lookup_key_ref(s_ce_key_raw_refs, user_id, ce_raw_ref)) return -1;
+        if (!set_policy(ce_raw_ref, system_ce_path)) return -1;
+        if (!set_policy(ce_raw_ref, media_ce_path)) return -1;
+        if (!set_policy(ce_raw_ref, user_ce_path)) return -1;
+        // ext4enc:TODO set DE policy too
     }
 
     return 0;
