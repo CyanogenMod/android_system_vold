@@ -80,7 +80,7 @@ private:
         virtual ~AppFuseCmd() {}
         int runCommand(SocketClient *c, int argc, char ** argv);
     private:
-        int sendFd(SocketClient *c, int fd);
+        android::status_t sendFd(SocketClient *c, int fd);
     };
 };
 

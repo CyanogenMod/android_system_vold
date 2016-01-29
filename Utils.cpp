@@ -618,5 +618,31 @@ std::string DefaultFstabPath() {
     return StringPrintf("/fstab.%s", hardware);
 }
 
+status_t SaneReadLinkAt(int dirfd, const char* path, char* buf, size_t bufsiz) {
+    ssize_t len = readlinkat(dirfd, path, buf, bufsiz);
+    if (len < 0) {
+        return -1;
+    } else if (len == (ssize_t) bufsiz) {
+        return -1;
+    } else {
+        buf[len] = '\0';
+        return 0;
+    }
+}
+
+ScopedFd::ScopedFd(int fd) : fd_(fd) {}
+
+ScopedFd::~ScopedFd() {
+    close(fd_);
+}
+
+ScopedDir::ScopedDir(DIR* dir) : dir_(dir) {}
+
+ScopedDir::~ScopedDir() {
+    if (dir_ != nullptr) {
+        closedir(dir_);
+    }
+}
+
 }  // namespace vold
 }  // namespace android
