@@ -27,6 +27,7 @@ common_src_files := \
 	MoveTask.cpp \
 	Benchmark.cpp \
 	TrimTask.cpp \
+	secontext.cpp \
 
 common_c_includes := \
 	system/extras/ext4_utils \
