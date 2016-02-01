@@ -43,7 +43,9 @@
 #include <fs_mgr.h>
 #include <time.h>
 #include <math.h>
+#include <selinux/selinux.h>
 #include "cryptfs.h"
+#include "secontext.h"
 #define LOG_TAG "Cryptfs"
 #include "cutils/log.h"
 #include "cutils/properties.h"
@@ -1712,6 +1714,15 @@ static int cryptfs_restart_internal(int restart_main)
         /* If that succeeded, then mount the decrypted filesystem */
         int retries = RETRY_MOUNT_ATTEMPTS;
         int mount_rc;
+
+        /*
+         * fs_mgr_do_mount runs fsck. Use setexeccon to run trusted
+         * partitions in the fsck domain.
+         */
+        if (setexeccon(secontextFsck())){
+            SLOGE("Failed to setexeccon");
+            return -1;
+        }
         while ((mount_rc = fs_mgr_do_mount(fstab, DATA_MNT_POINT,
                                            crypto_blkdev, 0))
                != 0) {
@@ -1733,8 +1744,15 @@ static int cryptfs_restart_internal(int restart_main)
                 cryptfs_set_corrupt();
                 cryptfs_trigger_restart_min_framework();
                 SLOGI("Started framework to offer wipe");
+                if (setexeccon(NULL)) {
+                    SLOGE("Failed to setexeccon");
+                }
                 return -1;
             }
+        }
+        if (setexeccon(NULL)) {
+            SLOGE("Failed to setexeccon");
+            return -1;
         }
 
         property_set("vold.decrypt", "trigger_load_persist_props");

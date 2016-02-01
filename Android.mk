@@ -29,6 +29,7 @@ common_src_files := \
 	TrimTask.cpp \
 	Keymaster.cpp \
 	KeyStorage.cpp \
+	secontext.cpp \
 
 common_c_includes := \
 	system/extras/ext4_utils \
