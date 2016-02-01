@@ -36,6 +36,7 @@ int e4crypt_get_field(const char* path, const char* fieldname,
 int e4crypt_set_field(const char* path, const char* fieldname,
                       const char* value);
 
+int e4crypt_init_user0();
 int e4crypt_vold_create_user_key(userid_t user_id, int serial, bool ephemeral);
 int e4crypt_destroy_user_key(userid_t user_id);
 

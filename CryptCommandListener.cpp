@@ -354,6 +354,10 @@ int CryptCommandListener::CryptfsCmd::runCommand(SocketClient *cli,
         dumpArgs(argc, argv, -1);
         rc = cryptfs_isConvertibleToFBE();
 
+    } else if (subcommand == "init_user0") {
+        if (!check_argc(cli, subcommand, argc, 2, "")) return 0;
+        return sendGenericOkFail(cli, e4crypt_init_user0());
+
     } else if (subcommand == "create_user_key") {
         if (!check_argc(cli, subcommand, argc, 5, "<user> <serial> <ephemeral>")) return 0;
         return sendGenericOkFail(cli,

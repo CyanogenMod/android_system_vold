@@ -593,7 +593,6 @@ static bool create_user_key(userid_t user_id, bool create_ephemeral) {
         // If the key should be created as ephemeral, store it in memory only.
         s_ephemeral_user_keys[key_path] = key;
     } else {
-        if (!prepare_dir(user_key_dir, 0700, AID_ROOT, AID_ROOT)) return false;
         if (!prepare_dir(user_key_dir + "/user_" + std::to_string(user_id),
             0700, AID_ROOT, AID_ROOT)) return false;
         if (!android::vold::storeKey(key_path, key)) return false;
@@ -611,6 +610,32 @@ static int e4crypt_set_user_policy(userid_t user_id, int serial, std::string& pa
     }
     auto raw_ref = s_key_raw_refs[serial];
     return do_policy_set(path.c_str(), raw_ref.data(), raw_ref.size());
+}
+
+int e4crypt_init_user0() {
+    LOG(DEBUG) << "e4crypt_init_user0";
+    if (e4crypt_is_native()) {
+        if (!prepare_dir(user_key_dir, 0700, AID_ROOT, AID_ROOT)) return -1;
+        std::string user_key;
+        if (!read_user_key(0, user_key)) {
+            // FIXME if the key exists and we just failed to read it, this destroys it.
+            if (!create_user_key(0, false)) {
+                return -1;
+            }
+            if (!read_user_key(0, user_key)) {
+                LOG(ERROR) << "Couldn't read just-created key for user 0";
+                return -1;
+            }
+        }
+        auto raw_ref = e4crypt_install_key(user_key);
+        if (raw_ref.empty()) {
+            return -1;
+        }
+        s_key_raw_refs[0] = raw_ref;
+    }
+    // Ignore failures. FIXME this is horrid
+    e4crypt_prepare_user_storage(nullptr, 0, 0, false);
+    return 0;
 }
 
 int e4crypt_vold_create_user_key(userid_t user_id, int serial, bool ephemeral) {
@@ -703,31 +728,14 @@ int e4crypt_unlock_user_key(userid_t user_id, int serial, const char* token) {
     if (e4crypt_is_native()) {
         std::string user_key;
         if (!read_user_key(user_id, user_key)) {
-            // FIXME special case for user 0
-            if (user_id != 0) {
-                LOG(ERROR) << "Couldn't read key for " << user_id;
-                return -1;
-            }
-            // FIXME if the key exists and we just failed to read it, this destroys it.
-            if (!create_user_key(user_id, false)) {
-                return -1;
-            }
-            if (!read_user_key(user_id, user_key)) {
-                LOG(ERROR) << "Couldn't read just-created key for " << user_id;
-                return -1;
-            }
+            LOG(ERROR) << "Couldn't read key for " << user_id;
+            return -1;
         }
         auto raw_ref = e4crypt_install_key(user_key);
         if (raw_ref.empty()) {
             return -1;
         }
         s_key_raw_refs[serial] = raw_ref;
-        if (user_id == 0) {
-            // FIXME special case for user 0
-            // prepare their storage here
-            e4crypt_prepare_user_storage(nullptr, 0, 0, false);
-        }
-        return 0;
     } else {
         // When in emulation mode, we just use chmod. However, we also
         // unlock directories when not in emulation mode, to bring devices
@@ -739,7 +747,6 @@ int e4crypt_unlock_user_key(userid_t user_id, int serial, const char* token) {
             return -1;
         }
     }
-
     return 0;
 }
 
@@ -773,7 +780,8 @@ int e4crypt_prepare_user_storage(const char* volume_uuid,
     auto user_ce_path = android::vold::BuildDataUserPath(volume_uuid, user_id);
     auto user_de_path = android::vold::BuildDataUserDePath(volume_uuid, user_id);
 
-    if (!prepare_dir(system_ce_path, 0700, AID_SYSTEM, AID_SYSTEM)) return -1;
+    // FIXME: should this be 0770 or 0700?
+    if (!prepare_dir(system_ce_path, 0770, AID_SYSTEM, AID_SYSTEM)) return -1;
     if (!prepare_dir(media_ce_path, 0770, AID_MEDIA_RW, AID_MEDIA_RW)) return -1;
     if (!prepare_dir(user_ce_path, 0771, AID_SYSTEM, AID_SYSTEM)) return -1;
     if (!prepare_dir(user_de_path, 0771, AID_SYSTEM, AID_SYSTEM)) return -1;
