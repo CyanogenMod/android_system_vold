@@ -89,6 +89,7 @@ namespace {
     // Some users are ephemeral, don't try to wipe their keys from disk
     std::set<userid_t> s_ephemeral_users;
     // Map user ids to key references
+    std::map<userid_t, std::string> s_de_key_raw_refs;
     std::map<userid_t, std::string> s_ce_key_raw_refs;
 
     // ext4enc:TODO get this const from somewhere good
@@ -549,8 +550,12 @@ int e4crypt_set_field(const char* path, const char* fieldname,
         .Set(fieldname, std::string(value)) ? 0 : -1;
 }
 
+static std::string get_de_key_path(userid_t user_id) {
+    return StringPrintf("%s/de/%d", user_key_dir.c_str(), user_id);
+}
+
 static std::string get_ce_key_path(userid_t user_id) {
-    return StringPrintf("%s/user_%d/current", user_key_dir.c_str(), user_id);
+    return StringPrintf("%s/ce/%d/current", user_key_dir.c_str(), user_id);
 }
 
 static bool read_and_install_key(const std::string &key_path, std::string &raw_ref)
@@ -613,21 +618,26 @@ static bool store_key(const std::string &key_path, const std::string &key) {
     return true;
 }
 
-static bool create_and_install_user_key(userid_t user_id, bool create_ephemeral) {
-    std::string ce_key;
+static bool create_and_install_user_keys(userid_t user_id, bool create_ephemeral) {
+    std::string de_key, ce_key;
+    if (!random_key(de_key)) return false;
     if (!random_key(ce_key)) return false;
     if (create_ephemeral) {
         // If the key should be created as ephemeral, don't store it.
         s_ephemeral_users.insert(user_id);
     } else {
-        if (!prepare_dir(user_key_dir + "/user_" + std::to_string(user_id),
+        if (!store_key(get_de_key_path(user_id), de_key)) return false;
+        if (!prepare_dir(user_key_dir + "/ce/" + std::to_string(user_id),
             0700, AID_ROOT, AID_ROOT)) return false;
         if (!store_key(get_ce_key_path(user_id), ce_key)) return false;
     }
+    std::string de_raw_ref;
+    if (!install_key(de_key, de_raw_ref)) return false;
+    s_de_key_raw_refs[user_id] = de_raw_ref;
     std::string ce_raw_ref;
     if (!install_key(ce_key, ce_raw_ref)) return false;
     s_ce_key_raw_refs[user_id] = ce_raw_ref;
-    LOG(DEBUG) << "Created key for user " << user_id;
+    LOG(DEBUG) << "Created keys for user " << user_id;
     return true;
 }
 
@@ -650,14 +660,66 @@ static bool set_policy(const std::string &raw_ref, const std::string& path) {
     return true;
 }
 
+static bool is_numeric(const char *name) {
+    for (const char *p = name; *p != '\0'; p++) {
+        if (!isdigit(*p))
+            return false;
+    }
+    return true;
+}
+
+static bool load_all_de_keys() {
+    auto de_dir = user_key_dir + "/de";
+    auto dirp = std::unique_ptr<DIR, int(*)(DIR*)>(opendir(de_dir.c_str()), closedir);
+    if (!dirp) {
+        PLOG(ERROR) << "Unable to read de key directory";
+        return false;
+    }
+    for (;;) {
+        errno = 0;
+        auto entry = readdir(dirp.get());
+        if (!entry) {
+            if (errno) {
+                PLOG(ERROR) << "Unable to read de key directory";
+                return false;
+            }
+            break;
+        }
+        if (entry->d_type != DT_DIR || !is_numeric(entry->d_name)) {
+            LOG(DEBUG) << "Skipping non-de-key " << entry->d_name;
+            continue;
+        }
+        userid_t user_id = atoi(entry->d_name);
+        if (s_de_key_raw_refs.count(user_id) == 0) {
+            std::string raw_ref;
+            if (!read_and_install_key(de_dir + "/" + entry->d_name, raw_ref)) return false;
+            s_de_key_raw_refs[user_id] = raw_ref;
+            LOG(DEBUG) << "Installed de key for user " << user_id;
+        }
+    }
+    // ext4enc:TODO: go through all DE directories, ensure that all user dirs have the
+    // correct policy set on them, and that no rogue ones exist.
+    return true;
+}
+
 int e4crypt_init_user0() {
     LOG(DEBUG) << "e4crypt_init_user0";
     if (e4crypt_is_native()) {
         if (!prepare_dir(user_key_dir, 0700, AID_ROOT, AID_ROOT)) return -1;
+        if (!prepare_dir(user_key_dir + "/ce", 0700, AID_ROOT, AID_ROOT)) return -1;
+        if (!prepare_dir(user_key_dir + "/de", 0700, AID_ROOT, AID_ROOT)) return -1;
+        auto de_path = get_de_key_path(0);
         auto ce_path = get_ce_key_path(0);
-        if (!path_exists(ce_path)) {
-            if (!create_and_install_user_key(0, false)) return -1;
+        if (!path_exists(de_path) || !path_exists(ce_path)) {
+            if (path_exists(de_path)) {
+                android::vold::destroyKey(de_path); // Ignore failure
+            }
+            if (path_exists(ce_path)) {
+                android::vold::destroyKey(ce_path); // Ignore failure
+            }
+            if (!create_and_install_user_keys(0, false)) return -1;
         }
+        if (!load_all_de_keys()) return -1;
     }
     // Ignore failures. FIXME this is horrid
     // FIXME: we need an idempotent policy-setting call, which simply verifies the
@@ -679,7 +741,7 @@ int e4crypt_vold_create_user_key(userid_t user_id, int serial, bool ephemeral) {
         // FIXME should we fail the command?
         return 0;
     }
-    if (!create_and_install_user_key(user_id, ephemeral)) {
+    if (!create_and_install_user_keys(user_id, ephemeral)) {
         return -1;
     }
     // TODO: create second key for user_de data
@@ -702,15 +764,16 @@ int e4crypt_destroy_user_key(userid_t user_id) {
     if (!e4crypt_is_native()) {
         return 0;
     }
-    // TODO: destroy second key for user_de data
     bool success = true;
     std::string raw_ref;
     success &= lookup_key_ref(s_ce_key_raw_refs, user_id, raw_ref) && evict_key(raw_ref);
+    success &= lookup_key_ref(s_de_key_raw_refs, user_id, raw_ref) && evict_key(raw_ref);
     auto it = s_ephemeral_users.find(user_id);
     if (it != s_ephemeral_users.end()) {
         s_ephemeral_users.erase(it);
     } else {
         success &= android::vold::destroyKey(get_ce_key_path(user_id));
+        success &= android::vold::destroyKey(get_de_key_path(user_id));
     }
     return success ? 0 : -1;
 }
@@ -803,12 +866,14 @@ int e4crypt_prepare_user_storage(const char* volume_uuid,
     if (!prepare_dir(user_de_path, 0771, AID_SYSTEM, AID_SYSTEM)) return -1;
 
     if (e4crypt_crypto_complete(DATA_MNT_POINT) == 0) {
-        std::string ce_raw_ref;
+        std::string ce_raw_ref, de_raw_ref;
         if (!lookup_key_ref(s_ce_key_raw_refs, user_id, ce_raw_ref)) return -1;
+        if (!lookup_key_ref(s_de_key_raw_refs, user_id, de_raw_ref)) return -1;
         if (!set_policy(ce_raw_ref, system_ce_path)) return -1;
         if (!set_policy(ce_raw_ref, media_ce_path)) return -1;
         if (!set_policy(ce_raw_ref, user_ce_path)) return -1;
-        // ext4enc:TODO set DE policy too
+        if (!set_policy(de_raw_ref, user_de_path)) return -1;
+        // FIXME I thought there were more DE directories than this
     }
 
     return 0;
