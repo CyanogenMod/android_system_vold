@@ -471,18 +471,6 @@ int VolumeManager::setPrimary(const std::shared_ptr<android::vold::VolumeBase>& 
     return 0;
 }
 
-static int sane_readlinkat(int dirfd, const char* path, char* buf, size_t bufsiz) {
-    ssize_t len = readlinkat(dirfd, path, buf, bufsiz);
-    if (len < 0) {
-        return -1;
-    } else if (len == (ssize_t) bufsiz) {
-        return -1;
-    } else {
-        buf[len] = '\0';
-        return 0;
-    }
-}
-
 static int unmount_tree(const char* path) {
     size_t path_len = strlen(path);
 
@@ -529,7 +517,7 @@ int VolumeManager::remountUid(uid_t uid, const std::string& mode) {
     }
 
     // Figure out root namespace to compare against below
-    if (sane_readlinkat(dirfd(dir), "1/ns/mnt", rootName, PATH_MAX) == -1) {
+    if (android::vold::SaneReadLinkAt(dirfd(dir), "1/ns/mnt", rootName, PATH_MAX) == -1) {
         PLOG(ERROR) << "Failed to readlink";
         closedir(dir);
         return -1;
@@ -554,7 +542,7 @@ int VolumeManager::remountUid(uid_t uid, const std::string& mode) {
 
         // Matches so far, but refuse to touch if in root namespace
         LOG(DEBUG) << "Found matching PID " << de->d_name;
-        if (sane_readlinkat(pidFd, "ns/mnt", pidName, PATH_MAX) == -1) {
+        if (android::vold::SaneReadLinkAt(pidFd, "ns/mnt", pidName, PATH_MAX) == -1) {
             PLOG(WARNING) << "Failed to read namespace for " << de->d_name;
             goto next;
         }
