@@ -1780,28 +1780,8 @@ int cryptfs_restart(void)
 {
     SLOGI("cryptfs_restart");
     if (e4crypt_crypto_complete(DATA_MNT_POINT) == 0) {
-        struct fstab_rec* rec;
-        int rc;
-
-        if (e4crypt_restart(DATA_MNT_POINT)) {
-            SLOGE("Can't unmount e4crypt temp volume\n");
-            return -1;
-        }
-
-        rec = fs_mgr_get_entry_for_mount_point(fstab, DATA_MNT_POINT);
-        if (!rec) {
-            SLOGE("Can't get fstab record for %s\n", DATA_MNT_POINT);
-            return -1;
-        }
-
-        rc = fs_mgr_do_mount(fstab, DATA_MNT_POINT, rec->blk_device, 0);
-        if (rc) {
-            SLOGE("Can't mount %s\n", DATA_MNT_POINT);
-            return rc;
-        }
-
-        property_set("vold.decrypt", "trigger_restart_framework");
-        return 0;
+        SLOGE("cryptfs_restart not valid for file encryption:");
+        return -1;
     }
 
     /* Call internal implementation forcing a restart of main service group */
@@ -1820,8 +1800,9 @@ static int do_crypto_complete(char *mount_point)
     return CRYPTO_COMPLETE_NOT_ENCRYPTED;
   }
 
+  // crypto_complete is full disk encrypted status
   if (e4crypt_crypto_complete(mount_point) == 0) {
-    return CRYPTO_COMPLETE_ENCRYPTED;
+    return CRYPTO_COMPLETE_NOT_ENCRYPTED;
   }
 
   if (get_crypt_ftr_and_key(&crypt_ftr)) {
@@ -2074,7 +2055,8 @@ int cryptfs_check_passwd(char *passwd)
 {
     SLOGI("cryptfs_check_passwd");
     if (e4crypt_crypto_complete(DATA_MNT_POINT) == 0) {
-        return e4crypt_check_passwd(DATA_MNT_POINT, passwd);
+        SLOGE("cryptfs_check_passwd not valid for file encryption");
+        return -1;
     }
 
     struct crypt_mnt_ftr crypt_ftr;
@@ -3365,9 +3347,8 @@ int cryptfs_enable_default(char *howarg, int no_ui)
 int cryptfs_changepw(int crypt_type, const char *newpw)
 {
     if (e4crypt_crypto_complete(DATA_MNT_POINT) == 0) {
-        return e4crypt_change_password(DATA_MNT_POINT, crypt_type,
-                    crypt_type == CRYPT_TYPE_DEFAULT ? DEFAULT_PASSWORD
-                                                     : newpw);
+        SLOGE("cryptfs_changepw not valid for file encryption");
+        return -1;
     }
 
     struct crypt_mnt_ftr crypt_ftr;
@@ -3783,7 +3764,8 @@ int cryptfs_mount_default_encrypted(void)
 int cryptfs_get_password_type(void)
 {
     if (e4crypt_crypto_complete(DATA_MNT_POINT) == 0) {
-        return e4crypt_get_password_type(DATA_MNT_POINT);
+        SLOGE("cryptfs_get_password_type not valid for file encryption");
+        return -1;
     }
 
     struct crypt_mnt_ftr crypt_ftr;
@@ -3803,7 +3785,8 @@ int cryptfs_get_password_type(void)
 const char* cryptfs_get_password()
 {
     if (e4crypt_crypto_complete(DATA_MNT_POINT) == 0) {
-        return e4crypt_get_password(DATA_MNT_POINT);
+        SLOGE("cryptfs_get_password not valid for file encryption");
+        return 0;
     }
 
     struct timespec now;
@@ -3818,10 +3801,6 @@ const char* cryptfs_get_password()
 
 void cryptfs_clear_password()
 {
-    if (e4crypt_crypto_complete(DATA_MNT_POINT) == 0) {
-        e4crypt_clear_password(DATA_MNT_POINT);
-    }
-
     if (password) {
         size_t len = strlen(password);
         memset(password, 0, len);

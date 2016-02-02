@@ -55,6 +55,9 @@
 #include <android-base/logging.h>
 #include <android-base/stringprintf.h>
 
+// TODO - remove when switch to using keymaster keys for device data
+static int e4crypt_check_passwd(const char* path, const char* password);
+
 using android::base::StringPrintf;
 
 static bool e4crypt_is_native() {
@@ -73,19 +76,11 @@ namespace {
     static_assert(key_length % 8 == 0,
                   "Key length must be multiple of 8 bits");
 
-    // How long do we store passwords for?
-    const int password_max_age_seconds = 60;
-
     const std::string user_key_dir = std::string() + DATA_MNT_POINT + "/misc/vold/user_keys";
     const std::string user_key_temp = user_key_dir + "/temp";
 
-    // How is device encrypted
-    struct keys {
-        std::string master_key;
-        std::string password;
-        time_t expiry_time;
-    };
-    std::map<std::string, keys> s_key_store;
+    bool s_enabled = false;
+
     // Some users are ephemeral, don't try to wipe their keys from disk
     std::set<userid_t> s_ephemeral_users;
     // Map user ids to key references
@@ -215,24 +210,10 @@ static UnencryptedProperties GetProps(const char* path)
     return UnencryptedProperties(path);
 }
 
-static UnencryptedProperties GetAltProps(const char* path)
-{
-    return UnencryptedProperties((std::string() + path + "/tmp_mnt").c_str());
-}
-
-static UnencryptedProperties GetPropsOrAltProps(const char* path)
-{
-    UnencryptedProperties props = GetProps(path);
-    if (props.OK()) {
-        return props;
-    }
-    return GetAltProps(path);
-}
-
 int e4crypt_enable(const char* path)
 {
     // Already enabled?
-    if (s_key_store.find(path) != s_key_store.end()) {
+    if (s_enabled) {
         return 0;
     }
 
@@ -279,52 +260,10 @@ int e4crypt_enable(const char* path)
     return e4crypt_check_passwd(path, "");
 }
 
-int e4crypt_change_password(const char* path, int crypt_type,
-                            const char* password)
-{
-    SLOGI("e4crypt_change_password");
-    auto key_props = GetProps(path).GetChild(properties::key);
-
-    crypt_mnt_ftr ftr;
-    if (get_crypt_ftr_and_key(ftr, key_props)) {
-        SLOGE("Failed to read crypto footer back");
-        return -1;
-    }
-
-    auto mki = s_key_store.find(path);
-    if (mki == s_key_store.end()) {
-        SLOGE("No stored master key - can't change password");
-        return -1;
-    }
-
-    const unsigned char* master_key_bytes
-        = reinterpret_cast<const unsigned char*>(&mki->second.master_key[0]);
-
-    if (cryptfs_set_password(&ftr, password, master_key_bytes)) {
-        SLOGE("Failed to set password");
-        return -1;
-    }
-
-    ftr.crypt_type = crypt_type;
-
-    if (put_crypt_ftr_and_key(ftr, key_props)) {
-        SLOGE("Failed to write crypto footer");
-        return -1;
-    }
-
-    if (!UnencryptedProperties(path).Set(properties::is_default,
-                            crypt_type == CRYPT_TYPE_DEFAULT)) {
-        SLOGE("Failed to update default flag");
-        return -1;
-    }
-
-    return 0;
-}
-
 int e4crypt_crypto_complete(const char* path)
 {
     SLOGI("ext4 crypto complete called on %s", path);
-    auto key_props = GetPropsOrAltProps(path).GetChild(properties::key);
+    auto key_props = GetProps(path).GetChild(properties::key);
     if (key_props.Get<std::string>(tag::master_key).empty()) {
         SLOGI("No master key, so not ext4enc");
         return -1;
@@ -351,10 +290,10 @@ static std::string generate_key_ref(const char* key, int length)
     return std::string((char*)key_ref2, EXT4_KEY_DESCRIPTOR_SIZE);
 }
 
-int e4crypt_check_passwd(const char* path, const char* password)
+static int e4crypt_check_passwd(const char* path, const char* password)
 {
     SLOGI("e4crypt_check_password");
-    auto props = GetPropsOrAltProps(path);
+    auto props = GetProps(path);
     auto key_props = props.GetChild(properties::key);
 
     crypt_mnt_ftr ftr;
@@ -382,10 +321,6 @@ int e4crypt_check_passwd(const char* path, const char* password)
     std::string master_key(reinterpret_cast<char*>(master_key_bytes),
                            sizeof(master_key_bytes));
 
-    struct timespec now;
-    clock_gettime(CLOCK_BOOTTIME, &now);
-    s_key_store[path] = keys{master_key, password,
-                             now.tv_sec + password_max_age_seconds};
     std::string raw_ref;
     if (!install_key(master_key, raw_ref)) {
         return -1;
@@ -398,6 +333,7 @@ int e4crypt_check_passwd(const char* path, const char* password)
         return -1;
     }
 
+    s_enabled = true;
     return 0;
 }
 
@@ -456,79 +392,10 @@ static bool install_key(const std::string &key, std::string &raw_ref)
     return true;
 }
 
-int e4crypt_restart(const char* path)
-{
-    SLOGI("e4crypt_restart");
-
-    int rc = 0;
-
-    SLOGI("ext4 restart called on %s", path);
-    property_set("vold.decrypt", "trigger_reset_main");
-    SLOGI("Just asked init to shut down class main");
-    sleep(2);
-
-    std::string tmp_path = std::string() + path + "/tmp_mnt";
-
-    rc = wait_and_unmount(tmp_path.c_str(), true);
-    if (rc) {
-        SLOGE("umount %s failed with rc %d, msg %s",
-              tmp_path.c_str(), rc, strerror(errno));
-        return rc;
-    }
-
-    rc = wait_and_unmount(path, true);
-    if (rc) {
-        SLOGE("umount %s failed with rc %d, msg %s",
-              path, rc, strerror(errno));
-        return rc;
-    }
-
-    return 0;
-}
-
-int e4crypt_get_password_type(const char* path)
-{
-    SLOGI("e4crypt_get_password_type");
-    return GetPropsOrAltProps(path).GetChild(properties::key)
-      .Get<int>(tag::crypt_type, CRYPT_TYPE_DEFAULT);
-}
-
-const char* e4crypt_get_password(const char* path)
-{
-    SLOGI("e4crypt_get_password");
-
-    auto i = s_key_store.find(path);
-    if (i == s_key_store.end()) {
-        return 0;
-    }
-
-    struct timespec now;
-    clock_gettime(CLOCK_BOOTTIME, &now);
-    if (i->second.expiry_time < now.tv_sec) {
-        e4crypt_clear_password(path);
-        return 0;
-    }
-
-    return i->second.password.c_str();
-}
-
-void e4crypt_clear_password(const char* path)
-{
-    SLOGI("e4crypt_clear_password");
-
-    auto i = s_key_store.find(path);
-    if (i == s_key_store.end()) {
-        return;
-    }
-
-    memset(&i->second.password[0], 0, i->second.password.size());
-    i->second.password = std::string();
-}
-
 int e4crypt_get_field(const char* path, const char* fieldname,
                       char* value, size_t len)
 {
-    auto v = GetPropsOrAltProps(path).GetChild(properties::props)
+    auto v = GetProps(path).GetChild(properties::props)
       .Get<std::string>(fieldname);
 
     if (v == "") {
@@ -546,7 +413,7 @@ int e4crypt_get_field(const char* path, const char* fieldname,
 int e4crypt_set_field(const char* path, const char* fieldname,
                       const char* value)
 {
-    return GetPropsOrAltProps(path).GetChild(properties::props)
+    return GetProps(path).GetChild(properties::props)
         .Set(fieldname, std::string(value)) ? 0 : -1;
 }
 
