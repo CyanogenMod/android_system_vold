@@ -1582,6 +1582,9 @@ static int prep_data_fs(void)
 {
     int i;
 
+    // NOTE: post_fs_data results in init calling back around to vold, so all
+    // callers to this method must be async
+
     /* Do the prep of the /data filesystem */
     property_set("vold.post_fs_data_done", "0");
     property_set("vold.decrypt", "trigger_post_fs_data");

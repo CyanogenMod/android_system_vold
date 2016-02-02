@@ -561,9 +561,19 @@ std::string BuildKeyPath(const std::string& partGuid) {
 }
 
 std::string BuildDataSystemCePath(userid_t userId) {
-    // TODO: unify with installd path generation logic
-    std::string data(BuildDataPath(nullptr));
-    return StringPrintf("%s/system_ce/%u", data.c_str(), userId);
+    return StringPrintf("%s/system_ce/%u", BuildDataPath(nullptr).c_str(), userId);
+}
+
+std::string BuildDataSystemDePath(userid_t userId) {
+    return StringPrintf("%s/system_de/%u", BuildDataPath(nullptr).c_str(), userId);
+}
+
+std::string BuildDataMiscCePath(userid_t userId) {
+    return StringPrintf("%s/misc_ce/%u", BuildDataPath(nullptr).c_str(), userId);
+}
+
+std::string BuildDataMiscDePath(userid_t userId) {
+    return StringPrintf("%s/misc_de/%u", BuildDataPath(nullptr).c_str(), userId);
 }
 
 std::string BuildDataPath(const char* volumeUuid) {

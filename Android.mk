@@ -88,7 +88,7 @@ include $(BUILD_STATIC_LIBRARY)
 include $(CLEAR_VARS)
 
 LOCAL_ADDITIONAL_DEPENDENCIES := $(LOCAL_PATH)/Android.mk
-LOCAL_MODULE:= vold
+LOCAL_MODULE := vold
 LOCAL_CLANG := true
 LOCAL_SRC_FILES := \
 	main.cpp \
@@ -115,9 +115,9 @@ include $(CLEAR_VARS)
 
 LOCAL_ADDITIONAL_DEPENDENCIES := $(LOCAL_PATH)/Android.mk
 LOCAL_CLANG := true
-LOCAL_SRC_FILES:= vdc.cpp
-LOCAL_MODULE:= vdc
-LOCAL_SHARED_LIBRARIES := libcutils
+LOCAL_SRC_FILES := vdc.cpp
+LOCAL_MODULE := vdc
+LOCAL_SHARED_LIBRARIES := libcutils libbase
 LOCAL_CFLAGS := $(vold_cflags)
 LOCAL_CONLYFLAGS := $(vold_conlyflags)
 LOCAL_INIT_RC := vdc.rc

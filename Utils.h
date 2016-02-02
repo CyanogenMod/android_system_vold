@@ -97,6 +97,9 @@ status_t WipeBlockDevice(const std::string& path);
 std::string BuildKeyPath(const std::string& partGuid);
 
 std::string BuildDataSystemCePath(userid_t userid);
+std::string BuildDataSystemDePath(userid_t userid);
+std::string BuildDataMiscCePath(userid_t userid);
+std::string BuildDataMiscDePath(userid_t userid);
 
 std::string BuildDataPath(const char* volumeUuid);
 std::string BuildDataMediaPath(const char* volumeUuid, userid_t userid);

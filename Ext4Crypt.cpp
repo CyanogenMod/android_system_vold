@@ -40,7 +40,7 @@
 
 #include "key_control.h"
 #include "cryptfs.h"
-#include "ext4_crypt_init_extensions.h"
+#include "ext4_crypt.h"
 
 #define LOG_TAG "Ext4Crypt"
 
@@ -56,6 +56,10 @@
 
 using android::base::StringPrintf;
 
+// NOTE: keep in sync with StorageManager
+static constexpr int FLAG_STORAGE_DE = 1 << 0;
+static constexpr int FLAG_STORAGE_CE = 1 << 1;
+
 static bool e4crypt_is_native() {
     char value[PROPERTY_VALUE_MAX];
     property_get("ro.crypto.type", value, "none");
@@ -64,6 +68,10 @@ static bool e4crypt_is_native() {
 
 static bool e4crypt_is_emulated() {
     return property_get_bool("persist.sys.emulate_fbe", false);
+}
+
+static const char* escape_null(const char* value) {
+    return (value == nullptr) ? "null" : value;
 }
 
 namespace {
@@ -282,8 +290,8 @@ static bool lookup_key_ref(const std::map<userid_t, std::string> &key_map,
     return true;
 }
 
-static bool set_policy(const std::string &raw_ref, const std::string& path) {
-    if (do_policy_set(path.c_str(), raw_ref.data(), raw_ref.size()) != 0) {
+static bool ensure_policy(const std::string &raw_ref, const std::string& path) {
+    if (e4crypt_policy_ensure(path.c_str(), raw_ref.data(), raw_ref.size()) != 0) {
         LOG(ERROR) << "Failed to set policy on: " << path;
         return false;
     }
@@ -395,13 +403,17 @@ int e4crypt_init_user0() {
             }
             if (!create_and_install_user_keys(0, false)) return -1;
         }
+        // TODO: switch to loading only DE_0 here once framework makes
+        // explicit calls to install DE keys for secondary users
         if (!load_all_de_keys()) return -1;
     }
-    // Ignore failures. FIXME this is horrid
-    // FIXME: we need an idempotent policy-setting call, which simply verifies the
-    // policy is already set on a second run, even if the directory is nonempty.
-    // Then we need to call it all the time.
-    e4crypt_prepare_user_storage(nullptr, 0, 0, false);
+    // We can only safely prepare DE storage here, since CE keys are probably
+    // entangled with user credentials.  The framework will always prepare CE
+    // storage once CE keys are installed.
+    if (e4crypt_prepare_user_storage(nullptr, 0, 0, FLAG_STORAGE_DE) != 0) {
+        LOG(ERROR) << "Failed to prepare user 0 storage";
+        return -1;
+    }
     return 0;
 }
 
@@ -484,6 +496,7 @@ static int emulated_unlock(const std::string& path, mode_t mode) {
     return 0;
 }
 
+// TODO: rename to 'install' for consistency, and take flags to know which keys to install
 int e4crypt_unlock_user_key(userid_t user_id, int serial, const char* token) {
     LOG(DEBUG) << "e4crypt_unlock_user_key " << user_id << " " << (token != nullptr);
     if (e4crypt_is_native()) {
@@ -505,6 +518,7 @@ int e4crypt_unlock_user_key(userid_t user_id, int serial, const char* token) {
     return 0;
 }
 
+// TODO: rename to 'evict' for consistency
 int e4crypt_lock_user_key(userid_t user_id) {
     if (e4crypt_is_native()) {
         // TODO: remove from kernel keyring
@@ -521,35 +535,48 @@ int e4crypt_lock_user_key(userid_t user_id) {
     return 0;
 }
 
-int e4crypt_prepare_user_storage(const char* volume_uuid,
-                                 userid_t user_id,
-                                 int serial,
-                                 bool ephemeral) {
-    if (volume_uuid) {
-        LOG(DEBUG) << "e4crypt_prepare_user_storage " << volume_uuid << " " << user_id;
-    } else {
-        LOG(DEBUG) << "e4crypt_prepare_user_storage, null volume " << user_id;
+int e4crypt_prepare_user_storage(const char* volume_uuid, userid_t user_id,
+        int serial, int flags) {
+    LOG(DEBUG) << "e4crypt_prepare_user_storage for volume " << escape_null(volume_uuid)
+            << ", user " << user_id << ", serial " << serial << ", flags " << flags;
+
+    if (flags & FLAG_STORAGE_DE) {
+        auto system_de_path = android::vold::BuildDataSystemDePath(user_id);
+        auto misc_de_path = android::vold::BuildDataMiscDePath(user_id);
+        auto user_de_path = android::vold::BuildDataUserDePath(volume_uuid, user_id);
+
+        if (!prepare_dir(system_de_path, 0770, AID_SYSTEM, AID_SYSTEM)) return -1;
+        if (!prepare_dir(misc_de_path, 01771, AID_SYSTEM, AID_MISC)) return -1;
+        if (!prepare_dir(user_de_path, 0771, AID_SYSTEM, AID_SYSTEM)) return -1;
+
+        if (e4crypt_crypto_complete(DATA_MNT_POINT) == 0) {
+            std::string de_raw_ref;
+            if (!lookup_key_ref(s_de_key_raw_refs, user_id, de_raw_ref)) return -1;
+            if (!ensure_policy(de_raw_ref, system_de_path)) return -1;
+            if (!ensure_policy(de_raw_ref, misc_de_path)) return -1;
+            if (!ensure_policy(de_raw_ref, user_de_path)) return -1;
+        }
     }
-    auto system_ce_path = android::vold::BuildDataSystemCePath(user_id);
-    auto media_ce_path = android::vold::BuildDataMediaPath(volume_uuid, user_id);
-    auto user_ce_path = android::vold::BuildDataUserPath(volume_uuid, user_id);
-    auto user_de_path = android::vold::BuildDataUserDePath(volume_uuid, user_id);
 
-    // FIXME: should this be 0770 or 0700?
-    if (!prepare_dir(system_ce_path, 0770, AID_SYSTEM, AID_SYSTEM)) return -1;
-    if (!prepare_dir(media_ce_path, 0770, AID_MEDIA_RW, AID_MEDIA_RW)) return -1;
-    if (!prepare_dir(user_ce_path, 0771, AID_SYSTEM, AID_SYSTEM)) return -1;
-    if (!prepare_dir(user_de_path, 0771, AID_SYSTEM, AID_SYSTEM)) return -1;
+    if (flags & FLAG_STORAGE_CE) {
+        auto system_ce_path = android::vold::BuildDataSystemCePath(user_id);
+        auto misc_ce_path = android::vold::BuildDataMiscCePath(user_id);
+        auto media_ce_path = android::vold::BuildDataMediaPath(volume_uuid, user_id);
+        auto user_ce_path = android::vold::BuildDataUserPath(volume_uuid, user_id);
 
-    if (e4crypt_crypto_complete(DATA_MNT_POINT) == 0) {
-        std::string ce_raw_ref, de_raw_ref;
-        if (!lookup_key_ref(s_ce_key_raw_refs, user_id, ce_raw_ref)) return -1;
-        if (!lookup_key_ref(s_de_key_raw_refs, user_id, de_raw_ref)) return -1;
-        if (!set_policy(ce_raw_ref, system_ce_path)) return -1;
-        if (!set_policy(ce_raw_ref, media_ce_path)) return -1;
-        if (!set_policy(ce_raw_ref, user_ce_path)) return -1;
-        if (!set_policy(de_raw_ref, user_de_path)) return -1;
-        // FIXME I thought there were more DE directories than this
+        if (!prepare_dir(system_ce_path, 0770, AID_SYSTEM, AID_SYSTEM)) return -1;
+        if (!prepare_dir(misc_ce_path, 01771, AID_SYSTEM, AID_MISC)) return -1;
+        if (!prepare_dir(media_ce_path, 0770, AID_MEDIA_RW, AID_MEDIA_RW)) return -1;
+        if (!prepare_dir(user_ce_path, 0771, AID_SYSTEM, AID_SYSTEM)) return -1;
+
+        if (e4crypt_crypto_complete(DATA_MNT_POINT) == 0) {
+            std::string ce_raw_ref;
+            if (!lookup_key_ref(s_ce_key_raw_refs, user_id, ce_raw_ref)) return -1;
+            if (!ensure_policy(ce_raw_ref, system_ce_path)) return -1;
+            if (!ensure_policy(ce_raw_ref, misc_ce_path)) return -1;
+            if (!ensure_policy(ce_raw_ref, media_ce_path)) return -1;
+            if (!ensure_policy(ce_raw_ref, user_ce_path)) return -1;
+        }
     }
 
     return 0;

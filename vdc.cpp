@@ -22,6 +22,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <stdlib.h>
+#include <poll.h>
 
 #include <sys/socket.h>
 #include <sys/select.h>
@@ -29,12 +30,16 @@
 #include <sys/types.h>
 #include <sys/un.h>
 
+#include <android-base/stringprintf.h>
+
 #include <cutils/sockets.h>
 #include <private/android_filesystem_config.h>
 
 static void usage(char *progname);
 static int do_monitor(int sock, int stop_after_cmd);
 static int do_cmd(int sock, int argc, char **argv);
+
+static constexpr int kCommandTimeoutMs = 20 * 1000;
 
 int main(int argc, char **argv) {
     int sock;
@@ -44,12 +49,12 @@ int main(int argc, char **argv) {
     progname = argv[0];
 
     wait_for_socket = argc > 1 && strcmp(argv[1], "--wait") == 0;
-    if(wait_for_socket) {
+    if (wait_for_socket) {
         argv++;
         argc--;
     }
 
-    if(argc < 2) {
+    if (argc < 2) {
         usage(progname);
         exit(5);
     }
@@ -62,8 +67,8 @@ int main(int argc, char **argv) {
     while ((sock = socket_local_client(sockname,
                                  ANDROID_SOCKET_NAMESPACE_RESERVED,
                                  SOCK_STREAM)) < 0) {
-        if(!wait_for_socket) {
-            fprintf(stderr, "Error connecting (%s)\n", strerror(errno));
+        if (!wait_for_socket) {
+            fprintf(stdout, "Error connecting to %s: %s\n", sockname, strerror(errno));
             exit(4);
         } else {
             usleep(10000);
@@ -78,97 +83,92 @@ int main(int argc, char **argv) {
 }
 
 static int do_cmd(int sock, int argc, char **argv) {
-    char final_cmd[255] = "0 "; /* 0 is a (now required) sequence number */
+    int seq = getpid();
 
-    int i;
-    size_t ret;
+    std::string cmd(android::base::StringPrintf("%d ", seq));
+    for (int i = 1; i < argc; i++) {
+        if (!strchr(argv[i], ' ')) {
+            cmd.append(argv[i]);
+        } else {
+            cmd.push_back('\"');
+            cmd.append(argv[i]);
+            cmd.push_back('\"');
+        }
 
-    for (i = 1; i < argc; i++) {
-        char *cmp;
-
-        if (!strchr(argv[i], ' '))
-            asprintf(&cmp, "%s%s", argv[i], (i == (argc -1)) ? "" : " ");
-        else
-            asprintf(&cmp, "\"%s\"%s", argv[i], (i == (argc -1)) ? "" : " ");
-
-        ret = strlcat(final_cmd, cmp, sizeof(final_cmd));
-        if (ret >= sizeof(final_cmd))
-            abort();
-        free(cmp);
+        if (i < argc - 1) {
+            cmd.push_back(' ');
+        }
     }
 
-    if (write(sock, final_cmd, strlen(final_cmd) + 1) < 0) {
-        perror("write");
+    if (TEMP_FAILURE_RETRY(write(sock, cmd.c_str(), cmd.length() + 1)) < 0) {
+        fprintf(stderr, "Failed to write command: %s\n", strerror(errno));
         return errno;
     }
 
-    return do_monitor(sock, 1);
+    return do_monitor(sock, seq);
 }
 
-static int do_monitor(int sock, int stop_after_cmd) {
-    char *buffer = (char *) malloc(4096);
+static int do_monitor(int sock, int stop_after_seq) {
+    char buffer[4096];
+    int timeout = kCommandTimeoutMs;
 
-    if (!stop_after_cmd)
-        printf("[Connected to Vold]\n");
+    if (stop_after_seq == 0) {
+        fprintf(stderr, "Connected to vold\n");
+        timeout = -1;
+    }
 
-    while(1) {
-        fd_set read_fds;
-        struct timeval to;
-        int rc = 0;
-
-        to.tv_sec = 10;
-        to.tv_usec = 0;
-
-        FD_ZERO(&read_fds);
-        FD_SET(sock, &read_fds);
-
-        if ((rc = select(sock +1, &read_fds, NULL, NULL, &to)) < 0) {
-            fprintf(stderr, "Error in select (%s)\n", strerror(errno));
-            free(buffer);
-            return errno;
-        } else if (!rc) {
-            continue;
-            fprintf(stderr, "[TIMEOUT]\n");
+    while (1) {
+        struct pollfd poll_sock = { sock, POLLIN, 0 };
+        int rc = TEMP_FAILURE_RETRY(poll(&poll_sock, 1, timeout));
+        if (rc == 0) {
+            fprintf(stderr, "Timeout waiting for %d\n", stop_after_seq);
             return ETIMEDOUT;
-        } else if (FD_ISSET(sock, &read_fds)) {
-            memset(buffer, 0, 4096);
-            if ((rc = read(sock, buffer, 4096)) <= 0) {
-                if (rc == 0)
-                    fprintf(stderr, "Lost connection to Vold - did it crash?\n");
-                else
-                    fprintf(stderr, "Error reading data (%s)\n", strerror(errno));
-                free(buffer);
-                if (rc == 0)
-                    return ECONNRESET;
-                return errno;
-            }
+        } else if (rc < 0) {
+            fprintf(stderr, "Failed during poll: %s\n", strerror(errno));
+            return errno;
+        }
 
-            int offset = 0;
-            int i = 0;
+        if (!(poll_sock.revents & POLLIN)) {
+            fprintf(stderr, "No data; trying again\n");
+            continue;
+        }
 
-            for (i = 0; i < rc; i++) {
-                if (buffer[i] == '\0') {
-                    int code;
-                    char tmp[4];
+        memset(buffer, 0, sizeof(buffer));
+        rc = TEMP_FAILURE_RETRY(read(sock, buffer, sizeof(buffer)));
+        if (rc == 0) {
+            fprintf(stderr, "Lost connection, did vold crash?\n");
+            return ECONNRESET;
+        } else if (rc < 0) {
+            fprintf(stderr, "Error reading data: %s\n", strerror(errno));
+            return errno;
+        }
 
-                    strlcpy(tmp, buffer + offset, sizeof(tmp));
-                    code = atoi(tmp);
+        int offset = 0;
+        for (int i = 0; i < rc; i++) {
+            if (buffer[i] == '\0') {
+                char* res = buffer + offset;
+                fprintf(stdout, "%s\n", res);
 
-                    printf("%s\n", buffer + offset);
-                    if (stop_after_cmd) {
-                        if (code >= 200 && code < 600)
+                int code = atoi(strtok(res, " "));
+                if (code >= 200 && code < 600) {
+                    int seq = atoi(strtok(nullptr, " "));
+                    if (seq == stop_after_seq) {
+                        if (code == 200) {
                             return 0;
+                        } else {
+                            return code;
+                        }
                     }
-                    offset = i + 1;
                 }
+
+                offset = i + 1;
             }
         }
     }
-    free(buffer);
-    return 0;
+    return EIO;
 }
 
 static void usage(char *progname) {
     fprintf(stderr,
             "Usage: %s [--wait] <monitor>|<cmd> [arg1] [arg2...]\n", progname);
- }
+}

@@ -30,6 +30,7 @@
 #include <inttypes.h>
 
 #include <algorithm>
+#include <thread>
 
 #define LOG_TAG "VoldCryptCmdListener"
 
@@ -144,6 +145,25 @@ static bool check_argc(SocketClient *cli, const std::string &subcommand, int arg
     return false;
 }
 
+static int do_enablecrypto(char** argv, int type, bool no_ui) {
+    int rc;
+    int tries;
+    for (tries = 0; tries < 2; ++tries) {
+        if (type == CRYPT_TYPE_DEFAULT) {
+            rc = cryptfs_enable_default(argv[2], no_ui);
+        } else {
+            rc = cryptfs_enable(argv[2], type, argv[4], no_ui);
+        }
+
+        if (rc == 0) {
+            return 0;
+        } else if (tries == 0) {
+            Process::killProcessesWithOpenFiles(DATA_MNT_POINT, SIGKILL);
+        }
+    }
+    return -1;
+}
+
 int CryptCommandListener::CryptfsCmd::runCommand(SocketClient *cli,
                                                  int argc, char **argv) {
     if ((cli->getUid() != 0) && (cli->getUid() != AID_SYSTEM)) {
@@ -166,7 +186,10 @@ int CryptCommandListener::CryptfsCmd::runCommand(SocketClient *cli,
     } else if (subcommand == "restart") {
         if (!check_argc(cli, subcommand, argc, 2, "")) return 0;
         dumpArgs(argc, argv, -1);
-        rc = cryptfs_restart();
+
+        // Spawn as thread so init can issue commands back to vold without
+        // causing deadlock, usually as a result of prep_data_fs.
+        std::thread(&cryptfs_restart).detach();
     } else if (subcommand == "cryptocomplete") {
         if (!check_argc(cli, subcommand, argc, 2, "")) return 0;
         dumpArgs(argc, argv, -1);
@@ -216,31 +239,16 @@ int CryptCommandListener::CryptfsCmd::runCommand(SocketClient *cli,
             }
         }
 
-        if (!valid ) {
+        if (!valid) {
             cli->sendMsg(ResponseCode::CommandSyntaxError, syntax, false);
             return 0;
         }
 
         dumpArgs(argc, argv, 4);
 
-        int tries;
-        for (tries = 0; tries < 2; ++tries) {
-            if (type == -1) {
-                cli->sendMsg(ResponseCode::CommandSyntaxError, syntax,
-                             false);
-                return 0;
-            } else if (type == CRYPT_TYPE_DEFAULT) {
-              rc = cryptfs_enable_default(argv[2], no_ui);
-            } else {
-                rc = cryptfs_enable(argv[2], type, argv[4], no_ui);
-            }
-
-            if (rc == 0) {
-                break;
-            } else if (tries == 0) {
-                Process::killProcessesWithOpenFiles(DATA_MNT_POINT, SIGKILL);
-            }
-        }
+        // Spawn as thread so init can issue commands back to vold without
+        // causing deadlock, usually as a result of prep_data_fs.
+        std::thread(&do_enablecrypto, argv, type, no_ui).detach();
     } else if (subcommand == "enablefilecrypto") {
         if (!check_argc(cli, subcommand, argc, 2, "")) return 0;
         dumpArgs(argc, argv, -1);
@@ -301,7 +309,10 @@ int CryptCommandListener::CryptfsCmd::runCommand(SocketClient *cli,
         if (!check_argc(cli, subcommand, argc, 2, "")) return 0;
         SLOGD("cryptfs mountdefaultencrypted");
         dumpArgs(argc, argv, -1);
-        rc = cryptfs_mount_default_encrypted();
+
+        // Spawn as thread so init can issue commands back to vold without
+        // causing deadlock, usually as a result of prep_data_fs.
+        std::thread(&cryptfs_mount_default_encrypted).detach();
     } else if (subcommand == "getpwtype") {
         if (!check_argc(cli, subcommand, argc, 2, "")) return 0;
         SLOGD("cryptfs getpwtype");
@@ -379,12 +390,12 @@ int CryptCommandListener::CryptfsCmd::runCommand(SocketClient *cli,
         return sendGenericOkFail(cli, e4crypt_lock_user_key(atoi(argv[2])));
 
     } else if (subcommand == "prepare_user_storage") {
-        if (!check_argc(cli, subcommand, argc, 6, "<uuid> <user> <serial> <ephemeral>")) return 0;
+        if (!check_argc(cli, subcommand, argc, 6, "<uuid> <user> <serial> <flags>")) return 0;
         return sendGenericOkFail(cli,
                                  e4crypt_prepare_user_storage(parseNull(argv[2]),
                                                               atoi(argv[3]),
                                                               atoi(argv[4]),
-                                                              atoi(argv[5]) != 0));
+                                                              atoi(argv[5])));
 
     } else {
         dumpArgs(argc, argv, -1);
