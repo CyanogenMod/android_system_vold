@@ -73,6 +73,9 @@ namespace {
     static_assert(key_length % 8 == 0,
                   "Key length must be multiple of 8 bits");
 
+    const std::string device_key_leaf = "/unencrypted/key";
+    const std::string device_key_temp = "/unencrypted/temp";
+
     const std::string user_key_dir = std::string() + DATA_MNT_POINT + "/misc/vold/user_keys";
     const std::string user_key_temp = user_key_dir + "/temp";
 
@@ -188,31 +191,6 @@ static bool install_key(const std::string &key, std::string &raw_ref)
     LOG(INFO) << "Added key " << key_id << " (" << ref << ") to keyring "
         << device_keyring << " in process " << getpid();
     return true;
-}
-
-int e4crypt_get_field(const char* path, const char* fieldname,
-                      char* value, size_t len)
-{
-    auto v = GetProps(path).GetChild(properties::props)
-      .Get<std::string>(fieldname);
-
-    if (v == "") {
-        return CRYPTO_GETFIELD_ERROR_NO_FIELD;
-    }
-
-    if (v.length() >= len) {
-        return CRYPTO_GETFIELD_ERROR_BUF_TOO_SMALL;
-    }
-
-    strlcpy(value, v.c_str(), len);
-    return 0;
-}
-
-int e4crypt_set_field(const char* path, const char* fieldname,
-                      const char* value)
-{
-    return GetProps(path).GetChild(properties::props)
-        .Set(fieldname, std::string(value)) ? 0 : -1;
 }
 
 static std::string get_de_key_path(userid_t user_id) {
@@ -377,15 +355,23 @@ int e4crypt_enable(const char* path)
     }
 
     std::string device_key;
-    std::string device_key_path = std::string(path) + "/unencrypted/device_key";
+    std::string device_key_path = std::string(path) + device_key_leaf;
     if (!android::vold::retrieveKey(device_key_path, device_key)) {
         LOG(INFO) << "Creating new key";
         if (!random_key(device_key)) {
             return -1;
         }
 
-        if (!android::vold::storeKey(device_key_path, device_key)) {
-            return -1;
+        std::string key_temp = std::string(path) + device_key_temp;
+        if (path_exists(key_temp)) {
+            android::vold::destroyKey(key_temp);
+        }
+
+        if (!android::vold::storeKey(key_temp, device_key)) return false;
+        if (rename(key_temp.c_str(), device_key_path.c_str()) != 0) {
+            PLOG(ERROR) << "Unable to move new key to location: "
+                        << device_key_path;
+            return false;
         }
     }
 
@@ -397,12 +383,12 @@ int e4crypt_enable(const char* path)
 
     UnencryptedProperties props(path);
     if (!props.Remove(properties::ref)) {
-        SLOGE("Failed to remove key ref");
+        LOG(ERROR) << "Failed to remove key ref";
         return -1;
     }
 
     if (!props.Set(properties::ref, device_key_ref)) {
-        SLOGE("Cannot save key reference");
+        LOG(ERROR) << "Cannot save key reference";
         return -1;
     }
 

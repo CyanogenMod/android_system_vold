@@ -3573,7 +3573,8 @@ static int persist_count_keys(const char *fieldname)
 int cryptfs_getfield(const char *fieldname, char *value, int len)
 {
     if (e4crypt_crypto_complete(DATA_MNT_POINT) == 0) {
-        return e4crypt_get_field(DATA_MNT_POINT, fieldname, value, len);
+        SLOGE("Cannot get field when file encrypted");
+        return -1;
     }
 
     char temp_value[PROPERTY_VALUE_MAX];
@@ -3638,7 +3639,8 @@ out:
 int cryptfs_setfield(const char *fieldname, const char *value)
 {
     if (e4crypt_crypto_complete(DATA_MNT_POINT) == 0) {
-        return e4crypt_set_field(DATA_MNT_POINT, fieldname, value);
+        SLOGE("Cannot set field when file encrypted");
+        return -1;
     }
 
     char encrypted_state[PROPERTY_VALUE_MAX];
