@@ -55,9 +55,6 @@
 #include <android-base/logging.h>
 #include <android-base/stringprintf.h>
 
-// TODO - remove when switch to using keymaster keys for device data
-static int e4crypt_check_passwd(const char* path, const char* password);
-
 using android::base::StringPrintf;
 
 static bool e4crypt_is_native() {
@@ -83,6 +80,7 @@ namespace {
 
     // Some users are ephemeral, don't try to wipe their keys from disk
     std::set<userid_t> s_ephemeral_users;
+
     // Map user ids to key references
     std::map<userid_t, std::string> s_de_key_raw_refs;
     std::map<userid_t, std::string> s_ce_key_raw_refs;
@@ -99,173 +97,20 @@ namespace {
         char raw[EXT4_MAX_KEY_SIZE];
         uint32_t size;
     };
-
-    namespace tag {
-        const char* magic = "magic";
-        const char* major_version = "major_version";
-        const char* minor_version = "minor_version";
-        const char* flags = "flags";
-        const char* crypt_type = "crypt_type";
-        const char* failed_decrypt_count = "failed_decrypt_count";
-        const char* crypto_type_name = "crypto_type_name";
-        const char* master_key = "master_key";
-        const char* salt = "salt";
-        const char* kdf_type = "kdf_type";
-        const char* N_factor = "N_factor";
-        const char* r_factor = "r_factor";
-        const char* p_factor = "p_factor";
-        const char* keymaster_blob = "keymaster_blob";
-        const char* scrypted_intermediate_key = "scrypted_intermediate_key";
-    }
 }
 
 static bool install_key(const std::string &key, std::string &raw_ref);
-
-static int put_crypt_ftr_and_key(const crypt_mnt_ftr& crypt_ftr,
-                                 UnencryptedProperties& props)
-{
-    SLOGI("Putting crypt footer");
-
-    bool success = props.Set<int>(tag::magic, crypt_ftr.magic)
-      && props.Set<int>(tag::major_version, crypt_ftr.major_version)
-      && props.Set<int>(tag::minor_version, crypt_ftr.minor_version)
-      && props.Set<int>(tag::flags, crypt_ftr.flags)
-      && props.Set<int>(tag::crypt_type, crypt_ftr.crypt_type)
-      && props.Set<int>(tag::failed_decrypt_count,
-                        crypt_ftr.failed_decrypt_count)
-      && props.Set<std::string>(tag::crypto_type_name,
-                                std::string(reinterpret_cast<const char*>(crypt_ftr.crypto_type_name)))
-      && props.Set<std::string>(tag::master_key,
-                                std::string((const char*) crypt_ftr.master_key,
-                                            crypt_ftr.keysize))
-      && props.Set<std::string>(tag::salt,
-                                std::string((const char*) crypt_ftr.salt,
-                                            SALT_LEN))
-      && props.Set<int>(tag::kdf_type, crypt_ftr.kdf_type)
-      && props.Set<int>(tag::N_factor, crypt_ftr.N_factor)
-      && props.Set<int>(tag::r_factor, crypt_ftr.r_factor)
-      && props.Set<int>(tag::p_factor, crypt_ftr.p_factor)
-      && props.Set<std::string>(tag::keymaster_blob,
-                                std::string((const char*) crypt_ftr.keymaster_blob,
-                                            crypt_ftr.keymaster_blob_size))
-      && props.Set<std::string>(tag::scrypted_intermediate_key,
-                                std::string((const char*) crypt_ftr.scrypted_intermediate_key,
-                                            SCRYPT_LEN));
-    return success ? 0 : -1;
-}
-
-static int get_crypt_ftr_and_key(crypt_mnt_ftr& crypt_ftr,
-                                 const UnencryptedProperties& props)
-{
-    memset(&crypt_ftr, 0, sizeof(crypt_ftr));
-    crypt_ftr.magic = props.Get<int>(tag::magic);
-    crypt_ftr.major_version = props.Get<int>(tag::major_version);
-    crypt_ftr.minor_version = props.Get<int>(tag::minor_version);
-    crypt_ftr.ftr_size = sizeof(crypt_ftr);
-    crypt_ftr.flags = props.Get<int>(tag::flags);
-    crypt_ftr.crypt_type = props.Get<int>(tag::crypt_type);
-    crypt_ftr.failed_decrypt_count = props.Get<int>(tag::failed_decrypt_count);
-    std::string crypto_type_name = props.Get<std::string>(tag::crypto_type_name);
-    strlcpy(reinterpret_cast<char*>(crypt_ftr.crypto_type_name),
-            crypto_type_name.c_str(),
-            sizeof(crypt_ftr.crypto_type_name));
-    std::string master_key = props.Get<std::string>(tag::master_key);
-    crypt_ftr.keysize = master_key.size();
-    if (crypt_ftr.keysize > sizeof(crypt_ftr.master_key)) {
-        SLOGE("Master key size too long");
-        return -1;
-    }
-    memcpy(crypt_ftr.master_key, &master_key[0], crypt_ftr.keysize);
-    std::string salt = props.Get<std::string>(tag::salt);
-    if (salt.size() != SALT_LEN) {
-        SLOGE("Salt wrong length");
-        return -1;
-    }
-    memcpy(crypt_ftr.salt, &salt[0], SALT_LEN);
-    crypt_ftr.kdf_type = props.Get<int>(tag::kdf_type);
-    crypt_ftr.N_factor = props.Get<int>(tag::N_factor);
-    crypt_ftr.r_factor = props.Get<int>(tag::r_factor);
-    crypt_ftr.p_factor = props.Get<int>(tag::p_factor);
-    std::string keymaster_blob = props.Get<std::string>(tag::keymaster_blob);
-    crypt_ftr.keymaster_blob_size = keymaster_blob.size();
-    if (crypt_ftr.keymaster_blob_size > sizeof(crypt_ftr.keymaster_blob)) {
-        SLOGE("Keymaster blob too long");
-        return -1;
-    }
-    memcpy(crypt_ftr.keymaster_blob, &keymaster_blob[0],
-           crypt_ftr.keymaster_blob_size);
-    std::string scrypted_intermediate_key = props.Get<std::string>(tag::scrypted_intermediate_key);
-    if (scrypted_intermediate_key.size() != SCRYPT_LEN) {
-        SLOGE("scrypted intermediate key wrong length");
-        return -1;
-    }
-    memcpy(crypt_ftr.scrypted_intermediate_key, &scrypted_intermediate_key[0],
-           SCRYPT_LEN);
-
-    return 0;
-}
 
 static UnencryptedProperties GetProps(const char* path)
 {
     return UnencryptedProperties(path);
 }
 
-int e4crypt_enable(const char* path)
-{
-    // Already enabled?
-    if (s_enabled) {
-        return 0;
-    }
-
-    // Not an encryptable device?
-    UnencryptedProperties key_props = GetProps(path).GetChild(properties::key);
-    if (!key_props.OK()) {
-        return 0;
-    }
-
-    if (key_props.Get<std::string>(tag::master_key).empty()) {
-        crypt_mnt_ftr ftr;
-        if (cryptfs_create_default_ftr(&ftr, key_length)) {
-            SLOGE("Failed to create crypto footer");
-            return -1;
-        }
-
-        // Scrub fields not used by ext4enc
-        ftr.persist_data_offset[0] = 0;
-        ftr.persist_data_offset[1] = 0;
-        ftr.persist_data_size = 0;
-
-        if (put_crypt_ftr_and_key(ftr, key_props)) {
-            SLOGE("Failed to write crypto footer");
-            return -1;
-        }
-
-        crypt_mnt_ftr ftr2;
-        if (get_crypt_ftr_and_key(ftr2, key_props)) {
-            SLOGE("Failed to read crypto footer back");
-            return -1;
-        }
-
-        if (memcmp(&ftr, &ftr2, sizeof(ftr)) != 0) {
-            SLOGE("Crypto footer not correctly written");
-            return -1;
-        }
-    }
-
-    if (!UnencryptedProperties(path).Remove(properties::ref)) {
-        SLOGE("Failed to remove key ref");
-        return -1;
-    }
-
-    return e4crypt_check_passwd(path, "");
-}
-
 int e4crypt_crypto_complete(const char* path)
 {
     SLOGI("ext4 crypto complete called on %s", path);
-    auto key_props = GetProps(path).GetChild(properties::key);
-    if (key_props.Get<std::string>(tag::master_key).empty()) {
-        SLOGI("No master key, so not ext4enc");
+    if (GetProps(path).Get<std::string>(properties::ref).empty()) {
+        SLOGI("No key reference, so not ext4enc");
         return -1;
     }
 
@@ -288,53 +133,6 @@ static std::string generate_key_ref(const char* key, int length)
     SHA512_Final(key_ref2, &c);
 
     return std::string((char*)key_ref2, EXT4_KEY_DESCRIPTOR_SIZE);
-}
-
-static int e4crypt_check_passwd(const char* path, const char* password)
-{
-    SLOGI("e4crypt_check_password");
-    auto props = GetProps(path);
-    auto key_props = props.GetChild(properties::key);
-
-    crypt_mnt_ftr ftr;
-    if (get_crypt_ftr_and_key(ftr, key_props)) {
-        SLOGE("Failed to read crypto footer back");
-        return -1;
-    }
-
-    unsigned char master_key_bytes[key_length / 8];
-    if (cryptfs_get_master_key (&ftr, password, master_key_bytes)){
-        SLOGI("Incorrect password");
-        ftr.failed_decrypt_count++;
-        if (put_crypt_ftr_and_key(ftr, key_props)) {
-            SLOGW("Failed to update failed_decrypt_count");
-        }
-        return ftr.failed_decrypt_count;
-    }
-
-    if (ftr.failed_decrypt_count) {
-        ftr.failed_decrypt_count = 0;
-        if (put_crypt_ftr_and_key(ftr, key_props)) {
-            SLOGW("Failed to reset failed_decrypt_count");
-        }
-    }
-    std::string master_key(reinterpret_cast<char*>(master_key_bytes),
-                           sizeof(master_key_bytes));
-
-    std::string raw_ref;
-    if (!install_key(master_key, raw_ref)) {
-        return -1;
-    }
-    SLOGD("Installed master key");
-
-    // Save reference to key so we can set policy later
-    if (!props.Set(properties::ref, raw_ref)) {
-        SLOGE("Cannot save key reference");
-        return -1;
-    }
-
-    s_enabled = true;
-    return 0;
 }
 
 static ext4_encryption_key fill_key(const std::string &key)
@@ -567,6 +365,49 @@ static bool load_all_de_keys() {
     // ext4enc:TODO: go through all DE directories, ensure that all user dirs have the
     // correct policy set on them, and that no rogue ones exist.
     return true;
+}
+
+int e4crypt_enable(const char* path)
+{
+    LOG(INFO) << "e4crypt_enable";
+
+    if (s_enabled) {
+        LOG(INFO) << "Already enabled";
+        return 0;
+    }
+
+    std::string device_key;
+    std::string device_key_path = std::string(path) + "/unencrypted/device_key";
+    if (!android::vold::retrieveKey(device_key_path, device_key)) {
+        LOG(INFO) << "Creating new key";
+        if (!random_key(device_key)) {
+            return -1;
+        }
+
+        if (!android::vold::storeKey(device_key_path, device_key)) {
+            return -1;
+        }
+    }
+
+    std::string device_key_ref;
+    if (!install_key(device_key, device_key_ref)) {
+        LOG(ERROR) << "Failed to install device key";
+        return -1;
+    }
+
+    UnencryptedProperties props(path);
+    if (!props.Remove(properties::ref)) {
+        SLOGE("Failed to remove key ref");
+        return -1;
+    }
+
+    if (!props.Set(properties::ref, device_key_ref)) {
+        SLOGE("Cannot save key reference");
+        return -1;
+    }
+
+    s_enabled = true;
+    return 0;
 }
 
 int e4crypt_init_user0() {
