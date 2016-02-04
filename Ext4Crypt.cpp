@@ -38,7 +38,6 @@
 
 #include <private/android_filesystem_config.h>
 
-#include "unencrypted_properties.h"
 #include "key_control.h"
 #include "cryptfs.h"
 #include "ext4_crypt_init_extensions.h"
@@ -102,22 +101,10 @@ namespace {
     };
 }
 
-static bool install_key(const std::string &key, std::string &raw_ref);
-
-static UnencryptedProperties GetProps(const char* path)
-{
-    return UnencryptedProperties(path);
-}
-
+// TODO replace with proper function to test for file encryption
 int e4crypt_crypto_complete(const char* path)
 {
-    SLOGI("ext4 crypto complete called on %s", path);
-    if (GetProps(path).Get<std::string>(properties::ref).empty()) {
-        SLOGI("No key reference, so not ext4enc");
-        return -1;
-    }
-
-    return 0;
+    return e4crypt_is_native() ? 0 : -1;
 }
 
 // Get raw keyref - used to make keyname and to pass to ioctl
@@ -381,14 +368,9 @@ int e4crypt_enable(const char* path)
         return -1;
     }
 
-    UnencryptedProperties props(path);
-    if (!props.Remove(properties::ref)) {
-        LOG(ERROR) << "Failed to remove key ref";
-        return -1;
-    }
-
-    if (!props.Set(properties::ref, device_key_ref)) {
-        LOG(ERROR) << "Cannot save key reference";
+    std::string ref_filename = std::string("/data") + e4crypt_key_ref;
+    if (!android::base::WriteStringToFile(device_key_ref, ref_filename)) {
+        PLOG(ERROR) << "Cannot save key reference";
         return -1;
     }
 
