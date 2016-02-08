@@ -422,7 +422,7 @@ int e4crypt_init_user0() {
     // If this is a non-FBE device that recently left an emulated mode,
     // restore user data directories to known-good state.
     if (!e4crypt_is_native() && !e4crypt_is_emulated()) {
-        e4crypt_unlock_user_key(0, 0, nullptr);
+        e4crypt_unlock_user_key(0, 0, nullptr, nullptr);
     }
 
     return 0;
