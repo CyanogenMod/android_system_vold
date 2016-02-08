@@ -22,14 +22,27 @@
 namespace android {
 namespace vold {
 
+// Represents the information needed to decrypt a disk encryption key.
+// If "token" is nonempty, it is passed in as a required Gatekeeper auth token.
+// If "secret" is nonempty, it is appended to the application-specific
+// binary needed to unlock.
+class KeyAuthentication {
+public:
+    KeyAuthentication(std::string t, std::string s): token {t}, secret {s} {};
+    const std::string token;
+    const std::string secret;
+};
+
+extern const KeyAuthentication kEmptyAuthentication;
+
 // Create a directory at the named path, and store "key" in it,
 // in such a way that it can only be retrieved via Keymaster and
 // can be securely deleted.
 // It's safe to move/rename the directory after creation.
-bool storeKey(const std::string &dir, const std::string &key);
+bool storeKey(const std::string &dir, const KeyAuthentication &auth, const std::string &key);
 
 // Retrieve the key from the named directory.
-bool retrieveKey(const std::string &dir, std::string &key);
+bool retrieveKey(const std::string &dir, const KeyAuthentication &auth, std::string &key);
 
 // Securely destroy the key stored in the named directory and delete the directory.
 bool destroyKey(const std::string &dir);

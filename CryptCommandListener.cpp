@@ -380,10 +380,16 @@ int CryptCommandListener::CryptfsCmd::runCommand(SocketClient *cli,
         if (!check_argc(cli, subcommand, argc, 3, "<user>")) return 0;
         return sendGenericOkFail(cli, e4crypt_destroy_user_key(atoi(argv[2])));
 
+    } else if (subcommand == "change_user_key") {
+        if (!check_argc(cli, subcommand, argc, 7,
+            "<user> <serial> <token> <old_secret> <new_secret>")) return 0;
+        return sendGenericOkFail(cli, e4crypt_change_user_key(
+            atoi(argv[2]), atoi(argv[3]), argv[4], argv[5], argv[6]));
+
     } else if (subcommand == "unlock_user_key") {
-        if (!check_argc(cli, subcommand, argc, 5, "<user> <serial> <token>")) return 0;
+        if (!check_argc(cli, subcommand, argc, 6, "<user> <serial> <token> <secret>")) return 0;
         return sendGenericOkFail(cli, e4crypt_unlock_user_key(
-            atoi(argv[2]), atoi(argv[3]), parseNull(argv[4])));
+            atoi(argv[2]), atoi(argv[3]), argv[4], argv[5]));
 
     } else if (subcommand == "lock_user_key") {
         if (!check_argc(cli, subcommand, argc, 3, "<user>")) return 0;
