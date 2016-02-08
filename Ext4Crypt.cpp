@@ -414,6 +414,13 @@ int e4crypt_init_user0() {
         LOG(ERROR) << "Failed to prepare user 0 storage";
         return -1;
     }
+
+    // If this is a non-FBE device that recently left an emulated mode,
+    // restore user data directories to known-good state.
+    if (!e4crypt_is_native() && !e4crypt_is_emulated()) {
+        e4crypt_unlock_user_key(0, 0, nullptr);
+    }
+
     return 0;
 }
 
@@ -509,6 +516,7 @@ int e4crypt_unlock_user_key(userid_t user_id, int serial, const char* token) {
         // unlock directories when not in emulation mode, to bring devices
         // back into a known-good state.
         if (emulated_unlock(android::vold::BuildDataSystemCePath(user_id), 0771) ||
+                emulated_unlock(android::vold::BuildDataMiscCePath(user_id), 01771) ||
                 emulated_unlock(android::vold::BuildDataMediaPath(nullptr, user_id), 0770) ||
                 emulated_unlock(android::vold::BuildDataUserPath(nullptr, user_id), 0771)) {
             LOG(ERROR) << "Failed to unlock user " << user_id;
@@ -525,6 +533,7 @@ int e4crypt_lock_user_key(userid_t user_id) {
     } else if (e4crypt_is_emulated()) {
         // When in emulation mode, we just use chmod
         if (emulated_lock(android::vold::BuildDataSystemCePath(user_id)) ||
+                emulated_lock(android::vold::BuildDataMiscCePath(user_id)) ||
                 emulated_lock(android::vold::BuildDataMediaPath(nullptr, user_id)) ||
                 emulated_lock(android::vold::BuildDataUserPath(nullptr, user_id))) {
             PLOG(ERROR) << "Failed to lock user " << user_id;
