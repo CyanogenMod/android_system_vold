@@ -37,17 +37,22 @@
 namespace android {
 namespace vold {
 
+const KeyAuthentication kEmptyAuthentication { "", "" };
+
 static constexpr size_t AES_KEY_BYTES = 32;
 static constexpr size_t GCM_NONCE_BYTES = 12;
 static constexpr size_t GCM_MAC_BYTES = 16;
 // FIXME: better name than "secdiscardable" sought!
 static constexpr size_t SECDISCARDABLE_BYTES = 1<<14;
 
+static const char* kCurrentVersion = "1";
 static const char* kRmPath = "/system/bin/rm";
 static const char* kSecdiscardPath = "/system/bin/secdiscard";
-static const char* kFn_keymaster_key_blob = "keymaster_key_blob";
 static const char* kFn_encrypted_key = "encrypted_key";
+static const char* kFn_keymaster_key_blob = "keymaster_key_blob";
 static const char* kFn_secdiscardable = "secdiscardable";
+static const char* kFn_stretching = "stretching";
+static const char* kFn_version = "version";
 
 static bool checkSize(const std::string& kind, size_t actual, size_t expected) {
     if (actual != expected) {
@@ -160,11 +165,23 @@ static bool writeStringToFile(const std::string &payload, const std::string &fil
     return true;
 }
 
-bool storeKey(const std::string &dir, const std::string &key) {
+static keymaster::AuthorizationSet buildParams(
+        const KeyAuthentication &auth, const std::string &secdiscardable) {
+    keymaster::AuthorizationSetBuilder paramBuilder;
+    auto appId = hashSecdiscardable(secdiscardable) + auth.secret;
+    addStringParam(paramBuilder, keymaster::TAG_APPLICATION_ID, appId);
+    if (!auth.token.empty()) {
+        addStringParam(paramBuilder, keymaster::TAG_AUTH_TOKEN, auth.token);
+    }
+    return paramBuilder.build();
+}
+
+bool storeKey(const std::string &dir, const KeyAuthentication &auth, const std::string &key) {
     if (TEMP_FAILURE_RETRY(mkdir(dir.c_str(), 0700)) == -1) {
         PLOG(ERROR) << "key mkdir " << dir;
         return false;
     }
+    if (!writeStringToFile(kCurrentVersion, dir + "/" +  kFn_version)) return false;
     std::string secdiscardable;
     if (ReadRandomBytes(SECDISCARDABLE_BYTES, secdiscardable) != OK) {
         // TODO status_t plays badly with PLOG, fix it.
@@ -172,8 +189,10 @@ bool storeKey(const std::string &dir, const std::string &key) {
         return false;
     }
     if (!writeStringToFile(secdiscardable, dir + "/" + kFn_secdiscardable)) return false;
-    auto extraParams = addStringParam(keymaster::AuthorizationSetBuilder(),
-            keymaster::TAG_APPLICATION_ID, hashSecdiscardable(secdiscardable)).build();
+    // Future proofing for when we add key stretching per b/27056334
+    auto stretching = auth.secret.empty() ? "nopassword" : "none";
+    if (!writeStringToFile(stretching, dir + "/" +  kFn_stretching)) return false;
+    auto extraParams = buildParams(auth, secdiscardable);
     Keymaster keymaster;
     if (!keymaster) return false;
     std::string kmKey;
@@ -186,11 +205,16 @@ bool storeKey(const std::string &dir, const std::string &key) {
     return true;
 }
 
-bool retrieveKey(const std::string &dir, std::string &key) {
+bool retrieveKey(const std::string &dir, const KeyAuthentication &auth, std::string &key) {
+    std::string version;
+    if (!readFileToString(dir + "/" + kFn_version, version)) return false;
+    if (version != kCurrentVersion) {
+        LOG(ERROR) << "Version mismatch, expected " << kCurrentVersion << " got " << version;
+        return false;
+    }
     std::string secdiscardable;
     if (!readFileToString(dir + "/" + kFn_secdiscardable, secdiscardable)) return false;
-    auto extraParams = addStringParam(keymaster::AuthorizationSetBuilder(),
-            keymaster::TAG_APPLICATION_ID, hashSecdiscardable(secdiscardable)).build();
+    auto extraParams = buildParams(auth, secdiscardable);
     std::string kmKey;
     if (!readFileToString(dir + "/" + kFn_keymaster_key_blob, kmKey)) return false;
     std::string encryptedMessage;

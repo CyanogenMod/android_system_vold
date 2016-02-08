@@ -33,7 +33,6 @@ using namespace keymaster;
 // This is tailored to the needs of KeyStorage, but could be extended to be
 // a more general interface.
 
-
 // Wrapper for a keymaster_operation_handle_t representing an
 // ongoing Keymaster operation.  Aborts the operation
 // in the destructor if it is unfinished. Methods log failures
@@ -98,6 +97,12 @@ template <keymaster_tag_t Tag>
 inline AuthorizationSetBuilder& addStringParam(AuthorizationSetBuilder &&params,
         TypedTag<KM_BYTES, Tag> tag, const std::string& val) {
     return params.Authorization(tag, val.data(), val.size());
+}
+
+template <keymaster_tag_t Tag>
+inline void addStringParam(AuthorizationSetBuilder &params,
+        TypedTag<KM_BYTES, Tag> tag, const std::string& val) {
+    params.Authorization(tag, val.data(), val.size());
 }
 
 }  // namespace vold
