@@ -145,22 +145,27 @@ static bool check_argc(SocketClient *cli, const std::string &subcommand, int arg
     return false;
 }
 
-static int do_enablecrypto(char** argv, int type, bool no_ui) {
+static int do_enablecrypto(char* arg2, char* arg4, int type, bool no_ui) {
     int rc;
     int tries;
     for (tries = 0; tries < 2; ++tries) {
         if (type == CRYPT_TYPE_DEFAULT) {
-            rc = cryptfs_enable_default(argv[2], no_ui);
+            rc = cryptfs_enable_default(arg2, no_ui);
         } else {
-            rc = cryptfs_enable(argv[2], type, argv[4], no_ui);
+            rc = cryptfs_enable(arg2, type, arg4, no_ui);
         }
 
         if (rc == 0) {
+            free(arg2);
+            free(arg4);
             return 0;
         } else if (tries == 0) {
             Process::killProcessesWithOpenFiles(DATA_MNT_POINT, SIGKILL);
         }
     }
+
+    free(arg2);
+    free(arg4);
     return -1;
 }
 
@@ -248,7 +253,9 @@ int CryptCommandListener::CryptfsCmd::runCommand(SocketClient *cli,
 
         // Spawn as thread so init can issue commands back to vold without
         // causing deadlock, usually as a result of prep_data_fs.
-        std::thread(&do_enablecrypto, argv, type, no_ui).detach();
+        char* arg2 = argc > 2 ? strdup(argv[2]) : NULL;
+        char* arg4 = argc > 4 ? strdup(argv[4]) : NULL;
+        std::thread(&do_enablecrypto, arg2, arg4, type, no_ui).detach();
     } else if (subcommand == "enablefilecrypto") {
         if (!check_argc(cli, subcommand, argc, 2, "")) return 0;
         dumpArgs(argc, argv, -1);
