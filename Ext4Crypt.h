@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-#include <stddef.h>
+#include <stdbool.h>
 #include <sys/cdefs.h>
 
 #include <cutils/multiuser.h>
@@ -22,8 +22,8 @@
 __BEGIN_DECLS
 
 // General functions
-int e4crypt_enable(const char* path);
-int e4crypt_crypto_complete(const char* path);
+bool e4crypt_is_native();
+int e4crypt_initialize_global_de();
 
 int e4crypt_init_user0();
 int e4crypt_vold_create_user_key(userid_t user_id, int serial, bool ephemeral);

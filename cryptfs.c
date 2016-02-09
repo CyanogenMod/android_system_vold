@@ -56,7 +56,6 @@
 #include "VoldUtil.h"
 #include "crypto_scrypt.h"
 #include "Ext4Crypt.h"
-#include "ext4_crypt_init_extensions.h"
 #include "ext4_utils.h"
 #include "f2fs_sparseblock.h"
 #include "CheckBattery.h"
@@ -1782,7 +1781,7 @@ static int cryptfs_restart_internal(int restart_main)
 int cryptfs_restart(void)
 {
     SLOGI("cryptfs_restart");
-    if (e4crypt_crypto_complete(DATA_MNT_POINT) == 0) {
+    if (e4crypt_is_native()) {
         SLOGE("cryptfs_restart not valid for file encryption:");
         return -1;
     }
@@ -1804,7 +1803,7 @@ static int do_crypto_complete(char *mount_point)
   }
 
   // crypto_complete is full disk encrypted status
-  if (e4crypt_crypto_complete(mount_point) == 0) {
+  if (e4crypt_is_native()) {
     return CRYPTO_COMPLETE_NOT_ENCRYPTED;
   }
 
@@ -2057,7 +2056,7 @@ int check_unmounted_and_get_ftr(struct crypt_mnt_ftr* crypt_ftr)
 int cryptfs_check_passwd(char *passwd)
 {
     SLOGI("cryptfs_check_passwd");
-    if (e4crypt_crypto_complete(DATA_MNT_POINT) == 0) {
+    if (e4crypt_is_native()) {
         SLOGE("cryptfs_check_passwd not valid for file encryption");
         return -1;
     }
@@ -3349,7 +3348,7 @@ int cryptfs_enable_default(char *howarg, int no_ui)
 
 int cryptfs_changepw(int crypt_type, const char *newpw)
 {
-    if (e4crypt_crypto_complete(DATA_MNT_POINT) == 0) {
+    if (e4crypt_is_native()) {
         SLOGE("cryptfs_changepw not valid for file encryption");
         return -1;
     }
@@ -3575,7 +3574,7 @@ static int persist_count_keys(const char *fieldname)
 /* Return the value of the specified field. */
 int cryptfs_getfield(const char *fieldname, char *value, int len)
 {
-    if (e4crypt_crypto_complete(DATA_MNT_POINT) == 0) {
+    if (e4crypt_is_native()) {
         SLOGE("Cannot get field when file encrypted");
         return -1;
     }
@@ -3641,7 +3640,7 @@ out:
 /* Set the value of the specified field. */
 int cryptfs_setfield(const char *fieldname, const char *value)
 {
-    if (e4crypt_crypto_complete(DATA_MNT_POINT) == 0) {
+    if (e4crypt_is_native()) {
         SLOGE("Cannot set field when file encrypted");
         return -1;
     }
@@ -3768,7 +3767,7 @@ int cryptfs_mount_default_encrypted(void)
  */
 int cryptfs_get_password_type(void)
 {
-    if (e4crypt_crypto_complete(DATA_MNT_POINT) == 0) {
+    if (e4crypt_is_native()) {
         SLOGE("cryptfs_get_password_type not valid for file encryption");
         return -1;
     }
@@ -3789,7 +3788,7 @@ int cryptfs_get_password_type(void)
 
 const char* cryptfs_get_password()
 {
-    if (e4crypt_crypto_complete(DATA_MNT_POINT) == 0) {
+    if (e4crypt_is_native()) {
         SLOGE("cryptfs_get_password not valid for file encryption");
         return 0;
     }
@@ -3817,7 +3816,7 @@ void cryptfs_clear_password()
 
 int cryptfs_enable_file()
 {
-    return e4crypt_enable(DATA_MNT_POINT);
+    return e4crypt_initialize_global_de();
 }
 
 int cryptfs_isConvertibleToFBE()

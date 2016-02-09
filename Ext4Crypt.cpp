@@ -61,33 +61,20 @@ using android::vold::kEmptyAuthentication;
 static constexpr int FLAG_STORAGE_DE = 1 << 0;
 static constexpr int FLAG_STORAGE_CE = 1 << 1;
 
-static bool e4crypt_is_native() {
-    char value[PROPERTY_VALUE_MAX];
-    property_get("ro.crypto.type", value, "none");
-    return !strcmp(value, "file");
-}
-
-static bool e4crypt_is_emulated() {
-    return property_get_bool("persist.sys.emulate_fbe", false);
-}
-
-static const char* escape_null(const char* value) {
-    return (value == nullptr) ? "null" : value;
-}
-
 namespace {
     // Key length in bits
     const int key_length = 128;
     static_assert(key_length % 8 == 0,
                   "Key length must be multiple of 8 bits");
 
-    const std::string device_key_leaf = "/unencrypted/key";
-    const std::string device_key_temp = "/unencrypted/temp";
+    const std::string device_key_dir = std::string() + DATA_MNT_POINT + "/unencrypted";
+    const std::string device_key_path = device_key_dir + "/key";
+    const std::string device_key_temp = device_key_dir + "/temp";
 
     const std::string user_key_dir = std::string() + DATA_MNT_POINT + "/misc/vold/user_keys";
     const std::string user_key_temp = user_key_dir + "/temp";
 
-    bool s_enabled = false;
+    bool s_global_de_initialized = false;
 
     // Some users are ephemeral, don't try to wipe their keys from disk
     std::set<userid_t> s_ephemeral_users;
@@ -114,9 +101,18 @@ namespace {
 }
 
 // TODO replace with proper function to test for file encryption
-int e4crypt_crypto_complete(const char* path)
-{
-    return e4crypt_is_native() ? 0 : -1;
+bool e4crypt_is_native() {
+    char value[PROPERTY_VALUE_MAX];
+    property_get("ro.crypto.type", value, "none");
+    return !strcmp(value, "file");
+}
+
+static bool e4crypt_is_emulated() {
+    return property_get_bool("persist.sys.emulate_fbe", false);
+}
+
+static const char* escape_null(const char* value) {
+    return (value == nullptr) ? "null" : value;
 }
 
 // Get raw keyref - used to make keyname and to pass to ioctl
@@ -238,17 +234,17 @@ static bool path_exists(const std::string &path) {
 
 // NB this assumes that there is only one thread listening for crypt commands, because
 // it creates keys in a fixed location.
-static bool store_key(const std::string &key_path,
+static bool store_key(const std::string &key_path, const std::string &tmp_path,
         const android::vold::KeyAuthentication &auth, const std::string &key) {
     if (path_exists(key_path)) {
         LOG(ERROR) << "Already exists, cannot create key at: " << key_path;
         return false;
     }
-    if (path_exists(user_key_temp)) {
-        android::vold::destroyKey(user_key_temp);
+    if (path_exists(tmp_path)) {
+        android::vold::destroyKey(tmp_path);
     }
-    if (!android::vold::storeKey(user_key_temp, auth, key)) return false;
-    if (rename(user_key_temp.c_str(), key_path.c_str()) != 0) {
+    if (!android::vold::storeKey(tmp_path, auth, key)) return false;
+    if (rename(tmp_path.c_str(), key_path.c_str()) != 0) {
         PLOG(ERROR) << "Unable to move new key to location: " << key_path;
         return false;
     }
@@ -264,10 +260,12 @@ static bool create_and_install_user_keys(userid_t user_id, bool create_ephemeral
         // If the key should be created as ephemeral, don't store it.
         s_ephemeral_users.insert(user_id);
     } else {
-        if (!store_key(get_de_key_path(user_id), kEmptyAuthentication, de_key)) return false;
+        if (!store_key(get_de_key_path(user_id), user_key_temp,
+                kEmptyAuthentication, de_key)) return false;
         if (!prepare_dir(user_key_dir + "/ce/" + std::to_string(user_id),
             0700, AID_ROOT, AID_ROOT)) return false;
-        if (!store_key(get_ce_key_path(user_id), kEmptyAuthentication, ce_key)) return false;
+        if (!store_key(get_ce_key_path(user_id), user_key_temp,
+                kEmptyAuthentication, ce_key)) return false;
     }
     std::string de_raw_ref;
     if (!install_key(de_key, de_raw_ref)) return false;
@@ -344,34 +342,24 @@ static bool load_all_de_keys() {
     return true;
 }
 
-int e4crypt_enable(const char* path)
+int e4crypt_initialize_global_de()
 {
-    LOG(INFO) << "e4crypt_enable";
+    LOG(INFO) << "e4crypt_initialize_global_de";
 
-    if (s_enabled) {
-        LOG(INFO) << "Already enabled";
+    if (s_global_de_initialized) {
+        LOG(INFO) << "Already initialized";
         return 0;
     }
 
     std::string device_key;
-    std::string device_key_path = std::string(path) + device_key_leaf;
-    if (!android::vold::retrieveKey(device_key_path, kEmptyAuthentication, device_key)) {
+    if (path_exists(device_key_path)) {
+        if (!android::vold::retrieveKey(device_key_path,
+                kEmptyAuthentication, device_key)) return -1;
+    } else {
         LOG(INFO) << "Creating new key";
-        if (!random_key(device_key)) {
-            return -1;
-        }
-
-        std::string key_temp = std::string(path) + device_key_temp;
-        if (path_exists(key_temp)) {
-            android::vold::destroyKey(key_temp);
-        }
-
-        if (!android::vold::storeKey(key_temp, kEmptyAuthentication, device_key)) return -1;
-        if (rename(key_temp.c_str(), device_key_path.c_str()) != 0) {
-            PLOG(ERROR) << "Unable to move new key to location: "
-                        << device_key_path;
-            return -1;
-        }
+        if (!random_key(device_key)) return -1;
+        if (!store_key(device_key_path, device_key_temp,
+                kEmptyAuthentication, device_key)) return -1;
     }
 
     std::string device_key_ref;
@@ -386,7 +374,7 @@ int e4crypt_enable(const char* path)
         return -1;
     }
 
-    s_enabled = true;
+    s_global_de_initialized = true;
     return 0;
 }
 
@@ -543,7 +531,7 @@ int e4crypt_change_user_key(userid_t user_id, int serial,
     auto ce_key = it->second;
     auto ce_key_path = get_ce_key_path(user_id);
     android::vold::destroyKey(ce_key_path);
-    if (!store_key(ce_key_path, auth, ce_key)) return -1;
+    if (!store_key(ce_key_path, user_key_temp, auth, ce_key)) return -1;
     return 0;
 }
 
@@ -612,7 +600,7 @@ int e4crypt_prepare_user_storage(const char* volume_uuid, userid_t user_id,
         if (!prepare_dir(misc_de_path, 01771, AID_SYSTEM, AID_MISC)) return -1;
         if (!prepare_dir(user_de_path, 0771, AID_SYSTEM, AID_SYSTEM)) return -1;
 
-        if (e4crypt_crypto_complete(DATA_MNT_POINT) == 0) {
+        if (e4crypt_is_native()) {
             std::string de_raw_ref;
             if (!lookup_key_ref(s_de_key_raw_refs, user_id, de_raw_ref)) return -1;
             if (!ensure_policy(de_raw_ref, system_de_path)) return -1;
@@ -632,7 +620,7 @@ int e4crypt_prepare_user_storage(const char* volume_uuid, userid_t user_id,
         if (!prepare_dir(media_ce_path, 0770, AID_MEDIA_RW, AID_MEDIA_RW)) return -1;
         if (!prepare_dir(user_ce_path, 0771, AID_SYSTEM, AID_SYSTEM)) return -1;
 
-        if (e4crypt_crypto_complete(DATA_MNT_POINT) == 0) {
+        if (e4crypt_is_native()) {
             std::string ce_raw_ref;
             if (!lookup_key_ref(s_ce_key_raw_refs, user_id, ce_raw_ref)) return -1;
             if (!ensure_policy(ce_raw_ref, system_ce_path)) return -1;

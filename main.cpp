@@ -18,7 +18,6 @@
 #include "VolumeManager.h"
 #include "CommandListener.h"
 #include "CryptCommandListener.h"
-#include "Ext4Crypt.h"
 #include "NetlinkManager.h"
 #include "cryptfs.h"
 #include "sehandle.h"
