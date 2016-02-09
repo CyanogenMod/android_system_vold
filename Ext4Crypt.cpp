@@ -366,11 +366,11 @@ int e4crypt_enable(const char* path)
             android::vold::destroyKey(key_temp);
         }
 
-        if (!android::vold::storeKey(key_temp, kEmptyAuthentication, device_key)) return false;
+        if (!android::vold::storeKey(key_temp, kEmptyAuthentication, device_key)) return -1;
         if (rename(key_temp.c_str(), device_key_path.c_str()) != 0) {
             PLOG(ERROR) << "Unable to move new key to location: "
                         << device_key_path;
-            return false;
+            return -1;
         }
     }
 
@@ -590,7 +590,7 @@ int e4crypt_lock_user_key(userid_t user_id) {
                 emulated_lock(android::vold::BuildDataMiscCePath(user_id)) ||
                 emulated_lock(android::vold::BuildDataMediaPath(nullptr, user_id)) ||
                 emulated_lock(android::vold::BuildDataUserPath(nullptr, user_id))) {
-            PLOG(ERROR) << "Failed to lock user " << user_id;
+            LOG(ERROR) << "Failed to lock user " << user_id;
             return -1;
         }
     }
