@@ -342,48 +342,48 @@ static bool load_all_de_keys() {
     return true;
 }
 
-int e4crypt_initialize_global_de()
+bool e4crypt_initialize_global_de()
 {
     LOG(INFO) << "e4crypt_initialize_global_de";
 
     if (s_global_de_initialized) {
         LOG(INFO) << "Already initialized";
-        return 0;
+        return true;
     }
 
     std::string device_key;
     if (path_exists(device_key_path)) {
         if (!android::vold::retrieveKey(device_key_path,
-                kEmptyAuthentication, device_key)) return -1;
+                kEmptyAuthentication, device_key)) return false;
     } else {
         LOG(INFO) << "Creating new key";
-        if (!random_key(device_key)) return -1;
+        if (!random_key(device_key)) return false;
         if (!store_key(device_key_path, device_key_temp,
-                kEmptyAuthentication, device_key)) return -1;
+                kEmptyAuthentication, device_key)) return false;
     }
 
     std::string device_key_ref;
     if (!install_key(device_key, device_key_ref)) {
         LOG(ERROR) << "Failed to install device key";
-        return -1;
+        return false;
     }
 
     std::string ref_filename = std::string("/data") + e4crypt_key_ref;
     if (!android::base::WriteStringToFile(device_key_ref, ref_filename)) {
         PLOG(ERROR) << "Cannot save key reference";
-        return -1;
+        return false;
     }
 
     s_global_de_initialized = true;
-    return 0;
+    return true;
 }
 
-int e4crypt_init_user0() {
+bool e4crypt_init_user0() {
     LOG(DEBUG) << "e4crypt_init_user0";
     if (e4crypt_is_native()) {
-        if (!prepare_dir(user_key_dir, 0700, AID_ROOT, AID_ROOT)) return -1;
-        if (!prepare_dir(user_key_dir + "/ce", 0700, AID_ROOT, AID_ROOT)) return -1;
-        if (!prepare_dir(user_key_dir + "/de", 0700, AID_ROOT, AID_ROOT)) return -1;
+        if (!prepare_dir(user_key_dir, 0700, AID_ROOT, AID_ROOT)) return false;
+        if (!prepare_dir(user_key_dir + "/ce", 0700, AID_ROOT, AID_ROOT)) return false;
+        if (!prepare_dir(user_key_dir + "/de", 0700, AID_ROOT, AID_ROOT)) return false;
         auto de_path = get_de_key_path(0);
         auto ce_path = get_ce_key_path(0);
         if (!path_exists(de_path) || !path_exists(ce_path)) {
@@ -393,18 +393,18 @@ int e4crypt_init_user0() {
             if (path_exists(ce_path)) {
                 android::vold::destroyKey(ce_path); // Ignore failure
             }
-            if (!create_and_install_user_keys(0, false)) return -1;
+            if (!create_and_install_user_keys(0, false)) return false;
         }
         // TODO: switch to loading only DE_0 here once framework makes
         // explicit calls to install DE keys for secondary users
-        if (!load_all_de_keys()) return -1;
+        if (!load_all_de_keys()) return false;
     }
     // We can only safely prepare DE storage here, since CE keys are probably
     // entangled with user credentials.  The framework will always prepare CE
     // storage once CE keys are installed.
-    if (e4crypt_prepare_user_storage(nullptr, 0, 0, FLAG_STORAGE_DE) != 0) {
+    if (!e4crypt_prepare_user_storage(nullptr, 0, 0, FLAG_STORAGE_DE)) {
         LOG(ERROR) << "Failed to prepare user 0 storage";
-        return -1;
+        return false;
     }
 
     // If this is a non-FBE device that recently left an emulated mode,
@@ -413,26 +413,26 @@ int e4crypt_init_user0() {
         e4crypt_unlock_user_key(0, 0, "!", "!");
     }
 
-    return 0;
+    return true;
 }
 
-int e4crypt_vold_create_user_key(userid_t user_id, int serial, bool ephemeral) {
+bool e4crypt_vold_create_user_key(userid_t user_id, int serial, bool ephemeral) {
     LOG(DEBUG) << "e4crypt_vold_create_user_key for " << user_id << " serial " << serial;
     if (!e4crypt_is_native()) {
-        return 0;
+        return true;
     }
     // FIXME test for existence of key that is not loaded yet
     if (s_ce_key_raw_refs.count(user_id) != 0) {
         LOG(ERROR) << "Already exists, can't e4crypt_vold_create_user_key for "
             << user_id << " serial " << serial;
         // FIXME should we fail the command?
-        return 0;
+        return true;
     }
     if (!create_and_install_user_keys(user_id, ephemeral)) {
-        return -1;
+        return false;
     }
     // TODO: create second key for user_de data
-    return 0;
+    return true;
 }
 
 static bool evict_key(const std::string &raw_ref) {
@@ -446,10 +446,10 @@ static bool evict_key(const std::string &raw_ref) {
     return true;
 }
 
-int e4crypt_destroy_user_key(userid_t user_id) {
+bool e4crypt_destroy_user_key(userid_t user_id) {
     LOG(DEBUG) << "e4crypt_destroy_user_key(" << user_id << ")";
     if (!e4crypt_is_native()) {
-        return 0;
+        return true;
     }
     bool success = true;
     s_ce_keys.erase(user_id);
@@ -465,37 +465,37 @@ int e4crypt_destroy_user_key(userid_t user_id) {
         success &= android::vold::destroyKey(get_ce_key_path(user_id));
         success &= android::vold::destroyKey(get_de_key_path(user_id));
     }
-    return success ? 0 : -1;
+    return success;
 }
 
-static int emulated_lock(const std::string& path) {
+static bool emulated_lock(const std::string& path) {
     if (chmod(path.c_str(), 0000) != 0) {
         PLOG(ERROR) << "Failed to chmod " << path;
-        return -1;
+        return false;
     }
 #if EMULATED_USES_SELINUX
     if (setfilecon(path.c_str(), "u:object_r:storage_stub_file:s0") != 0) {
         PLOG(WARNING) << "Failed to setfilecon " << path;
-        return -1;
+        return false;
     }
 #endif
-    return 0;
+    return true;
 }
 
-static int emulated_unlock(const std::string& path, mode_t mode) {
+static bool emulated_unlock(const std::string& path, mode_t mode) {
     if (chmod(path.c_str(), mode) != 0) {
         PLOG(ERROR) << "Failed to chmod " << path;
         // FIXME temporary workaround for b/26713622
-        if (e4crypt_is_emulated()) return -1;
+        if (e4crypt_is_emulated()) return false;
     }
 #if EMULATED_USES_SELINUX
     if (selinux_android_restorecon(path.c_str(), SELINUX_ANDROID_RESTORECON_FORCE) != 0) {
         PLOG(WARNING) << "Failed to restorecon " << path;
         // FIXME temporary workaround for b/26713622
-        if (e4crypt_is_emulated()) return -1;
+        if (e4crypt_is_emulated()) return false;
     }
 #endif
-    return 0;
+    return true;
 }
 
 static bool parse_hex(const char *hex, std::string &result) {
@@ -510,40 +510,40 @@ static bool parse_hex(const char *hex, std::string &result) {
     return true;
 }
 
-int e4crypt_change_user_key(userid_t user_id, int serial,
+bool e4crypt_change_user_key(userid_t user_id, int serial,
         const char* token_hex, const char* old_secret_hex, const char* new_secret_hex) {
     LOG(DEBUG) << "e4crypt_change_user_key " << user_id << " serial=" << serial <<
         " token_present=" << (strcmp(token_hex, "!") != 0);
-    if (!e4crypt_is_native()) return 0;
-    if (s_ephemeral_users.count(user_id) != 0) return 0;
+    if (!e4crypt_is_native()) return true;
+    if (s_ephemeral_users.count(user_id) != 0) return true;
     std::string token, old_secret, new_secret;
-    if (!parse_hex(token_hex, token)) return -1;
-    if (!parse_hex(old_secret_hex, old_secret)) return -1;
-    if (!parse_hex(new_secret_hex, new_secret)) return -1;
+    if (!parse_hex(token_hex, token)) return false;
+    if (!parse_hex(old_secret_hex, old_secret)) return false;
+    if (!parse_hex(new_secret_hex, new_secret)) return false;
     auto auth = new_secret.empty()
         ? kEmptyAuthentication
         : android::vold::KeyAuthentication(token, new_secret);
     auto it = s_ce_keys.find(user_id);
     if (it == s_ce_keys.end()) {
         LOG(ERROR) << "Key not loaded into memory, can't change for user " << user_id;
-        return -1;
+        return false;
     }
     auto ce_key = it->second;
     auto ce_key_path = get_ce_key_path(user_id);
     android::vold::destroyKey(ce_key_path);
-    if (!store_key(ce_key_path, user_key_temp, auth, ce_key)) return -1;
-    return 0;
+    if (!store_key(ce_key_path, user_key_temp, auth, ce_key)) return false;
+    return true;
 }
 
 // TODO: rename to 'install' for consistency, and take flags to know which keys to install
-int e4crypt_unlock_user_key(userid_t user_id, int serial,
+bool e4crypt_unlock_user_key(userid_t user_id, int serial,
         const char* token_hex, const char* secret_hex) {
     LOG(DEBUG) << "e4crypt_unlock_user_key " << user_id << " serial=" << serial <<
         " token_present=" << (strcmp(token_hex, "!") != 0);
     if (e4crypt_is_native()) {
         if (s_ce_key_raw_refs.count(user_id) != 0) {
             LOG(WARNING) << "Tried to unlock already-unlocked key for user " << user_id;
-            return 0;
+            return true;
         }
         std::string token, secret;
         if (!parse_hex(token_hex, token)) return false;
@@ -551,42 +551,42 @@ int e4crypt_unlock_user_key(userid_t user_id, int serial,
         android::vold::KeyAuthentication auth(token, secret);
         if (!read_and_install_user_ce_key(user_id, auth)) {
             LOG(ERROR) << "Couldn't read key for " << user_id;
-            return -1;
+            return false;
         }
     } else {
         // When in emulation mode, we just use chmod. However, we also
         // unlock directories when not in emulation mode, to bring devices
         // back into a known-good state.
-        if (emulated_unlock(android::vold::BuildDataSystemCePath(user_id), 0771) ||
-                emulated_unlock(android::vold::BuildDataMiscCePath(user_id), 01771) ||
-                emulated_unlock(android::vold::BuildDataMediaPath(nullptr, user_id), 0770) ||
-                emulated_unlock(android::vold::BuildDataUserPath(nullptr, user_id), 0771)) {
+        if (!emulated_unlock(android::vold::BuildDataSystemCePath(user_id), 0771) ||
+                !emulated_unlock(android::vold::BuildDataMiscCePath(user_id), 01771) ||
+                !emulated_unlock(android::vold::BuildDataMediaPath(nullptr, user_id), 0770) ||
+                !emulated_unlock(android::vold::BuildDataUserPath(nullptr, user_id), 0771)) {
             LOG(ERROR) << "Failed to unlock user " << user_id;
-            return -1;
+            return false;
         }
     }
-    return 0;
+    return true;
 }
 
 // TODO: rename to 'evict' for consistency
-int e4crypt_lock_user_key(userid_t user_id) {
+bool e4crypt_lock_user_key(userid_t user_id) {
     if (e4crypt_is_native()) {
         // TODO: remove from kernel keyring
     } else if (e4crypt_is_emulated()) {
         // When in emulation mode, we just use chmod
-        if (emulated_lock(android::vold::BuildDataSystemCePath(user_id)) ||
-                emulated_lock(android::vold::BuildDataMiscCePath(user_id)) ||
-                emulated_lock(android::vold::BuildDataMediaPath(nullptr, user_id)) ||
-                emulated_lock(android::vold::BuildDataUserPath(nullptr, user_id))) {
+        if (!emulated_lock(android::vold::BuildDataSystemCePath(user_id)) ||
+                !emulated_lock(android::vold::BuildDataMiscCePath(user_id)) ||
+                !emulated_lock(android::vold::BuildDataMediaPath(nullptr, user_id)) ||
+                !emulated_lock(android::vold::BuildDataUserPath(nullptr, user_id))) {
             LOG(ERROR) << "Failed to lock user " << user_id;
-            return -1;
+            return false;
         }
     }
 
-    return 0;
+    return true;
 }
 
-int e4crypt_prepare_user_storage(const char* volume_uuid, userid_t user_id,
+bool e4crypt_prepare_user_storage(const char* volume_uuid, userid_t user_id,
         int serial, int flags) {
     LOG(DEBUG) << "e4crypt_prepare_user_storage for volume " << escape_null(volume_uuid)
             << ", user " << user_id << ", serial " << serial << ", flags " << flags;
@@ -596,16 +596,16 @@ int e4crypt_prepare_user_storage(const char* volume_uuid, userid_t user_id,
         auto misc_de_path = android::vold::BuildDataMiscDePath(user_id);
         auto user_de_path = android::vold::BuildDataUserDePath(volume_uuid, user_id);
 
-        if (!prepare_dir(system_de_path, 0770, AID_SYSTEM, AID_SYSTEM)) return -1;
-        if (!prepare_dir(misc_de_path, 01771, AID_SYSTEM, AID_MISC)) return -1;
-        if (!prepare_dir(user_de_path, 0771, AID_SYSTEM, AID_SYSTEM)) return -1;
+        if (!prepare_dir(system_de_path, 0770, AID_SYSTEM, AID_SYSTEM)) return false;
+        if (!prepare_dir(misc_de_path, 01771, AID_SYSTEM, AID_MISC)) return false;
+        if (!prepare_dir(user_de_path, 0771, AID_SYSTEM, AID_SYSTEM)) return false;
 
         if (e4crypt_is_native()) {
             std::string de_raw_ref;
-            if (!lookup_key_ref(s_de_key_raw_refs, user_id, de_raw_ref)) return -1;
-            if (!ensure_policy(de_raw_ref, system_de_path)) return -1;
-            if (!ensure_policy(de_raw_ref, misc_de_path)) return -1;
-            if (!ensure_policy(de_raw_ref, user_de_path)) return -1;
+            if (!lookup_key_ref(s_de_key_raw_refs, user_id, de_raw_ref)) return false;
+            if (!ensure_policy(de_raw_ref, system_de_path)) return false;
+            if (!ensure_policy(de_raw_ref, misc_de_path)) return false;
+            if (!ensure_policy(de_raw_ref, user_de_path)) return false;
         }
     }
 
@@ -615,20 +615,20 @@ int e4crypt_prepare_user_storage(const char* volume_uuid, userid_t user_id,
         auto media_ce_path = android::vold::BuildDataMediaPath(volume_uuid, user_id);
         auto user_ce_path = android::vold::BuildDataUserPath(volume_uuid, user_id);
 
-        if (!prepare_dir(system_ce_path, 0770, AID_SYSTEM, AID_SYSTEM)) return -1;
-        if (!prepare_dir(misc_ce_path, 01771, AID_SYSTEM, AID_MISC)) return -1;
-        if (!prepare_dir(media_ce_path, 0770, AID_MEDIA_RW, AID_MEDIA_RW)) return -1;
-        if (!prepare_dir(user_ce_path, 0771, AID_SYSTEM, AID_SYSTEM)) return -1;
+        if (!prepare_dir(system_ce_path, 0770, AID_SYSTEM, AID_SYSTEM)) return false;
+        if (!prepare_dir(misc_ce_path, 01771, AID_SYSTEM, AID_MISC)) return false;
+        if (!prepare_dir(media_ce_path, 0770, AID_MEDIA_RW, AID_MEDIA_RW)) return false;
+        if (!prepare_dir(user_ce_path, 0771, AID_SYSTEM, AID_SYSTEM)) return false;
 
         if (e4crypt_is_native()) {
             std::string ce_raw_ref;
-            if (!lookup_key_ref(s_ce_key_raw_refs, user_id, ce_raw_ref)) return -1;
-            if (!ensure_policy(ce_raw_ref, system_ce_path)) return -1;
-            if (!ensure_policy(ce_raw_ref, misc_ce_path)) return -1;
-            if (!ensure_policy(ce_raw_ref, media_ce_path)) return -1;
-            if (!ensure_policy(ce_raw_ref, user_ce_path)) return -1;
+            if (!lookup_key_ref(s_ce_key_raw_refs, user_id, ce_raw_ref)) return false;
+            if (!ensure_policy(ce_raw_ref, system_ce_path)) return false;
+            if (!ensure_policy(ce_raw_ref, misc_ce_path)) return false;
+            if (!ensure_policy(ce_raw_ref, media_ce_path)) return false;
+            if (!ensure_policy(ce_raw_ref, user_ce_path)) return false;
         }
     }
 
-    return 0;
+    return true;
 }

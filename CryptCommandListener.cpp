@@ -90,8 +90,8 @@ void CryptCommandListener::dumpArgs(int argc, char **argv, int argObscure) {
 void CryptCommandListener::dumpArgs(int /*argc*/, char ** /*argv*/, int /*argObscure*/) { }
 #endif
 
-int CryptCommandListener::sendGenericOkFail(SocketClient *cli, int cond) {
-    if (!cond) {
+int CryptCommandListener::sendGenericOkFailOnBool(SocketClient *cli, bool success) {
+    if (success) {
         return cli->sendMsg(ResponseCode::CommandOkay, "Command succeeded", false);
     } else {
         return cli->sendMsg(ResponseCode::OperationFailed, "Command failed", false);
@@ -367,41 +367,36 @@ int CryptCommandListener::CryptfsCmd::runCommand(SocketClient *cli,
 
     } else if (subcommand == "init_user0") {
         if (!check_argc(cli, subcommand, argc, 2, "")) return 0;
-        return sendGenericOkFail(cli, e4crypt_init_user0());
+        return sendGenericOkFailOnBool(cli, e4crypt_init_user0());
 
     } else if (subcommand == "create_user_key") {
         if (!check_argc(cli, subcommand, argc, 5, "<user> <serial> <ephemeral>")) return 0;
-        return sendGenericOkFail(cli,
-                                 e4crypt_vold_create_user_key(atoi(argv[2]),
-                                                              atoi(argv[3]),
-                                                              atoi(argv[4]) != 0));
+        return sendGenericOkFailOnBool(cli, e4crypt_vold_create_user_key(
+            atoi(argv[2]), atoi(argv[3]), atoi(argv[4]) != 0));
 
     } else if (subcommand == "destroy_user_key") {
         if (!check_argc(cli, subcommand, argc, 3, "<user>")) return 0;
-        return sendGenericOkFail(cli, e4crypt_destroy_user_key(atoi(argv[2])));
+        return sendGenericOkFailOnBool(cli, e4crypt_destroy_user_key(atoi(argv[2])));
 
     } else if (subcommand == "change_user_key") {
         if (!check_argc(cli, subcommand, argc, 7,
             "<user> <serial> <token> <old_secret> <new_secret>")) return 0;
-        return sendGenericOkFail(cli, e4crypt_change_user_key(
+        return sendGenericOkFailOnBool(cli, e4crypt_change_user_key(
             atoi(argv[2]), atoi(argv[3]), argv[4], argv[5], argv[6]));
 
     } else if (subcommand == "unlock_user_key") {
         if (!check_argc(cli, subcommand, argc, 6, "<user> <serial> <token> <secret>")) return 0;
-        return sendGenericOkFail(cli, e4crypt_unlock_user_key(
+        return sendGenericOkFailOnBool(cli, e4crypt_unlock_user_key(
             atoi(argv[2]), atoi(argv[3]), argv[4], argv[5]));
 
     } else if (subcommand == "lock_user_key") {
         if (!check_argc(cli, subcommand, argc, 3, "<user>")) return 0;
-        return sendGenericOkFail(cli, e4crypt_lock_user_key(atoi(argv[2])));
+        return sendGenericOkFailOnBool(cli, e4crypt_lock_user_key(atoi(argv[2])));
 
     } else if (subcommand == "prepare_user_storage") {
         if (!check_argc(cli, subcommand, argc, 6, "<uuid> <user> <serial> <flags>")) return 0;
-        return sendGenericOkFail(cli,
-                                 e4crypt_prepare_user_storage(parseNull(argv[2]),
-                                                              atoi(argv[3]),
-                                                              atoi(argv[4]),
-                                                              atoi(argv[5])));
+        return sendGenericOkFailOnBool(cli, e4crypt_prepare_user_storage(
+            parseNull(argv[2]), atoi(argv[3]), atoi(argv[4]), atoi(argv[5])));
 
     } else {
         dumpArgs(argc, argv, -1);

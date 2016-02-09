@@ -28,7 +28,7 @@ public:
 
 private:
     static void dumpArgs(int argc, char **argv, int argObscure);
-    static int sendGenericOkFail(SocketClient *cli, int cond);
+    static int sendGenericOkFailOnBool(SocketClient *cli, bool success);
 
     class CryptfsCmd : public VoldCommand {
     public:

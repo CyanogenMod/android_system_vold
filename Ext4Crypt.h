@@ -23,19 +23,19 @@ __BEGIN_DECLS
 
 // General functions
 bool e4crypt_is_native();
-int e4crypt_initialize_global_de();
+bool e4crypt_initialize_global_de();
 
-int e4crypt_init_user0();
-int e4crypt_vold_create_user_key(userid_t user_id, int serial, bool ephemeral);
-int e4crypt_destroy_user_key(userid_t user_id);
-int e4crypt_change_user_key(userid_t user_id, int serial,
+bool e4crypt_init_user0();
+bool e4crypt_vold_create_user_key(userid_t user_id, int serial, bool ephemeral);
+bool e4crypt_destroy_user_key(userid_t user_id);
+bool e4crypt_change_user_key(userid_t user_id, int serial,
     const char* token, const char* old_secret, const char* new_secret);
 
-int e4crypt_unlock_user_key(userid_t user_id, int serial,
+bool e4crypt_unlock_user_key(userid_t user_id, int serial,
     const char* token, const char* secret);
-int e4crypt_lock_user_key(userid_t user_id);
+bool e4crypt_lock_user_key(userid_t user_id);
 
-int e4crypt_prepare_user_storage(const char* volume_uuid, userid_t user_id,
+bool e4crypt_prepare_user_storage(const char* volume_uuid, userid_t user_id,
         int serial, int flags);
 
 __END_DECLS
