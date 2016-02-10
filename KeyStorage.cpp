@@ -17,6 +17,7 @@
 #include "KeyStorage.h"
 
 #include "Keymaster.h"
+#include "ScryptParameters.h"
 #include "Utils.h"
 
 #include <vector>
@@ -32,7 +33,15 @@
 #include <android-base/file.h>
 #include <android-base/logging.h>
 
+#include <cutils/properties.h>
+
 #include <keymaster/authorization_set.h>
+
+extern "C" {
+
+#include "crypto_scrypt.h"
+
+}
 
 namespace android {
 namespace vold {
@@ -42,14 +51,19 @@ const KeyAuthentication kEmptyAuthentication { "", "" };
 static constexpr size_t AES_KEY_BYTES = 32;
 static constexpr size_t GCM_NONCE_BYTES = 12;
 static constexpr size_t GCM_MAC_BYTES = 16;
-// FIXME: better name than "secdiscardable" sought!
+static constexpr size_t SALT_BYTES = 1<<4;
 static constexpr size_t SECDISCARDABLE_BYTES = 1<<14;
+static constexpr size_t STRETCHED_BYTES = 1<<6;
 
 static const char* kCurrentVersion = "1";
 static const char* kRmPath = "/system/bin/rm";
 static const char* kSecdiscardPath = "/system/bin/secdiscard";
+static const char* kStretch_none = "none";
+static const char* kStretch_nopassword = "nopassword";
+static const std::string kStretchPrefix_scrypt = "scrypt ";
 static const char* kFn_encrypted_key = "encrypted_key";
 static const char* kFn_keymaster_key_blob = "keymaster_key_blob";
+static const char* kFn_salt = "salt";
 static const char* kFn_secdiscardable = "secdiscardable";
 static const char* kFn_stretching = "stretching";
 static const char* kFn_version = "version";
@@ -165,15 +179,64 @@ static bool writeStringToFile(const std::string &payload, const std::string &fil
     return true;
 }
 
-static keymaster::AuthorizationSet buildParams(
-        const KeyAuthentication &auth, const std::string &secdiscardable) {
+static std::string getStretching() {
+    char paramstr[PROPERTY_VALUE_MAX];
+
+    property_get(SCRYPT_PROP, paramstr, SCRYPT_DEFAULTS);
+    return std::string() + kStretchPrefix_scrypt + paramstr;
+}
+
+static bool stretchingNeedsSalt(const std::string &stretching) {
+    return stretching != kStretch_nopassword && stretching != kStretch_none;
+}
+
+static bool stretchSecret(const std::string &stretching, const std::string &secret,
+        const std::string &salt, std::string &stretched) {
+    if (stretching == kStretch_nopassword) {
+        if (!secret.empty()) {
+            LOG(ERROR) << "Password present but stretching is nopasswd";
+            // Continue anyway
+        }
+        stretched.clear();
+    } else if (stretching == kStretch_none) {
+        stretched = secret;
+    } else if (std::equal(kStretchPrefix_scrypt.begin(),
+            kStretchPrefix_scrypt.end(), stretching.begin())) {
+        int Nf, rf, pf;
+        if (!parse_scrypt_parameters(
+                stretching.substr(kStretchPrefix_scrypt.size()).c_str(), &Nf, &rf, &pf)) {
+            LOG(ERROR) << "Unable to parse scrypt params in stretching: " << stretching;
+            return false;
+        }
+        stretched.assign(STRETCHED_BYTES, '\0');
+        if (crypto_scrypt(
+                reinterpret_cast<const uint8_t *>(secret.data()), secret.size(),
+                reinterpret_cast<const uint8_t *>(salt.data()), salt.size(),
+                1 << Nf, 1 << rf, 1 << pf,
+                reinterpret_cast<uint8_t *>(&stretched[0]), stretched.size()) != 0) {
+            LOG(ERROR) << "scrypt failed with params: " << stretching;
+            return false;
+        }
+    } else {
+        LOG(ERROR) << "Unknown stretching type: " << stretching;
+        return false;
+    }
+    return true;
+}
+
+static bool buildParams(const KeyAuthentication &auth, const std::string &stretching,
+        const std::string &salt, const std::string &secdiscardable,
+        keymaster::AuthorizationSet &result) {
+    std::string stretched;
+    if (!stretchSecret(stretching, auth.secret, salt, stretched)) return false;
+    auto appId = hashSecdiscardable(secdiscardable) + stretched;
     keymaster::AuthorizationSetBuilder paramBuilder;
-    auto appId = hashSecdiscardable(secdiscardable) + auth.secret;
     addStringParam(paramBuilder, keymaster::TAG_APPLICATION_ID, appId);
     if (!auth.token.empty()) {
         addStringParam(paramBuilder, keymaster::TAG_AUTH_TOKEN, auth.token);
     }
-    return paramBuilder.build();
+    result = paramBuilder.build();
+    return true;
 }
 
 bool storeKey(const std::string &dir, const KeyAuthentication &auth, const std::string &key) {
@@ -189,17 +252,24 @@ bool storeKey(const std::string &dir, const KeyAuthentication &auth, const std::
         return false;
     }
     if (!writeStringToFile(secdiscardable, dir + "/" + kFn_secdiscardable)) return false;
-    // Future proofing for when we add key stretching per b/27056334
-    auto stretching = auth.secret.empty() ? "nopassword" : "none";
+    std::string stretching = auth.secret.empty() ? kStretch_nopassword : getStretching();
     if (!writeStringToFile(stretching, dir + "/" +  kFn_stretching)) return false;
-    auto extraParams = buildParams(auth, secdiscardable);
+    std::string salt;
+    if (stretchingNeedsSalt(stretching)) {
+        if (ReadRandomBytes(SALT_BYTES, salt) != OK) {
+            LOG(ERROR) << "Random read failed";
+            return false;
+        }
+        if (!writeStringToFile(salt, dir + "/" +  kFn_salt)) return false;
+    }
+    keymaster::AuthorizationSet extraParams;
+    if (!buildParams(auth, stretching, salt, secdiscardable, extraParams)) return false;
     Keymaster keymaster;
     if (!keymaster) return false;
     std::string kmKey;
     if (!generateKeymasterKey(keymaster, extraParams, kmKey)) return false;
     std::string encryptedKey;
-    if (!encryptWithKeymasterKey(
-        keymaster, kmKey, extraParams, key, encryptedKey)) return false;
+    if (!encryptWithKeymasterKey(keymaster, kmKey, extraParams, key, encryptedKey)) return false;
     if (!writeStringToFile(kmKey, dir + "/" + kFn_keymaster_key_blob)) return false;
     if (!writeStringToFile(encryptedKey, dir + "/" + kFn_encrypted_key)) return false;
     return true;
@@ -214,7 +284,14 @@ bool retrieveKey(const std::string &dir, const KeyAuthentication &auth, std::str
     }
     std::string secdiscardable;
     if (!readFileToString(dir + "/" + kFn_secdiscardable, secdiscardable)) return false;
-    auto extraParams = buildParams(auth, secdiscardable);
+    std::string stretching;
+    if (!readFileToString(dir + "/" + kFn_stretching, stretching)) return false;
+    std::string salt;
+    if (stretchingNeedsSalt(stretching)) {
+        if (!readFileToString(dir + "/" +  kFn_salt, salt)) return false;
+    }
+    keymaster::AuthorizationSet extraParams;
+    if (!buildParams(auth, stretching, salt, secdiscardable, extraParams)) return false;
     std::string kmKey;
     if (!readFileToString(dir + "/" + kFn_keymaster_key_blob, kmKey)) return false;
     std::string encryptedMessage;

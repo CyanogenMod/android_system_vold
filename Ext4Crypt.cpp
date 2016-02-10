@@ -42,13 +42,9 @@
 #include "cryptfs.h"
 #include "ext4_crypt.h"
 
-#define LOG_TAG "Ext4Crypt"
-
 #define EMULATED_USES_SELINUX 0
 
 #include <cutils/fs.h>
-#include <cutils/log.h>
-#include <cutils/klog.h>
 
 #include <android-base/file.h>
 #include <android-base/logging.h>

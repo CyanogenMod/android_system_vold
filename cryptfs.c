@@ -52,6 +52,7 @@
 #include "cutils/android_reboot.h"
 #include "hardware_legacy/power.h"
 #include <logwrap/logwrap.h>
+#include "ScryptParameters.h"
 #include "VolumeManager.h"
 #include "VoldUtil.h"
 #include "crypto_scrypt.h"
@@ -475,48 +476,17 @@ static void ioctl_init(struct dm_ioctl *io, size_t dataSize, const char *name, u
  * given device.
  */
 static void get_device_scrypt_params(struct crypt_mnt_ftr *ftr) {
-    const int default_params[] = SCRYPT_DEFAULTS;
-    int params[] = SCRYPT_DEFAULTS;
     char paramstr[PROPERTY_VALUE_MAX];
-    char *token;
-    char *saveptr;
-    int i;
+    int Nf, rf, pf;
 
-    property_get(SCRYPT_PROP, paramstr, "");
-    if (paramstr[0] != '\0') {
-        /*
-         * The token we're looking for should be three integers separated by
-         * colons (e.g., "12:8:1"). Scan the property to make sure it matches.
-         */
-        for (i = 0, token = strtok_r(paramstr, ":", &saveptr);
-                token != NULL && i < 3;
-                i++, token = strtok_r(NULL, ":", &saveptr)) {
-            char *endptr;
-            params[i] = strtol(token, &endptr, 10);
-
-            /*
-             * Check that there was a valid number and it's 8-bit. If not,
-             * break out and the end check will take the default values.
-             */
-            if ((*token == '\0') || (*endptr != '\0') || params[i] < 0 || params[i] > 255) {
-                break;
-            }
-        }
-
-        /*
-         * If there were not enough tokens or a token was malformed (not an
-         * integer), it will end up here and the default parameters can be
-         * taken.
-         */
-        if ((i != 3) || (token != NULL)) {
-            SLOGW("bad scrypt parameters '%s' should be like '12:8:1'; using defaults", paramstr);
-            memcpy(params, default_params, sizeof(params));
-        }
+    property_get(SCRYPT_PROP, paramstr, SCRYPT_DEFAULTS);
+    if (!parse_scrypt_parameters(paramstr, &Nf, &rf, &pf)) {
+        SLOGW("bad scrypt parameters '%s' should be like '12:8:1'; using defaults", paramstr);
+        parse_scrypt_parameters(SCRYPT_DEFAULTS, &Nf, &rf, &pf);
     }
-
-    ftr->N_factor = params[0];
-    ftr->r_factor = params[1];
-    ftr->p_factor = params[2];
+    ftr->N_factor = Nf;
+    ftr->r_factor = rf;
+    ftr->p_factor = pf;
 }
 
 static unsigned int get_fs_size(char *dev)

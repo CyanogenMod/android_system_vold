@@ -76,9 +76,6 @@
 #define CRYPT_MNT_MAGIC 0xD0B5B1C4
 #define PERSIST_DATA_MAGIC 0xE950CD44
 
-#define SCRYPT_PROP "ro.crypto.scrypt_params"
-#define SCRYPT_DEFAULTS { 15, 3, 1 }
-
 /* Key Derivation Function algorithms */
 #define KDF_PBKDF2 1
 #define KDF_SCRYPT 2
