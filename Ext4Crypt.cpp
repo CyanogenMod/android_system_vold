@@ -516,7 +516,10 @@ bool e4crypt_change_user_key(userid_t user_id, int serial,
     if (!parse_hex(token_hex, token)) return false;
     if (!parse_hex(old_secret_hex, old_secret)) return false;
     if (!parse_hex(new_secret_hex, new_secret)) return false;
-    auto auth = new_secret.empty()
+    auto old_auth = old_secret.empty()
+        ? kEmptyAuthentication
+        : android::vold::KeyAuthentication(token, old_secret);
+    auto new_auth = new_secret.empty()
         ? kEmptyAuthentication
         : android::vold::KeyAuthentication(token, new_secret);
     auto it = s_ce_keys.find(user_id);
@@ -526,8 +529,14 @@ bool e4crypt_change_user_key(userid_t user_id, int serial,
     }
     auto ce_key = it->second;
     auto ce_key_path = get_ce_key_path(user_id);
+    std::string trial_key;
+    if (!android::vold::retrieveKey(ce_key_path, old_auth, trial_key)) {
+        LOG(WARNING) << "change_user_key wasn't given enough info to reconstruct the key";
+    } else if (ce_key != trial_key) {
+        LOG(WARNING) << "Reconstructed key != stored key";
+    }
     android::vold::destroyKey(ce_key_path);
-    if (!store_key(ce_key_path, user_key_temp, auth, ce_key)) return false;
+    if (!store_key(ce_key_path, user_key_temp, new_auth, ce_key)) return false;
     return true;
 }
 
