@@ -109,6 +109,43 @@ inline int release_wake_lock(const char* id) { return 0; }
 inline int acquire_wake_lock(int lock, const char* id) { return 0; }
 #endif
 
+static void dump_crypt_mnt_ftr(const struct crypt_mnt_ftr *ftr) {
+    SLOGI("Dumping ftr\n");
+    SLOGI("\tmagic: %i\n", ftr->magic);
+    SLOGI("\tmajor: %i\n", ftr->major_version);
+    SLOGI("\tminor: %i\n", ftr->minor_version);
+    SLOGI("\tftr_size: 0x%x\n", ftr->ftr_size);
+    SLOGI("\tflags: 0x%x\n", ftr->flags);
+    SLOGI("\t\tCRYPT_MNT_KEY_UNENCRYPTED: 0x%x\n", ftr->flags & CRYPT_MNT_KEY_UNENCRYPTED);
+    SLOGI("\t\tCRYPT_ENCRYPTION_IN_PROGRESS: 0x%x\n", ftr->flags & CRYPT_ENCRYPTION_IN_PROGRESS);
+    SLOGI("\t\tCRYPT_INCONSISTENT_STATE: 0x%x\n", ftr->flags & CRYPT_INCONSISTENT_STATE);
+    SLOGI("\t\tCRYPT_DATA_CORRUPT: 0x%x\n", ftr->flags & CRYPT_DATA_CORRUPT);
+#ifdef CONFIG_HW_DISK_ENCRYPTION
+    SLOGI("\t\tCRYPT_ASCII_PASSWORD_UPDATED: 0x%x\n", ftr->flags & CRYPT_ASCII_PASSWORD_UPDATED);
+#endif
+    SLOGI("\tkeysize: 0x%x\n", ftr->keysize);
+    switch(ftr->crypt_type) {
+        case 0: SLOGI("\tcrypt_type: PASSWORD\n"); break;
+        case 1: SLOGI("\tcrypt_type: DEFAULT\n"); break;
+        case 2: SLOGI("\tcrypt_type: PATTERN\n"); break;
+        case 3: SLOGI("\tcrypt_type: PIN\n"); break;
+        default: SLOGI("\tcrypt_type: invalid %i\n", ftr->crypt_type); break;
+    }
+    SLOGI("\tfs_size: 0x%llx\n", ftr->fs_size);
+    SLOGI("\tfailed_cnt: %i\n", ftr->failed_decrypt_count);
+    SLOGI("\tcrypto_type_name: %s\n", ftr->crypto_type_name);
+    SLOGI("\tmaster_key: %s\n", ftr->master_key);
+    SLOGI("\tsalt: %s\n", ftr->salt);
+    SLOGI("\tper_data_o: 0x%llx\n", ftr->persist_data_offset[0]);
+    SLOGI("\tper_data_o: 0x%llx\n", ftr->persist_data_offset[1]);
+    SLOGI("\tkdf_type: %i\n", ftr->kdf_type);
+    SLOGI("\tn_fact: %i\n", ftr->N_factor);
+    SLOGI("\tr_fact: %i\n", ftr->r_factor);
+    SLOGI("\tp_fact: %i\n", ftr->p_factor);
+    SLOGI("\tenc_upto: 0x%llx\n", ftr->encrypted_upto);
+    SLOGI("\thash_1st: %p\n", (void *)(ftr->hash_first_block));
+}
+
 #ifdef CONFIG_HW_DISK_ENCRYPTION
 static int scrypt_keymaster(const char *passwd, const unsigned char *salt,
                             unsigned char *ikey, void *params);
@@ -158,10 +195,13 @@ static int verify_and_update_hw_fde_passwd(char *passwd,
     int passwd_updated = -1;
     int ascii_passwd_updated = (crypt_ftr->flags & CRYPT_ASCII_PASSWORD_UPDATED);
 
+    SLOGI("Before updating\n");
+    SLOGI("O#%s# N#%s# N#%s#\n", passwd, new_passwd, newpw);
+    dump_crypt_mnt_ftr(crypt_ftr);
     key_index = verify_hw_fde_passwd(passwd, crypt_ftr);
+    SLOGI("verify O#%s# N#%s# N#%s#\n", passwd, new_passwd, newpw);
     if (key_index < 0) {
         ++crypt_ftr->failed_decrypt_count;
-
         if (ascii_passwd_updated) {
             SLOGI("Ascii password was updated");
         } else {
@@ -179,6 +219,7 @@ static int verify_and_update_hw_fde_passwd(char *passwd,
                     goto out;
                 }
                 strlcpy(new_passwd, DEFAULT_HEX_PASSWORD, strlen(DEFAULT_HEX_PASSWORD) + 1);
+                SLOGI("CRYPT_TYPE_DEFAULT O#%s# N#%s# N#%s#\n", passwd, new_passwd, newpw);
             } else {
                 new_passwd = (char*)malloc(strlen(passwd) * 2 + 1);
                 if (new_passwd == NULL) {
@@ -187,9 +228,11 @@ static int verify_and_update_hw_fde_passwd(char *passwd,
                 }
                 convert_key_to_hex_ascii((const unsigned char*)passwd,
                                        strlen(passwd), new_passwd);
+                SLOGI("!CRYPT_TYPE_DEFAULT O#%s# N#%s# N#%s#\n", passwd, new_passwd, newpw);
             }
             key_index = set_hw_device_encryption_key((const char*)new_passwd,
                                        (char*) crypt_ftr->crypto_type_name);
+            SLOGI("key_index O#%s# N#%s# N#%s#\n", passwd, new_passwd, newpw);
             if (key_index >=0) {
                 crypt_ftr->failed_decrypt_count = 0;
                 SLOGI("Hex password verified...will try to update with Ascii value");
@@ -199,9 +242,11 @@ static int verify_and_update_hw_fde_passwd(char *passwd,
                                                 crypt_ftr->salt, crypt_ftr)) {
                     passwd_updated = update_hw_device_encryption_key(new_passwd,
                                      passwd, (char*)crypt_ftr->crypto_type_name);
+                    SLOGI("get_keymaster O#%s# N#%s# N#%s#\n", passwd, new_passwd, newpw);
                 } else {
                     passwd_updated = update_hw_device_encryption_key(new_passwd,
                                      (const char*)newpw, (char*)crypt_ftr->crypto_type_name);
+                    SLOGI("!get_keymaster O#%s# N#%s# N#%s#\n", passwd, new_passwd, newpw);
                 }
 
                 if (passwd_updated >= 0) {
@@ -221,6 +266,8 @@ static int verify_and_update_hw_fde_passwd(char *passwd,
     }
 out:
     // update footer before leaving
+    SLOGI("After updating\n");
+    dump_crypt_mnt_ftr(crypt_ftr);
     put_crypt_ftr_and_key(crypt_ftr);
     return key_index;
 }
@@ -940,9 +987,12 @@ static int get_crypt_ftr_and_key(struct crypt_mnt_ftr *crypt_ftr)
    * copy on disk before returning.
    */
   if (crypt_ftr->minor_version < CURRENT_MINOR_VERSION) {
+    SLOGI("Upgrading footer minor version from %i to %i\n", crypt_ftr->minor_version, CURRENT_MINOR_VERSION);
     upgrade_crypt_ftr(fd, crypt_ftr, starting_off);
   }
 
+  SLOGI("Got crypt_ftr\n");
+  dump_crypt_mnt_ftr(crypt_ftr);
   /* Success! */
   rc = 0;
 
