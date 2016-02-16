@@ -3504,6 +3504,10 @@ int cryptfs_changepw(int crypt_type, const char *currentpw, const char *newpw)
         return -1;
     }
 
+    previous_type = crypt_ftr.crypt_type;
+    if (previous_type == CRYPT_TYPE_DEFAULT)
+        currentpw = DEFAULT_PASSWORD;
+
 #ifdef CONFIG_HW_DISK_ENCRYPTION
     int rc1;
     unsigned char tmp_curpw[32] = {0};
@@ -3512,12 +3516,7 @@ int cryptfs_changepw(int crypt_type, const char *currentpw, const char *newpw)
                                       crypt_ftr.salt, &crypt_ftr);
 #endif
 
-
     crypt_ftr.crypt_type = crypt_type;
-
-    if (previous_type == CRYPT_TYPE_DEFAULT)
-        currentpw = DEFAULT_PASSWORD;
-    previous_type = crypt_type;
 
     rc = encrypt_master_key(crypt_type == CRYPT_TYPE_DEFAULT ? DEFAULT_PASSWORD
                                                         : newpw,
