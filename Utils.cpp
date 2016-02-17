@@ -576,6 +576,11 @@ std::string BuildDataMiscDePath(userid_t userId) {
     return StringPrintf("%s/misc_de/%u", BuildDataPath(nullptr).c_str(), userId);
 }
 
+// Keep in sync with installd (frameworks/native/cmds/installd/utils.h)
+std::string BuildDataProfilesDePath(userid_t userId) {
+    return StringPrintf("%s/misc/profiles/cur/%u", BuildDataPath(nullptr).c_str(), userId);
+}
+
 std::string BuildDataPath(const char* volumeUuid) {
     // TODO: unify with installd path generation logic
     if (volumeUuid == nullptr) {

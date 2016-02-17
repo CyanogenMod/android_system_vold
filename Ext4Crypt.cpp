@@ -600,10 +600,12 @@ bool e4crypt_prepare_user_storage(const char* volume_uuid, userid_t user_id,
         auto system_de_path = android::vold::BuildDataSystemDePath(user_id);
         auto misc_de_path = android::vold::BuildDataMiscDePath(user_id);
         auto user_de_path = android::vold::BuildDataUserDePath(volume_uuid, user_id);
+        auto profiles_de_path = android::vold::BuildDataProfilesDePath(user_id);
 
         if (!prepare_dir(system_de_path, 0770, AID_SYSTEM, AID_SYSTEM)) return false;
         if (!prepare_dir(misc_de_path, 01771, AID_SYSTEM, AID_MISC)) return false;
         if (!prepare_dir(user_de_path, 0771, AID_SYSTEM, AID_SYSTEM)) return false;
+        if (!prepare_dir(profiles_de_path, 0771, AID_SYSTEM, AID_SYSTEM)) return false;
 
         if (e4crypt_is_native()) {
             std::string de_raw_ref;
@@ -611,6 +613,8 @@ bool e4crypt_prepare_user_storage(const char* volume_uuid, userid_t user_id,
             if (!ensure_policy(de_raw_ref, system_de_path)) return false;
             if (!ensure_policy(de_raw_ref, misc_de_path)) return false;
             if (!ensure_policy(de_raw_ref, user_de_path)) return false;
+            // No need to set the policy for profiles_de_path. The parent directory (/data/misc)
+            // already has a DE_sys policy set.
         }
     }
 
