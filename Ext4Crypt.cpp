@@ -601,11 +601,15 @@ bool e4crypt_prepare_user_storage(const char* volume_uuid, userid_t user_id,
         auto misc_de_path = android::vold::BuildDataMiscDePath(user_id);
         auto user_de_path = android::vold::BuildDataUserDePath(volume_uuid, user_id);
         auto profiles_de_path = android::vold::BuildDataProfilesDePath(user_id);
+        auto foreign_dex_profiles_de_path =
+                android::vold::BuildDataProfilesForeignDexDePath(user_id);
+
 
         if (!prepare_dir(system_de_path, 0770, AID_SYSTEM, AID_SYSTEM)) return false;
         if (!prepare_dir(misc_de_path, 01771, AID_SYSTEM, AID_MISC)) return false;
         if (!prepare_dir(user_de_path, 0771, AID_SYSTEM, AID_SYSTEM)) return false;
         if (!prepare_dir(profiles_de_path, 0771, AID_SYSTEM, AID_SYSTEM)) return false;
+        if (!prepare_dir(foreign_dex_profiles_de_path, 0773, AID_SYSTEM, AID_SYSTEM)) return false;
 
         if (e4crypt_is_native()) {
             std::string de_raw_ref;
