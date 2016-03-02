@@ -58,11 +58,6 @@ static constexpr int FLAG_STORAGE_DE = 1 << 0;
 static constexpr int FLAG_STORAGE_CE = 1 << 1;
 
 namespace {
-    // Key length in bits
-    const int key_length = 128;
-    static_assert(key_length % 8 == 0,
-                  "Key length must be multiple of 8 bits");
-
     const std::string device_key_dir = std::string() + DATA_MNT_POINT + "/unencrypted";
     const std::string device_key_path = device_key_dir + "/key";
     const std::string device_key_temp = device_key_dir + "/temp";
@@ -87,8 +82,9 @@ namespace {
 
     // ext4enc:TODO Include structure from somewhere sensible
     // MUST be in sync with ext4_crypto.c in kernel
-    const int EXT4_MAX_KEY_SIZE = 64;
-    const int EXT4_ENCRYPTION_MODE_AES_256_XTS = 1;
+    constexpr int EXT4_ENCRYPTION_MODE_AES_256_XTS = 1;
+    constexpr int EXT4_AES_256_XTS_KEY_SIZE = 64;
+    constexpr int EXT4_MAX_KEY_SIZE = 64;
     struct ext4_encryption_key {
         uint32_t mode;
         char raw[EXT4_MAX_KEY_SIZE];
@@ -129,19 +125,19 @@ static std::string generate_key_ref(const char* key, int length)
     return std::string((char*)key_ref2, EXT4_KEY_DESCRIPTOR_SIZE);
 }
 
-static ext4_encryption_key fill_key(const std::string &key)
+static bool fill_key(const std::string& key, ext4_encryption_key& ext4_key)
 {
-    // ext4enc:TODO Currently raw key is required to be of length
-    // sizeof(ext4_key.raw) == EXT4_MAX_KEY_SIZE, so zero pad to
-    // this length. Change when kernel bug is fixed.
-    ext4_encryption_key ext4_key = {EXT4_ENCRYPTION_MODE_AES_256_XTS,
-                                    {0},
-                                    sizeof(ext4_key.raw)};
-    memset(ext4_key.raw, 0, sizeof(ext4_key.raw));
-    static_assert(key_length / 8 <= sizeof(ext4_key.raw),
+    if (key.size() != EXT4_AES_256_XTS_KEY_SIZE) {
+        LOG(ERROR) << "Wrong size key " << key.size();
+        return false;
+    }
+    static_assert(EXT4_AES_256_XTS_KEY_SIZE <= sizeof(ext4_key.raw),
                   "Key too long!");
-    memcpy(ext4_key.raw, &key[0], key.size());
-    return ext4_key;
+    ext4_key.mode = EXT4_ENCRYPTION_MODE_AES_256_XTS;
+    ext4_key.size = key.size();
+    memset(ext4_key.raw, 0, sizeof(ext4_key.raw));
+    memcpy(ext4_key.raw, key.data(), key.size());
+    return true;
 }
 
 static std::string keyname(const std::string &raw_ref)
@@ -164,11 +160,8 @@ static key_serial_t e4crypt_keyring()
 // Return raw key reference for use in policy
 static bool install_key(const std::string &key, std::string &raw_ref)
 {
-    if (key.size() != key_length/8) {
-        LOG(ERROR) << "Wrong size key " << key.size();
-        return false;
-    }
-    auto ext4_key = fill_key(key);
+    ext4_encryption_key ext4_key;
+    if (!fill_key(key, ext4_key)) return false;
     raw_ref = generate_key_ref(ext4_key.raw, ext4_key.size);
     auto ref = keyname(raw_ref);
     key_serial_t device_keyring = e4crypt_keyring();
@@ -216,7 +209,7 @@ static bool prepare_dir(const std::string &dir, mode_t mode, uid_t uid, gid_t gi
 }
 
 static bool random_key(std::string &key) {
-    if (android::vold::ReadRandomBytes(key_length / 8, key) != 0) {
+    if (android::vold::ReadRandomBytes(EXT4_AES_256_XTS_KEY_SIZE, key) != 0) {
         // TODO status_t plays badly with PLOG, fix it.
         LOG(ERROR) << "Random read failed";
         return false;
