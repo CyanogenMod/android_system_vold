@@ -35,6 +35,8 @@
 
 #include <cutils/properties.h>
 
+#include <hardware/hw_auth_token.h>
+
 #include <keymaster/authorization_set.h>
 
 extern "C" {
@@ -94,32 +96,54 @@ static std::string hashSecdiscardable(const std::string &secdiscardable) {
 }
 
 static bool generateKeymasterKey(Keymaster &keymaster,
-        const keymaster::AuthorizationSet &extraParams,
+        const KeyAuthentication &auth, const std::string &appId,
         std::string &key) {
-    auto params = keymaster::AuthorizationSetBuilder()
+    auto paramBuilder = keymaster::AuthorizationSetBuilder()
         .AesEncryptionKey(AES_KEY_BYTES * 8)
         .Authorization(keymaster::TAG_BLOCK_MODE, KM_MODE_GCM)
         .Authorization(keymaster::TAG_MIN_MAC_LENGTH, GCM_MAC_BYTES * 8)
-        .Authorization(keymaster::TAG_PADDING, KM_PAD_NONE)
-        .Authorization(keymaster::TAG_NO_AUTH_REQUIRED) // FIXME integrate with gatekeeper
-        .build();
-    params.push_back(extraParams);
-    return keymaster.generateKey(params, key);
+        .Authorization(keymaster::TAG_PADDING, KM_PAD_NONE);
+    addStringParam(paramBuilder, keymaster::TAG_APPLICATION_ID, appId);
+    if (auth.token.empty()) {
+        LOG(DEBUG) << "Creating key that doesn't need auth token";
+        paramBuilder.Authorization(keymaster::TAG_NO_AUTH_REQUIRED);
+    } else {
+        LOG(DEBUG) << "Auth token required for key";
+        if (auth.token.size() != sizeof(hw_auth_token_t)) {
+            LOG(ERROR) << "Auth token should be " << sizeof(hw_auth_token_t) << " bytes, was "
+                << auth.token.size() << " bytes";
+            return false;
+        }
+        const hw_auth_token_t *at = reinterpret_cast<const hw_auth_token_t *>(auth.token.data());
+        paramBuilder.Authorization(keymaster::TAG_USER_SECURE_ID, at->user_id);
+        paramBuilder.Authorization(keymaster::TAG_USER_AUTH_TYPE, HW_AUTH_PASSWORD);
+        paramBuilder.Authorization(keymaster::TAG_AUTH_TIMEOUT, 5);
+    }
+    return keymaster.generateKey(paramBuilder.build(), key);
+}
+
+static keymaster::AuthorizationSetBuilder beginParams(
+        const KeyAuthentication &auth, const std::string &appId) {
+    auto paramBuilder = keymaster::AuthorizationSetBuilder()
+        .Authorization(keymaster::TAG_BLOCK_MODE, KM_MODE_GCM)
+        .Authorization(keymaster::TAG_MAC_LENGTH, GCM_MAC_BYTES * 8)
+        .Authorization(keymaster::TAG_PADDING, KM_PAD_NONE);
+    addStringParam(paramBuilder, keymaster::TAG_APPLICATION_ID, appId);
+    if (!auth.token.empty()) {
+        LOG(DEBUG) << "Supplying auth token to Keymaster";
+        addStringParam(paramBuilder, keymaster::TAG_AUTH_TOKEN, auth.token);
+    }
+    return paramBuilder;
 }
 
 static bool encryptWithKeymasterKey(
         Keymaster &keymaster,
         const std::string &key,
-        const keymaster::AuthorizationSet &extraParams,
+        const KeyAuthentication &auth,
+        const std::string &appId,
         const std::string &message,
         std::string &ciphertext) {
-    // FIXME fix repetition
-    auto params = keymaster::AuthorizationSetBuilder()
-        .Authorization(keymaster::TAG_BLOCK_MODE, KM_MODE_GCM)
-        .Authorization(keymaster::TAG_MAC_LENGTH, GCM_MAC_BYTES * 8)
-        .Authorization(keymaster::TAG_PADDING, KM_PAD_NONE)
-        .build();
-    params.push_back(extraParams);
+    auto params = beginParams(auth, appId).build();
     keymaster::AuthorizationSet outParams;
     auto opHandle = keymaster.begin(KM_PURPOSE_ENCRYPT, key, params, outParams);
     if (!opHandle) return false;
@@ -142,20 +166,15 @@ static bool encryptWithKeymasterKey(
 }
 
 static bool decryptWithKeymasterKey(
-        Keymaster &keymaster, const std::string &key,
-        const keymaster::AuthorizationSet &extraParams,
+        Keymaster &keymaster,
+        const std::string &key,
+        const KeyAuthentication &auth,
+        const std::string &appId,
         const std::string &ciphertext,
         std::string &message) {
     auto nonce = ciphertext.substr(0, GCM_NONCE_BYTES);
     auto bodyAndMac = ciphertext.substr(GCM_NONCE_BYTES);
-    // FIXME fix repetition
-    auto params = addStringParam(keymaster::AuthorizationSetBuilder(), keymaster::TAG_NONCE, nonce)
-        .Authorization(keymaster::TAG_BLOCK_MODE, KM_MODE_GCM)
-        .Authorization(keymaster::TAG_MAC_LENGTH, GCM_MAC_BYTES * 8)
-        .Authorization(keymaster::TAG_PADDING, KM_PAD_NONE)
-        .build();
-    params.push_back(extraParams);
-
+    auto params = addStringParam(beginParams(auth, appId), keymaster::TAG_NONCE, nonce).build();
     auto opHandle = keymaster.begin(KM_PURPOSE_DECRYPT, key, params);
     if (!opHandle) return false;
     if (!opHandle.updateCompletely(bodyAndMac, message)) return false;
@@ -224,18 +243,12 @@ static bool stretchSecret(const std::string &stretching, const std::string &secr
     return true;
 }
 
-static bool buildParams(const KeyAuthentication &auth, const std::string &stretching,
+static bool generateAppId(const KeyAuthentication &auth, const std::string &stretching,
         const std::string &salt, const std::string &secdiscardable,
-        keymaster::AuthorizationSet &result) {
+        std::string& result) {
     std::string stretched;
     if (!stretchSecret(stretching, auth.secret, salt, stretched)) return false;
-    auto appId = hashSecdiscardable(secdiscardable) + stretched;
-    keymaster::AuthorizationSetBuilder paramBuilder;
-    addStringParam(paramBuilder, keymaster::TAG_APPLICATION_ID, appId);
-    if (!auth.token.empty()) {
-        addStringParam(paramBuilder, keymaster::TAG_AUTH_TOKEN, auth.token);
-    }
-    result = paramBuilder.build();
+    result = hashSecdiscardable(secdiscardable) + stretched;
     return true;
 }
 
@@ -262,15 +275,15 @@ bool storeKey(const std::string &dir, const KeyAuthentication &auth, const std::
         }
         if (!writeStringToFile(salt, dir + "/" +  kFn_salt)) return false;
     }
-    keymaster::AuthorizationSet extraParams;
-    if (!buildParams(auth, stretching, salt, secdiscardable, extraParams)) return false;
+    std::string appId;
+    if (!generateAppId(auth, stretching, salt, secdiscardable, appId)) return false;
     Keymaster keymaster;
     if (!keymaster) return false;
     std::string kmKey;
-    if (!generateKeymasterKey(keymaster, extraParams, kmKey)) return false;
-    std::string encryptedKey;
-    if (!encryptWithKeymasterKey(keymaster, kmKey, extraParams, key, encryptedKey)) return false;
+    if (!generateKeymasterKey(keymaster, auth, appId, kmKey)) return false;
     if (!writeStringToFile(kmKey, dir + "/" + kFn_keymaster_key_blob)) return false;
+    std::string encryptedKey;
+    if (!encryptWithKeymasterKey(keymaster, kmKey, auth, appId, key, encryptedKey)) return false;
     if (!writeStringToFile(encryptedKey, dir + "/" + kFn_encrypted_key)) return false;
     return true;
 }
@@ -290,15 +303,15 @@ bool retrieveKey(const std::string &dir, const KeyAuthentication &auth, std::str
     if (stretchingNeedsSalt(stretching)) {
         if (!readFileToString(dir + "/" +  kFn_salt, salt)) return false;
     }
-    keymaster::AuthorizationSet extraParams;
-    if (!buildParams(auth, stretching, salt, secdiscardable, extraParams)) return false;
+    std::string appId;
+    if (!generateAppId(auth, stretching, salt, secdiscardable, appId)) return false;
     std::string kmKey;
     if (!readFileToString(dir + "/" + kFn_keymaster_key_blob, kmKey)) return false;
     std::string encryptedMessage;
     if (!readFileToString(dir + "/" + kFn_encrypted_key, encryptedMessage)) return false;
     Keymaster keymaster;
     if (!keymaster) return false;
-    return decryptWithKeymasterKey(keymaster, kmKey, extraParams, encryptedMessage, key);
+    return decryptWithKeymasterKey(keymaster, kmKey, auth, appId, encryptedMessage, key);
 }
 
 static bool deleteKey(const std::string &dir) {
