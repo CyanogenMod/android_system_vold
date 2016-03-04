@@ -106,6 +106,7 @@ bool Keymaster::generateKey(
         return false;
     }
     key.assign(reinterpret_cast<const char *>(keyBlob.key_material), keyBlob.key_material_size);
+    free(const_cast<uint8_t *>(keyBlob.key_material));
     return true;
 }
 

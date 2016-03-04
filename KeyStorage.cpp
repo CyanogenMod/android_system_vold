@@ -194,7 +194,7 @@ static bool stretchSecret(const std::string &stretching, const std::string &secr
         const std::string &salt, std::string &stretched) {
     if (stretching == kStretch_nopassword) {
         if (!secret.empty()) {
-            LOG(ERROR) << "Password present but stretching is nopasswd";
+            LOG(WARNING) << "Password present but stretching is nopassword";
             // Continue anyway
         }
         stretched.clear();

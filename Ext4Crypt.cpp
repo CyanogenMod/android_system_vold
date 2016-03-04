@@ -122,6 +122,8 @@ static std::string generate_key_ref(const char* key, int length)
     unsigned char key_ref2[SHA512_DIGEST_LENGTH];
     SHA512_Final(key_ref2, &c);
 
+    static_assert(EXT4_KEY_DESCRIPTOR_SIZE <= SHA512_DIGEST_LENGTH,
+        "Hash too short for descriptor");
     return std::string((char*)key_ref2, EXT4_KEY_DESCRIPTOR_SIZE);
 }
 
@@ -144,16 +146,21 @@ static std::string keyname(const std::string &raw_ref)
 {
     std::ostringstream o;
     o << "ext4:";
-    for (auto i = raw_ref.begin(); i != raw_ref.end(); ++i) {
-        o << std::hex << std::setw(2) << std::setfill('0') << (int)*i;
+    for (auto i: raw_ref) {
+        o << std::hex << std::setw(2) << std::setfill('0') << (int)i;
     }
     return o.str();
 }
 
 // Get the keyring we store all keys in
-static key_serial_t e4crypt_keyring()
+static bool e4crypt_keyring(key_serial_t& device_keyring)
 {
-    return keyctl_search(KEY_SPEC_SESSION_KEYRING, "keyring", "e4crypt", 0);
+    device_keyring = keyctl_search(KEY_SPEC_SESSION_KEYRING, "keyring", "e4crypt", 0);
+    if (device_keyring == -1) {
+        PLOG(ERROR) << "Unable to find device keyring";
+        return false;
+    }
+    return true;
 }
 
 // Install password into global keyring
@@ -164,7 +171,8 @@ static bool install_key(const std::string &key, std::string &raw_ref)
     if (!fill_key(key, ext4_key)) return false;
     raw_ref = generate_key_ref(ext4_key.raw, ext4_key.size);
     auto ref = keyname(raw_ref);
-    key_serial_t device_keyring = e4crypt_keyring();
+    key_serial_t device_keyring;
+    if (!e4crypt_keyring(device_keyring)) return false;
     key_serial_t key_id = add_key("logon", ref.c_str(),
                                   (void*)&ext4_key, sizeof(ext4_key),
                                   device_keyring);
@@ -172,7 +180,7 @@ static bool install_key(const std::string &key, std::string &raw_ref)
         PLOG(ERROR) << "Failed to insert key into keyring " << device_keyring;
         return false;
     }
-    LOG(INFO) << "Added key " << key_id << " (" << ref << ") to keyring "
+    LOG(DEBUG) << "Added key " << key_id << " (" << ref << ") to keyring "
         << device_keyring << " in process " << getpid();
     return true;
 }
@@ -230,7 +238,7 @@ static bool store_key(const std::string &key_path, const std::string &tmp_path,
         return false;
     }
     if (path_exists(tmp_path)) {
-        android::vold::destroyKey(tmp_path);
+        android::vold::destroyKey(tmp_path); // May be partially created so ignore errors
     }
     if (!android::vold::storeKey(tmp_path, auth, key)) return false;
     if (rename(tmp_path.c_str(), key_path.c_str()) != 0) {
@@ -377,10 +385,10 @@ bool e4crypt_init_user0() {
         auto ce_path = get_ce_key_path(0);
         if (!path_exists(de_path) || !path_exists(ce_path)) {
             if (path_exists(de_path)) {
-                android::vold::destroyKey(de_path); // Ignore failure
+                android::vold::destroyKey(de_path); // May be partially created so ignore errors
             }
             if (path_exists(ce_path)) {
-                android::vold::destroyKey(ce_path); // Ignore failure
+                android::vold::destroyKey(ce_path); // May be partially created so ignore errors
             }
             if (!create_and_install_user_keys(0, false)) return false;
         }
@@ -420,13 +428,14 @@ bool e4crypt_vold_create_user_key(userid_t user_id, int serial, bool ephemeral) 
     if (!create_and_install_user_keys(user_id, ephemeral)) {
         return false;
     }
-    // TODO: create second key for user_de data
     return true;
 }
 
 static bool evict_key(const std::string &raw_ref) {
     auto ref = keyname(raw_ref);
-    auto key_serial = keyctl_search(e4crypt_keyring(), "logon", ref.c_str(), 0);
+    key_serial_t device_keyring;
+    if (!e4crypt_keyring(device_keyring)) return false;
+    auto key_serial = keyctl_search(device_keyring, "logon", ref.c_str(), 0);
     if (keyctl_revoke(key_serial) != 0) {
         PLOG(ERROR) << "Failed to revoke key with serial " << key_serial << " ref " << ref;
         return false;
