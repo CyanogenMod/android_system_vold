@@ -27,8 +27,8 @@ namespace vold {
 // If "secret" is nonempty, it is appended to the application-specific
 // binary needed to unlock.
 class KeyAuthentication {
-public:
-    KeyAuthentication(std::string t, std::string s): token {t}, secret {s} {};
+  public:
+    KeyAuthentication(std::string t, std::string s) : token{t}, secret{s} {};
     const std::string token;
     const std::string secret;
 };
@@ -39,13 +39,13 @@ extern const KeyAuthentication kEmptyAuthentication;
 // in such a way that it can only be retrieved via Keymaster and
 // can be securely deleted.
 // It's safe to move/rename the directory after creation.
-bool storeKey(const std::string &dir, const KeyAuthentication &auth, const std::string &key);
+bool storeKey(const std::string& dir, const KeyAuthentication& auth, const std::string& key);
 
 // Retrieve the key from the named directory.
-bool retrieveKey(const std::string &dir, const KeyAuthentication &auth, std::string *key);
+bool retrieveKey(const std::string& dir, const KeyAuthentication& auth, std::string* key);
 
 // Securely destroy the key stored in the named directory and delete the directory.
-bool destroyKey(const std::string &dir);
+bool destroyKey(const std::string& dir);
 
 }  // namespace vold
 }  // namespace android

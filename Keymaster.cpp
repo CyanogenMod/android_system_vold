@@ -21,25 +21,23 @@
 namespace android {
 namespace vold {
 
-bool KeymasterOperation::updateCompletely(
-        const std::string &input,
-        std::string *output) {
+bool KeymasterOperation::updateCompletely(const std::string& input, std::string* output) {
     output->clear();
     auto it = input.begin();
     while (it != input.end()) {
         size_t toRead = static_cast<size_t>(input.end() - it);
-        keymaster_blob_t inputBlob {reinterpret_cast<const uint8_t *>(&*it),  toRead};
+        keymaster_blob_t inputBlob{reinterpret_cast<const uint8_t*>(&*it), toRead};
         keymaster_blob_t outputBlob;
         size_t inputConsumed;
-        auto error = mDevice->update(mDevice, mOpHandle,
-            nullptr, &inputBlob, &inputConsumed, nullptr, &outputBlob);
+        auto error = mDevice->update(mDevice, mOpHandle, nullptr, &inputBlob, &inputConsumed,
+                                     nullptr, &outputBlob);
         if (error != KM_ERROR_OK) {
             LOG(ERROR) << "update failed, code " << error;
             mDevice = nullptr;
             return false;
         }
-        output->append(reinterpret_cast<const char *>(outputBlob.data), outputBlob.data_length);
-        free(const_cast<uint8_t *>(outputBlob.data));
+        output->append(reinterpret_cast<const char*>(outputBlob.data), outputBlob.data_length);
+        free(const_cast<uint8_t*>(outputBlob.data));
         if (inputConsumed > toRead) {
             LOG(ERROR) << "update reported too much input consumed";
             mDevice = nullptr;
@@ -51,8 +49,7 @@ bool KeymasterOperation::updateCompletely(
 }
 
 bool KeymasterOperation::finish() {
-    auto error = mDevice->finish(mDevice, mOpHandle,
-        nullptr, nullptr, nullptr, nullptr);
+    auto error = mDevice->finish(mDevice, mOpHandle, nullptr, nullptr, nullptr, nullptr);
     mDevice = nullptr;
     if (error != KM_ERROR_OK) {
         LOG(ERROR) << "finish failed, code " << error;
@@ -61,23 +58,22 @@ bool KeymasterOperation::finish() {
     return true;
 }
 
-bool KeymasterOperation::finishWithOutput(std::string *output) {
+bool KeymasterOperation::finishWithOutput(std::string* output) {
     keymaster_blob_t outputBlob;
-    auto error = mDevice->finish(mDevice, mOpHandle,
-        nullptr, nullptr, nullptr, &outputBlob);
+    auto error = mDevice->finish(mDevice, mOpHandle, nullptr, nullptr, nullptr, &outputBlob);
     mDevice = nullptr;
     if (error != KM_ERROR_OK) {
         LOG(ERROR) << "finish failed, code " << error;
         return false;
     }
-    output->assign(reinterpret_cast<const char *>(outputBlob.data), outputBlob.data_length);
-    free(const_cast<uint8_t *>(outputBlob.data));
+    output->assign(reinterpret_cast<const char*>(outputBlob.data), outputBlob.data_length);
+    free(const_cast<uint8_t*>(outputBlob.data));
     return true;
 }
 
 Keymaster::Keymaster() {
     mDevice = nullptr;
-    const hw_module_t *module;
+    const hw_module_t* module;
     int ret = hw_get_module_by_class(KEYSTORE_HARDWARE_MODULE_ID, NULL, &module);
     if (ret != 0) {
         LOG(ERROR) << "hw_get_module_by_class returned " << ret;
@@ -96,23 +92,21 @@ Keymaster::Keymaster() {
     }
 }
 
-bool Keymaster::generateKey(
-        const keymaster::AuthorizationSet &inParams,
-        std::string *key) {
+bool Keymaster::generateKey(const keymaster::AuthorizationSet& inParams, std::string* key) {
     keymaster_key_blob_t keyBlob;
     auto error = mDevice->generate_key(mDevice, &inParams, &keyBlob, nullptr);
     if (error != KM_ERROR_OK) {
         LOG(ERROR) << "generate_key failed, code " << error;
         return false;
     }
-    key->assign(reinterpret_cast<const char *>(keyBlob.key_material), keyBlob.key_material_size);
-    free(const_cast<uint8_t *>(keyBlob.key_material));
+    key->assign(reinterpret_cast<const char*>(keyBlob.key_material), keyBlob.key_material_size);
+    free(const_cast<uint8_t*>(keyBlob.key_material));
     return true;
 }
 
-bool Keymaster::deleteKey(const std::string &key) {
+bool Keymaster::deleteKey(const std::string& key) {
     if (mDevice->delete_key == nullptr) return true;
-    keymaster_key_blob_t keyBlob { reinterpret_cast<const uint8_t *>(key.data()), key.size() };
+    keymaster_key_blob_t keyBlob{reinterpret_cast<const uint8_t*>(key.data()), key.size()};
     auto error = mDevice->delete_key(mDevice, &keyBlob);
     if (error != KM_ERROR_OK) {
         LOG(ERROR) << "delete_key failed, code " << error;
@@ -121,16 +115,13 @@ bool Keymaster::deleteKey(const std::string &key) {
     return true;
 }
 
-KeymasterOperation Keymaster::begin(
-        keymaster_purpose_t purpose,
-        const std::string &key,
-        const keymaster::AuthorizationSet &inParams,
-        keymaster::AuthorizationSet *outParams) {
-    keymaster_key_blob_t keyBlob { reinterpret_cast<const uint8_t *>(key.data()), key.size() };
+KeymasterOperation Keymaster::begin(keymaster_purpose_t purpose, const std::string& key,
+                                    const keymaster::AuthorizationSet& inParams,
+                                    keymaster::AuthorizationSet* outParams) {
+    keymaster_key_blob_t keyBlob{reinterpret_cast<const uint8_t*>(key.data()), key.size()};
     keymaster_operation_handle_t mOpHandle;
     keymaster_key_param_set_t outParams_set;
-    auto error = mDevice->begin(mDevice, purpose,
-        &keyBlob, &inParams, &outParams_set, &mOpHandle);
+    auto error = mDevice->begin(mDevice, purpose, &keyBlob, &inParams, &outParams_set, &mOpHandle);
     if (error != KM_ERROR_OK) {
         LOG(ERROR) << "begin failed, code " << error;
         return KeymasterOperation(nullptr, mOpHandle);
@@ -141,14 +132,11 @@ KeymasterOperation Keymaster::begin(
     return KeymasterOperation(mDevice, mOpHandle);
 }
 
-KeymasterOperation Keymaster::begin(
-        keymaster_purpose_t purpose,
-        const std::string &key,
-        const keymaster::AuthorizationSet &inParams) {
-    keymaster_key_blob_t keyBlob { reinterpret_cast<const uint8_t *>(key.data()), key.size() };
+KeymasterOperation Keymaster::begin(keymaster_purpose_t purpose, const std::string& key,
+                                    const keymaster::AuthorizationSet& inParams) {
+    keymaster_key_blob_t keyBlob{reinterpret_cast<const uint8_t*>(key.data()), key.size()};
     keymaster_operation_handle_t mOpHandle;
-    auto error = mDevice->begin(mDevice, purpose,
-        &keyBlob, &inParams, nullptr, &mOpHandle);
+    auto error = mDevice->begin(mDevice, purpose, &keyBlob, &inParams, nullptr, &mOpHandle);
     if (error != KM_ERROR_OK) {
         LOG(ERROR) << "begin failed, code " << error;
         return KeymasterOperation(nullptr, mOpHandle);

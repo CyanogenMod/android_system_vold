@@ -38,28 +38,31 @@ using namespace keymaster;
 // in the destructor if it is unfinished. Methods log failures
 // to LOG(ERROR).
 class KeymasterOperation {
-public:
-    ~KeymasterOperation() { if (mDevice) mDevice->abort(mDevice, mOpHandle); }
+  public:
+    ~KeymasterOperation() {
+        if (mDevice) mDevice->abort(mDevice, mOpHandle);
+    }
     // Is this instance valid? This is false if creation fails, and becomes
     // false on finish or if an update fails.
-    explicit operator bool() {return mDevice != nullptr;}
+    explicit operator bool() { return mDevice != nullptr; }
     // Call "update" repeatedly until all of the input is consumed, and
     // concatenate the output. Return true on success.
-    bool updateCompletely(const std::string &input, std::string *output);
+    bool updateCompletely(const std::string& input, std::string* output);
     // Finish; pass nullptr for the "output" param.
     bool finish();
     // Finish and write the output to this string.
-    bool finishWithOutput(std::string *output);
+    bool finishWithOutput(std::string* output);
     // Move constructor
     KeymasterOperation(KeymasterOperation&& rhs) {
         mOpHandle = rhs.mOpHandle;
         mDevice = rhs.mDevice;
         rhs.mDevice = nullptr;
     }
-private:
-    KeymasterOperation(keymaster1_device_t *d, keymaster_operation_handle_t h):
-        mDevice {d}, mOpHandle {h} {}
-    keymaster1_device_t *mDevice;
+
+  private:
+    KeymasterOperation(keymaster1_device_t* d, keymaster_operation_handle_t h)
+        : mDevice{d}, mOpHandle{h} {}
+    keymaster1_device_t* mDevice;
     keymaster_operation_handle_t mOpHandle;
     DISALLOW_COPY_AND_ASSIGN(KeymasterOperation);
     friend class Keymaster;
@@ -68,40 +71,39 @@ private:
 // Wrapper for a keymaster1_device_t representing an open connection
 // to the keymaster, which is closed in the destructor.
 class Keymaster {
-public:
+  public:
     Keymaster();
-    ~Keymaster() { if (mDevice) keymaster1_close(mDevice); }
+    ~Keymaster() {
+        if (mDevice) keymaster1_close(mDevice);
+    }
     // false if we failed to open the keymaster device.
-    explicit operator bool() {return mDevice != nullptr;}
+    explicit operator bool() { return mDevice != nullptr; }
     // Generate a key in the keymaster from the given params.
-    bool generateKey(const AuthorizationSet &inParams, std::string *key);
+    bool generateKey(const AuthorizationSet& inParams, std::string* key);
     // If the keymaster supports it, permanently delete a key.
-    bool deleteKey(const std::string &key);
+    bool deleteKey(const std::string& key);
     // Begin a new cryptographic operation, collecting output parameters.
-    KeymasterOperation begin(
-            keymaster_purpose_t purpose,
-            const std::string &key,
-            const AuthorizationSet &inParams,
-            AuthorizationSet *outParams);
+    KeymasterOperation begin(keymaster_purpose_t purpose, const std::string& key,
+                             const AuthorizationSet& inParams, AuthorizationSet* outParams);
     // Begin a new cryptographic operation; don't collect output parameters.
-    KeymasterOperation begin(
-            keymaster_purpose_t purpose,
-            const std::string &key,
-            const AuthorizationSet &inParams);
-private:
-    keymaster1_device_t *mDevice;
+    KeymasterOperation begin(keymaster_purpose_t purpose, const std::string& key,
+                             const AuthorizationSet& inParams);
+
+  private:
+    keymaster1_device_t* mDevice;
     DISALLOW_COPY_AND_ASSIGN(Keymaster);
 };
 
 template <keymaster_tag_t Tag>
-inline AuthorizationSetBuilder& addStringParam(AuthorizationSetBuilder &&params,
-        TypedTag<KM_BYTES, Tag> tag, const std::string& val) {
+inline AuthorizationSetBuilder& addStringParam(AuthorizationSetBuilder&& params,
+                                               TypedTag<KM_BYTES, Tag> tag,
+                                               const std::string& val) {
     return params.Authorization(tag, val.data(), val.size());
 }
 
 template <keymaster_tag_t Tag>
-inline void addStringParam(AuthorizationSetBuilder *params,
-        TypedTag<KM_BYTES, Tag> tag, const std::string& val) {
+inline void addStringParam(AuthorizationSetBuilder* params, TypedTag<KM_BYTES, Tag> tag,
+                           const std::string& val) {
     params->Authorization(tag, val.data(), val.size());
 }
 
