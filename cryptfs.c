@@ -1154,6 +1154,7 @@ static int create_crypto_blk_dev(struct crypt_mnt_ftr *crypt_ftr,
   struct dm_ioctl *io;
   unsigned int minor;
   int fd=0;
+  int err;
   int retval = -1;
   int version[3];
   char *extra_params;
@@ -1167,8 +1168,9 @@ static int create_crypto_blk_dev(struct crypt_mnt_ftr *crypt_ftr,
   io = (struct dm_ioctl *) buffer;
 
   ioctl_init(io, DM_CRYPT_BUF_SIZE, name, 0);
-  if (ioctl(fd, DM_DEV_CREATE, io)) {
-    SLOGE("Cannot create dm-crypt device\n");
+  err = ioctl(fd, DM_DEV_CREATE, io);
+  if (err) {
+    SLOGE("Cannot create dm-crypt device %s: %s\n", name, strerror(errno));
     goto errout;
   }
 
