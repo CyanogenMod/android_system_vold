@@ -97,13 +97,13 @@ static std::string hashSecdiscardable(const std::string &secdiscardable) {
 
 static bool generateKeymasterKey(Keymaster &keymaster,
         const KeyAuthentication &auth, const std::string &appId,
-        std::string &key) {
+        std::string *key) {
     auto paramBuilder = keymaster::AuthorizationSetBuilder()
         .AesEncryptionKey(AES_KEY_BYTES * 8)
         .Authorization(keymaster::TAG_BLOCK_MODE, KM_MODE_GCM)
         .Authorization(keymaster::TAG_MIN_MAC_LENGTH, GCM_MAC_BYTES * 8)
         .Authorization(keymaster::TAG_PADDING, KM_PAD_NONE);
-    addStringParam(paramBuilder, keymaster::TAG_APPLICATION_ID, appId);
+    addStringParam(&paramBuilder, keymaster::TAG_APPLICATION_ID, appId);
     if (auth.token.empty()) {
         LOG(DEBUG) << "Creating key that doesn't need auth token";
         paramBuilder.Authorization(keymaster::TAG_NO_AUTH_REQUIRED);
@@ -128,10 +128,10 @@ static keymaster::AuthorizationSetBuilder beginParams(
         .Authorization(keymaster::TAG_BLOCK_MODE, KM_MODE_GCM)
         .Authorization(keymaster::TAG_MAC_LENGTH, GCM_MAC_BYTES * 8)
         .Authorization(keymaster::TAG_PADDING, KM_PAD_NONE);
-    addStringParam(paramBuilder, keymaster::TAG_APPLICATION_ID, appId);
+    addStringParam(&paramBuilder, keymaster::TAG_APPLICATION_ID, appId);
     if (!auth.token.empty()) {
         LOG(DEBUG) << "Supplying auth token to Keymaster";
-        addStringParam(paramBuilder, keymaster::TAG_AUTH_TOKEN, auth.token);
+        addStringParam(&paramBuilder, keymaster::TAG_AUTH_TOKEN, auth.token);
     }
     return paramBuilder;
 }
@@ -142,10 +142,10 @@ static bool encryptWithKeymasterKey(
         const KeyAuthentication &auth,
         const std::string &appId,
         const std::string &message,
-        std::string &ciphertext) {
+        std::string *ciphertext) {
     auto params = beginParams(auth, appId).build();
     keymaster::AuthorizationSet outParams;
-    auto opHandle = keymaster.begin(KM_PURPOSE_ENCRYPT, key, params, outParams);
+    auto opHandle = keymaster.begin(KM_PURPOSE_ENCRYPT, key, params, &outParams);
     if (!opHandle) return false;
     keymaster_blob_t nonceBlob;
     if (!outParams.GetTagValue(keymaster::TAG_NONCE, &nonceBlob)) {
@@ -156,12 +156,12 @@ static bool encryptWithKeymasterKey(
     std::string nonce(reinterpret_cast<const char *>(nonceBlob.data), nonceBlob.data_length);
     if (!checkSize("nonce", nonce.size(), GCM_NONCE_BYTES)) return false;
     std::string body;
-    if (!opHandle.updateCompletely(message, body)) return false;
+    if (!opHandle.updateCompletely(message, &body)) return false;
 
     std::string mac;
-    if (!opHandle.finishWithOutput(mac)) return false;
+    if (!opHandle.finishWithOutput(&mac)) return false;
     if (!checkSize("mac", mac.size(), GCM_MAC_BYTES)) return false;
-    ciphertext = nonce + body + mac;
+    *ciphertext = nonce + body + mac;
     return true;
 }
 
@@ -171,7 +171,7 @@ static bool decryptWithKeymasterKey(
         const KeyAuthentication &auth,
         const std::string &appId,
         const std::string &ciphertext,
-        std::string &message) {
+        std::string *message) {
     auto nonce = ciphertext.substr(0, GCM_NONCE_BYTES);
     auto bodyAndMac = ciphertext.substr(GCM_NONCE_BYTES);
     auto params = addStringParam(beginParams(auth, appId), keymaster::TAG_NONCE, nonce).build();
@@ -182,8 +182,8 @@ static bool decryptWithKeymasterKey(
     return true;
 }
 
-static bool readFileToString(const std::string &filename, std::string &result) {
-    if (!android::base::ReadFileToString(filename, &result)) {
+static bool readFileToString(const std::string &filename, std::string *result) {
+    if (!android::base::ReadFileToString(filename, result)) {
          PLOG(ERROR) << "Failed to read from " << filename;
          return false;
     }
@@ -210,15 +210,15 @@ static bool stretchingNeedsSalt(const std::string &stretching) {
 }
 
 static bool stretchSecret(const std::string &stretching, const std::string &secret,
-        const std::string &salt, std::string &stretched) {
+        const std::string &salt, std::string *stretched) {
     if (stretching == kStretch_nopassword) {
         if (!secret.empty()) {
             LOG(WARNING) << "Password present but stretching is nopassword";
             // Continue anyway
         }
-        stretched.clear();
+        stretched->clear();
     } else if (stretching == kStretch_none) {
-        stretched = secret;
+        *stretched = secret;
     } else if (std::equal(kStretchPrefix_scrypt.begin(),
             kStretchPrefix_scrypt.end(), stretching.begin())) {
         int Nf, rf, pf;
@@ -227,12 +227,12 @@ static bool stretchSecret(const std::string &stretching, const std::string &secr
             LOG(ERROR) << "Unable to parse scrypt params in stretching: " << stretching;
             return false;
         }
-        stretched.assign(STRETCHED_BYTES, '\0');
+        stretched->assign(STRETCHED_BYTES, '\0');
         if (crypto_scrypt(
                 reinterpret_cast<const uint8_t *>(secret.data()), secret.size(),
                 reinterpret_cast<const uint8_t *>(salt.data()), salt.size(),
                 1 << Nf, 1 << rf, 1 << pf,
-                reinterpret_cast<uint8_t *>(&stretched[0]), stretched.size()) != 0) {
+                reinterpret_cast<uint8_t *>(&(*stretched)[0]), stretched->size()) != 0) {
             LOG(ERROR) << "scrypt failed with params: " << stretching;
             return false;
         }
@@ -245,10 +245,10 @@ static bool stretchSecret(const std::string &stretching, const std::string &secr
 
 static bool generateAppId(const KeyAuthentication &auth, const std::string &stretching,
         const std::string &salt, const std::string &secdiscardable,
-        std::string& result) {
+        std::string* appId) {
     std::string stretched;
-    if (!stretchSecret(stretching, auth.secret, salt, stretched)) return false;
-    result = hashSecdiscardable(secdiscardable) + stretched;
+    if (!stretchSecret(stretching, auth.secret, salt, &stretched)) return false;
+    *appId = hashSecdiscardable(secdiscardable) + stretched;
     return true;
 }
 
@@ -276,39 +276,39 @@ bool storeKey(const std::string &dir, const KeyAuthentication &auth, const std::
         if (!writeStringToFile(salt, dir + "/" +  kFn_salt)) return false;
     }
     std::string appId;
-    if (!generateAppId(auth, stretching, salt, secdiscardable, appId)) return false;
+    if (!generateAppId(auth, stretching, salt, secdiscardable, &appId)) return false;
     Keymaster keymaster;
     if (!keymaster) return false;
     std::string kmKey;
-    if (!generateKeymasterKey(keymaster, auth, appId, kmKey)) return false;
+    if (!generateKeymasterKey(keymaster, auth, appId, &kmKey)) return false;
     if (!writeStringToFile(kmKey, dir + "/" + kFn_keymaster_key_blob)) return false;
     std::string encryptedKey;
-    if (!encryptWithKeymasterKey(keymaster, kmKey, auth, appId, key, encryptedKey)) return false;
+    if (!encryptWithKeymasterKey(keymaster, kmKey, auth, appId, key, &encryptedKey)) return false;
     if (!writeStringToFile(encryptedKey, dir + "/" + kFn_encrypted_key)) return false;
     return true;
 }
 
-bool retrieveKey(const std::string &dir, const KeyAuthentication &auth, std::string &key) {
+bool retrieveKey(const std::string &dir, const KeyAuthentication &auth, std::string *key) {
     std::string version;
-    if (!readFileToString(dir + "/" + kFn_version, version)) return false;
+    if (!readFileToString(dir + "/" + kFn_version, &version)) return false;
     if (version != kCurrentVersion) {
         LOG(ERROR) << "Version mismatch, expected " << kCurrentVersion << " got " << version;
         return false;
     }
     std::string secdiscardable;
-    if (!readFileToString(dir + "/" + kFn_secdiscardable, secdiscardable)) return false;
+    if (!readFileToString(dir + "/" + kFn_secdiscardable, &secdiscardable)) return false;
     std::string stretching;
-    if (!readFileToString(dir + "/" + kFn_stretching, stretching)) return false;
+    if (!readFileToString(dir + "/" + kFn_stretching, &stretching)) return false;
     std::string salt;
     if (stretchingNeedsSalt(stretching)) {
-        if (!readFileToString(dir + "/" +  kFn_salt, salt)) return false;
+        if (!readFileToString(dir + "/" +  kFn_salt, &salt)) return false;
     }
     std::string appId;
-    if (!generateAppId(auth, stretching, salt, secdiscardable, appId)) return false;
+    if (!generateAppId(auth, stretching, salt, secdiscardable, &appId)) return false;
     std::string kmKey;
-    if (!readFileToString(dir + "/" + kFn_keymaster_key_blob, kmKey)) return false;
+    if (!readFileToString(dir + "/" + kFn_keymaster_key_blob, &kmKey)) return false;
     std::string encryptedMessage;
-    if (!readFileToString(dir + "/" + kFn_encrypted_key, encryptedMessage)) return false;
+    if (!readFileToString(dir + "/" + kFn_encrypted_key, &encryptedMessage)) return false;
     Keymaster keymaster;
     if (!keymaster) return false;
     return decryptWithKeymasterKey(keymaster, kmKey, auth, appId, encryptedMessage, key);
@@ -316,7 +316,7 @@ bool retrieveKey(const std::string &dir, const KeyAuthentication &auth, std::str
 
 static bool deleteKey(const std::string &dir) {
     std::string kmKey;
-    if (!readFileToString(dir + "/" + kFn_keymaster_key_blob, kmKey)) return false;
+    if (!readFileToString(dir + "/" + kFn_keymaster_key_blob, &kmKey)) return false;
     Keymaster keymaster;
     if (!keymaster) return false;
     if (!keymaster.deleteKey(kmKey)) return false;

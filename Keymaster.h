@@ -45,11 +45,11 @@ public:
     explicit operator bool() {return mDevice != nullptr;}
     // Call "update" repeatedly until all of the input is consumed, and
     // concatenate the output. Return true on success.
-    bool updateCompletely(const std::string &input, std::string &output);
+    bool updateCompletely(const std::string &input, std::string *output);
     // Finish; pass nullptr for the "output" param.
     bool finish();
     // Finish and write the output to this string.
-    bool finishWithOutput(std::string &output);
+    bool finishWithOutput(std::string *output);
     // Move constructor
     KeymasterOperation(KeymasterOperation&& rhs) {
         mOpHandle = rhs.mOpHandle;
@@ -74,7 +74,7 @@ public:
     // false if we failed to open the keymaster device.
     explicit operator bool() {return mDevice != nullptr;}
     // Generate a key in the keymaster from the given params.
-    bool generateKey(const AuthorizationSet &inParams, std::string &key);
+    bool generateKey(const AuthorizationSet &inParams, std::string *key);
     // If the keymaster supports it, permanently delete a key.
     bool deleteKey(const std::string &key);
     // Begin a new cryptographic operation, collecting output parameters.
@@ -82,7 +82,7 @@ public:
             keymaster_purpose_t purpose,
             const std::string &key,
             const AuthorizationSet &inParams,
-            AuthorizationSet &outParams);
+            AuthorizationSet *outParams);
     // Begin a new cryptographic operation; don't collect output parameters.
     KeymasterOperation begin(
             keymaster_purpose_t purpose,
@@ -100,9 +100,9 @@ inline AuthorizationSetBuilder& addStringParam(AuthorizationSetBuilder &&params,
 }
 
 template <keymaster_tag_t Tag>
-inline void addStringParam(AuthorizationSetBuilder &params,
+inline void addStringParam(AuthorizationSetBuilder *params,
         TypedTag<KM_BYTES, Tag> tag, const std::string& val) {
-    params.Authorization(tag, val.data(), val.size());
+    params->Authorization(tag, val.data(), val.size());
 }
 
 }  // namespace vold

@@ -23,8 +23,8 @@ namespace vold {
 
 bool KeymasterOperation::updateCompletely(
         const std::string &input,
-        std::string &output) {
-    output.clear();
+        std::string *output) {
+    output->clear();
     auto it = input.begin();
     while (it != input.end()) {
         size_t toRead = static_cast<size_t>(input.end() - it);
@@ -38,7 +38,7 @@ bool KeymasterOperation::updateCompletely(
             mDevice = nullptr;
             return false;
         }
-        output.append(reinterpret_cast<const char *>(outputBlob.data), outputBlob.data_length);
+        output->append(reinterpret_cast<const char *>(outputBlob.data), outputBlob.data_length);
         free(const_cast<uint8_t *>(outputBlob.data));
         if (inputConsumed > toRead) {
             LOG(ERROR) << "update reported too much input consumed";
@@ -61,7 +61,7 @@ bool KeymasterOperation::finish() {
     return true;
 }
 
-bool KeymasterOperation::finishWithOutput(std::string &output) {
+bool KeymasterOperation::finishWithOutput(std::string *output) {
     keymaster_blob_t outputBlob;
     auto error = mDevice->finish(mDevice, mOpHandle,
         nullptr, nullptr, nullptr, &outputBlob);
@@ -70,7 +70,7 @@ bool KeymasterOperation::finishWithOutput(std::string &output) {
         LOG(ERROR) << "finish failed, code " << error;
         return false;
     }
-    output.assign(reinterpret_cast<const char *>(outputBlob.data), outputBlob.data_length);
+    output->assign(reinterpret_cast<const char *>(outputBlob.data), outputBlob.data_length);
     free(const_cast<uint8_t *>(outputBlob.data));
     return true;
 }
@@ -98,14 +98,14 @@ Keymaster::Keymaster() {
 
 bool Keymaster::generateKey(
         const keymaster::AuthorizationSet &inParams,
-        std::string &key) {
+        std::string *key) {
     keymaster_key_blob_t keyBlob;
     auto error = mDevice->generate_key(mDevice, &inParams, &keyBlob, nullptr);
     if (error != KM_ERROR_OK) {
         LOG(ERROR) << "generate_key failed, code " << error;
         return false;
     }
-    key.assign(reinterpret_cast<const char *>(keyBlob.key_material), keyBlob.key_material_size);
+    key->assign(reinterpret_cast<const char *>(keyBlob.key_material), keyBlob.key_material_size);
     free(const_cast<uint8_t *>(keyBlob.key_material));
     return true;
 }
@@ -125,7 +125,7 @@ KeymasterOperation Keymaster::begin(
         keymaster_purpose_t purpose,
         const std::string &key,
         const keymaster::AuthorizationSet &inParams,
-        keymaster::AuthorizationSet &outParams) {
+        keymaster::AuthorizationSet *outParams) {
     keymaster_key_blob_t keyBlob { reinterpret_cast<const uint8_t *>(key.data()), key.size() };
     keymaster_operation_handle_t mOpHandle;
     keymaster_key_param_set_t outParams_set;
@@ -135,8 +135,8 @@ KeymasterOperation Keymaster::begin(
         LOG(ERROR) << "begin failed, code " << error;
         return KeymasterOperation(nullptr, mOpHandle);
     }
-    outParams.Clear();
-    outParams.push_back(outParams_set);
+    outParams->Clear();
+    outParams->push_back(outParams_set);
     keymaster_free_param_set(&outParams_set);
     return KeymasterOperation(mDevice, mOpHandle);
 }
