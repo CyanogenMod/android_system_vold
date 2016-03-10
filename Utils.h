@@ -134,6 +134,9 @@ public:
     DISALLOW_COPY_AND_ASSIGN(ScopedDir);
 };
 
+/* Checks if Android is running in QEMU */
+bool IsRunningInEmulator();
+
 }  // namespace vold
 }  // namespace android
 

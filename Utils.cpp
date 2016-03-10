@@ -664,5 +664,9 @@ ScopedDir::~ScopedDir() {
     }
 }
 
+bool IsRunningInEmulator() {
+    return property_get_bool("ro.kernel.qemu", 0);
+}
+
 }  // namespace vold
 }  // namespace android

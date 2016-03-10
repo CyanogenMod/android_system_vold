@@ -91,6 +91,8 @@ const char *VolumeManager::LOOPDIR           = "/mnt/obb";
 static const char* kUserMountPath = "/mnt/user";
 
 static const unsigned int kMajorBlockMmc = 179;
+static const unsigned int kMajorBlockExperimentalMin = 240;
+static const unsigned int kMajorBlockExperimentalMax = 254;
 
 /* writes superblock at end of file or device given by name */
 static int writeSuperBlock(const char* name, struct asec_superblock *sb, unsigned int numImgSectors) {
@@ -296,10 +298,14 @@ void VolumeManager::handleBlockEvent(NetlinkEvent *evt) {
     case NetlinkEvent::Action::kAdd: {
         for (auto source : mDiskSources) {
             if (source->matches(eventPath)) {
-                // For now, assume that MMC devices are SD, and that
-                // everything else is USB
+                // For now, assume that MMC and virtio-blk (the latter is
+                // emulator-specific; see Disk.cpp for details) devices are SD,
+                // and that everything else is USB
                 int flags = source->getFlags();
-                if (major == kMajorBlockMmc) {
+                if (major == kMajorBlockMmc
+                    || (android::vold::IsRunningInEmulator()
+                    && major >= (int) kMajorBlockExperimentalMin
+                    && major <= (int) kMajorBlockExperimentalMax)) {
                     flags |= android::vold::Disk::Flags::kSd;
                 } else {
                     flags |= android::vold::Disk::Flags::kUsb;
