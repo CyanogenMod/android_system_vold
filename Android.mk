@@ -43,7 +43,8 @@ common_c_includes := \
 	frameworks/native/include \
 	system/security/keystore \
 	hardware/libhardware/include/hardware \
-	system/security/softkeymaster/include/keymaster
+	system/security/softkeymaster/include/keymaster \
+	external/e2fsprogs/lib
 
 common_libraries := \
 	libsysutils \
