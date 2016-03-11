@@ -272,7 +272,7 @@ status_t Disk::readMetadata() {
     }
     }
 
-    notifyEvent(ResponseCode::DiskSizeChanged, StringPrintf("%" PRId64, mSize));
+    notifyEvent(ResponseCode::DiskSizeChanged, StringPrintf("%" PRIu64, mSize));
     notifyEvent(ResponseCode::DiskLabelChanged, mLabel);
     notifyEvent(ResponseCode::DiskSysPathChanged, mSysPath);
     return OK;
