@@ -164,6 +164,11 @@ static int keymaster_check_compatibility()
         goto out;
     }
 
+    if (!keymaster0_dev || !keymaster0_dev->common.module) {
+        rc = -1;
+        goto out;
+    }
+
     // TODO(swillden): Check to see if there's any reason to require v0.3.  I think v0.1 and v0.2
     // should work.
     if (keymaster0_dev->common.module->module_api_version
@@ -889,12 +894,10 @@ static int load_persistent_data(void)
         return -1;
     }
 
-    if (persist_data == NULL) {
-        pdata = malloc(crypt_ftr.persist_data_size);
-        if (pdata == NULL) {
-            SLOGE("Cannot allocate memory for persistent data");
-            goto err;
-        }
+    pdata = malloc(crypt_ftr.persist_data_size);
+    if (pdata == NULL) {
+        SLOGE("Cannot allocate memory for persistent data");
+        goto err;
     }
 
     for (i = 0; i < 2; i++) {
@@ -3830,6 +3833,11 @@ int cryptfs_get_master_key(struct crypt_mnt_ftr* ftr, const char* password,
     rc = decrypt_master_key(password, master_key, ftr, &intermediate_key,
                             &intermediate_key_size);
 
+    if (rc) {
+        SLOGE("Can't calculate intermediate key");
+        return rc;
+    }
+
     int N = 1 << ftr->N_factor;
     int r = 1 << ftr->r_factor;
     int p = 1 << ftr->p_factor;
@@ -3844,7 +3852,7 @@ int cryptfs_get_master_key(struct crypt_mnt_ftr* ftr, const char* password,
     free(intermediate_key);
 
     if (rc) {
-        SLOGE("Can't calculate intermediate key");
+        SLOGE("Can't scrypt intermediate key");
         return rc;
     }
 
