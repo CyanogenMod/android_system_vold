@@ -226,12 +226,12 @@ int CryptCommandListener::CryptfsCmd::runCommand(SocketClient *cli,
     } else if (!strcmp(argv[1], "changepw")) {
         const char* syntax = "Usage: cryptfs changepw "
                              "default|password|pin|pattern [currentpasswd] "
-                             "default|password|pin|pattern [newpasswd]";
+                             "newpasswd";
         const char* password;
         const char* currentpassword;
         if (argc == 4) {
             currentpassword = "";
-            password = "";
+            password = argv[3];
         } else if (argc == 5) {
             currentpassword = argv[3];
             password = argv[4];
