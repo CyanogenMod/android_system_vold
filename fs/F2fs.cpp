@@ -77,7 +77,7 @@ status_t Mount(const std::string& source, const std::string& target,
 
     if (portable && res == 0) {
         chown(c_target, AID_MEDIA_RW, AID_MEDIA_RW);
-        chmod(c_target, 0755);
+        chmod(c_target, 0775);
     }
 
     if (res != 0) {
