@@ -443,7 +443,10 @@ bool e4crypt_destroy_user_key(userid_t user_id) {
     bool success = true;
     s_ce_keys.erase(user_id);
     std::string raw_ref;
-    success &= lookup_key_ref(s_ce_key_raw_refs, user_id, &raw_ref) && evict_key(raw_ref);
+    // If we haven't loaded the CE key, no need to evict it.
+    if (lookup_key_ref(s_ce_key_raw_refs, user_id, &raw_ref)) {
+        success &= evict_key(raw_ref);
+    }
     s_ce_key_raw_refs.erase(user_id);
     success &= lookup_key_ref(s_de_key_raw_refs, user_id, &raw_ref) && evict_key(raw_ref);
     s_de_key_raw_refs.erase(user_id);
