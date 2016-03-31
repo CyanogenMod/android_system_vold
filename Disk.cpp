@@ -112,7 +112,7 @@ static bool isVirtioBlkDevice(unsigned int major) {
 Disk::Disk(const std::string& eventPath, dev_t device,
         const std::string& nickname, int flags) :
         mDevice(device), mSize(-1), mNickname(nickname), mFlags(flags), mCreated(
-                false), mJustPartitioned(false) {
+                false), mJustPartitioned(false), mSkipChange(false) {
     mId = StringPrintf("disk:%u_%u", major(device), minor(device));
     mEventPath = eventPath;
     mSysPath = StringPrintf("/sys/%s", eventPath.c_str());
@@ -221,6 +221,11 @@ void Disk::destroyAllVolumes() {
 }
 
 status_t Disk::readMetadata() {
+
+    if (mSkipChange) {
+        return OK;
+    }
+
     mSize = -1;
     mLabel.clear();
 
@@ -288,6 +293,12 @@ status_t Disk::readPartitions() {
     int8_t maxMinors = getMaxMinors();
     if (maxMinors < 0) {
         return -ENOTSUP;
+    }
+
+    if (mSkipChange) {
+        mSkipChange = false;
+        LOG(INFO) << "Skip first change";
+        return OK;
     }
 
     destroyAllVolumes();
@@ -390,8 +401,45 @@ status_t Disk::partitionPublic() {
     destroyAllVolumes();
     mJustPartitioned = true;
 
-    // First nuke any existing partition table
+    // Determine if we're coming from MBR
     std::vector<std::string> cmd;
+    cmd.push_back(kSgdiskPath);
+    cmd.push_back("--android-dump");
+    cmd.push_back(mDevPath);
+
+    std::vector<std::string> output;
+    res = ForkExecvp(cmd, output);
+    if (res != OK) {
+        LOG(WARNING) << "sgdisk failed to scan " << mDevPath;
+        mJustPartitioned = false;
+        return res;
+    }
+
+    Table table = Table::kUnknown;
+    for (auto line : output) {
+        char* cline = (char*) line.c_str();
+        char* token = strtok(cline, kSgdiskToken);
+        if (token == nullptr) continue;
+
+        if (!strcmp(token, "DISK")) {
+            const char* type = strtok(nullptr, kSgdiskToken);
+            if (!strcmp(type, "mbr")) {
+                table = Table::kMbr;
+                break;
+            } else if (!strcmp(type, "gpt")) {
+                table = Table::kGpt;
+                break;
+            }
+        }
+    }
+
+    if (table == Table::kMbr) {
+        LOG(INFO) << "skip first disk change event due to MBR -> GPT switch";
+        mSkipChange = true;
+    }
+
+    // First nuke any existing partition table
+    cmd.clear();
     cmd.push_back(kSgdiskPath);
     cmd.push_back("--zap-all");
     cmd.push_back(mDevPath);
