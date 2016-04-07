@@ -52,6 +52,7 @@
 #include "TrimTask.h"
 
 #define DUMP_ARGS 0
+#define DEBUG_APPFUSE 0
 
 CommandListener::CommandListener() :
                  FrameworkListener("vold", true) {
@@ -674,8 +675,10 @@ static android::status_t runCommandInNamespace(const std::string& command,
                                                pid_t pid,
                                                const std::string& path,
                                                int device_fd) {
-    LOG(DEBUG) << "Run app fuse command " << command << " for the path " << path << " in namespace "
-               << uid;
+    if (DEBUG_APPFUSE) {
+        LOG(DEBUG) << "Run app fuse command " << command << " for the path " << path
+                   << " in namespace " << uid;
+    }
 
     const android::vold::ScopedDir dir(opendir("/proc"));
     if (dir.get() == nullptr) {
