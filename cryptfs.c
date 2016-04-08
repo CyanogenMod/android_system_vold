@@ -62,6 +62,7 @@
 #include "CheckBattery.h"
 #include "Process.h"
 
+#include <bootloader_message_writer.h>
 #include <hardware/keymaster0.h>
 #include <hardware/keymaster1.h>
 
@@ -3262,14 +3263,8 @@ int cryptfs_enable_internal(char *howarg, int crypt_type, char *passwd,
         if (!strcmp(value, "1")) {
             /* wipe data if encryption failed */
             SLOGE("encryption failed - rebooting into recovery to wipe data\n");
-            mkdir("/cache/recovery", 0700);
-            int fd = open("/cache/recovery/command", O_RDWR|O_CREAT|O_TRUNC|O_CLOEXEC, 0600);
-            if (fd >= 0) {
-                write(fd, "--wipe_data\n", strlen("--wipe_data\n") + 1);
-                write(fd, "--reason=cryptfs_enable_internal\n", strlen("--reason=cryptfs_enable_internal\n") + 1);
-                close(fd);
-            } else {
-                SLOGE("could not open /cache/recovery/command\n");
+            if (!write_bootloader_message("--wipe_data\n--reason=cryptfs_enable_internal\n")) {
+                SLOGE("could not write bootloader message\n");
             }
             cryptfs_reboot(recovery);
         } else {
