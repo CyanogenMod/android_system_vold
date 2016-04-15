@@ -1,13 +1,12 @@
 # One shot invocation to deal with encrypted volume.
-service defaultcrypto /system/bin/vdc --wait cryptfs mountdefaultencrypted
-    disabled
-    oneshot
+on defaultcrypto
+    exec - root -- /system/bin/vdc --wait cryptfs mountdefaultencrypted
     # vold will set vold.decrypt to trigger_restart_framework (default
     # encryption) or trigger_restart_min_framework (other encryption)
 
 # One shot invocation to encrypt unencrypted volumes
-service encrypt /system/bin/vdc --wait cryptfs enablecrypto inplace default noui
-    disabled
-    oneshot
+on encrypt
+    start surfaceflinger
+    exec - root -- /system/bin/vdc --wait cryptfs enablecrypto inplace default noui
     # vold will set vold.decrypt to trigger_restart_framework (default
     # encryption)
