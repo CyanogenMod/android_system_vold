@@ -405,6 +405,11 @@ int CryptCommandListener::CryptfsCmd::runCommand(SocketClient *cli,
         return sendGenericOkFailOnBool(cli, e4crypt_prepare_user_storage(
             parseNull(argv[2]), atoi(argv[3]), atoi(argv[4]), atoi(argv[5])));
 
+    } else if (subcommand == "destroy_user_storage") {
+        if (!check_argc(cli, subcommand, argc, 5, "<uuid> <user> <flags>")) return 0;
+        return sendGenericOkFailOnBool(cli,
+                e4crypt_destroy_user_storage(parseNull(argv[2]), atoi(argv[3]), atoi(argv[4])));
+
     } else {
         dumpArgs(argc, argv, -1);
         cli->sendMsg(ResponseCode::CommandSyntaxError, "Unknown cryptfs subcommand", false);

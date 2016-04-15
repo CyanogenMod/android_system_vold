@@ -43,6 +43,7 @@
 #include "key_control.h"
 
 #define EMULATED_USES_SELINUX 0
+#define MANAGE_MISC_DIRS 0
 
 #include <cutils/fs.h>
 
@@ -204,6 +205,15 @@ static bool prepare_dir(const std::string& dir, mode_t mode, uid_t uid, gid_t gi
     LOG(DEBUG) << "Preparing: " << dir;
     if (fs_prepare_dir(dir.c_str(), mode, uid, gid) != 0) {
         PLOG(ERROR) << "Failed to prepare " << dir;
+        return false;
+    }
+    return true;
+}
+
+static bool destroy_dir(const std::string& dir) {
+    LOG(DEBUG) << "Destroying: " << dir;
+    if (rmdir(dir.c_str()) != 0 && errno != ENOENT) {
+        PLOG(ERROR) << "Failed to destroy " << dir;
         return false;
     }
     return true;
@@ -558,8 +568,8 @@ bool e4crypt_unlock_user_key(userid_t user_id, int serial, const char* token_hex
         // back into a known-good state.
         if (!emulated_unlock(android::vold::BuildDataSystemCePath(user_id), 0771) ||
             !emulated_unlock(android::vold::BuildDataMiscCePath(user_id), 01771) ||
-            !emulated_unlock(android::vold::BuildDataMediaPath(nullptr, user_id), 0770) ||
-            !emulated_unlock(android::vold::BuildDataUserPath(nullptr, user_id), 0771)) {
+            !emulated_unlock(android::vold::BuildDataMediaCePath(nullptr, user_id), 0770) ||
+            !emulated_unlock(android::vold::BuildDataUserCePath(nullptr, user_id), 0771)) {
             LOG(ERROR) << "Failed to unlock user " << user_id;
             return false;
         }
@@ -575,8 +585,8 @@ bool e4crypt_lock_user_key(userid_t user_id) {
         // When in emulation mode, we just use chmod
         if (!emulated_lock(android::vold::BuildDataSystemCePath(user_id)) ||
             !emulated_lock(android::vold::BuildDataMiscCePath(user_id)) ||
-            !emulated_lock(android::vold::BuildDataMediaPath(nullptr, user_id)) ||
-            !emulated_lock(android::vold::BuildDataUserPath(nullptr, user_id))) {
+            !emulated_lock(android::vold::BuildDataMediaCePath(nullptr, user_id)) ||
+            !emulated_lock(android::vold::BuildDataUserCePath(nullptr, user_id))) {
             LOG(ERROR) << "Failed to lock user " << user_id;
             return false;
         }
@@ -586,54 +596,58 @@ bool e4crypt_lock_user_key(userid_t user_id) {
 }
 
 bool e4crypt_prepare_user_storage(const char* volume_uuid, userid_t user_id, int serial,
-                                  int flags) {
+        int flags) {
     LOG(DEBUG) << "e4crypt_prepare_user_storage for volume " << escape_null(volume_uuid)
                << ", user " << user_id << ", serial " << serial << ", flags " << flags;
 
     if (flags & FLAG_STORAGE_DE) {
+        // DE_sys key
+        auto system_legacy_path = android::vold::BuildDataSystemLegacyPath(user_id);
+        auto misc_legacy_path = android::vold::BuildDataMiscLegacyPath(user_id);
+        auto profiles_de_path = android::vold::BuildDataProfilesDePath(user_id);
+        auto foreign_de_path = android::vold::BuildDataProfilesForeignDexDePath(user_id);
+
+        // DE_n key
         auto system_de_path = android::vold::BuildDataSystemDePath(user_id);
         auto misc_de_path = android::vold::BuildDataMiscDePath(user_id);
         auto user_de_path = android::vold::BuildDataUserDePath(volume_uuid, user_id);
+
+        if (!prepare_dir(system_legacy_path, 0700, AID_SYSTEM, AID_SYSTEM)) return false;
+#if MANAGE_MISC_DIRS
+        if (!prepare_dir(misc_legacy_path, 0750, multiuser_get_uid(user_id, AID_SYSTEM),
+                multiuser_get_uid(user_id, AID_EVERYBODY))) return false;
+#endif
+        if (!prepare_dir(profiles_de_path, 0771, AID_SYSTEM, AID_SYSTEM)) return false;
+        if (!prepare_dir(foreign_de_path, 0773, AID_SYSTEM, AID_SYSTEM)) return false;
 
         if (!prepare_dir(system_de_path, 0770, AID_SYSTEM, AID_SYSTEM)) return false;
         if (!prepare_dir(misc_de_path, 01771, AID_SYSTEM, AID_MISC)) return false;
         if (!prepare_dir(user_de_path, 0771, AID_SYSTEM, AID_SYSTEM)) return false;
 
-        if (volume_uuid == nullptr) {
-            // Prepare profile directories only for the internal storage.
-            // For now, we do not store profiles on the adopted storage.
-            auto profiles_de_path = android::vold::BuildDataProfilesDePath(user_id);
-            auto foreign_dex_profiles_de_path =
-                android::vold::BuildDataProfilesForeignDexDePath(user_id);
-            if (!prepare_dir(profiles_de_path, 0771, AID_SYSTEM, AID_SYSTEM)) return false;
-            if (!prepare_dir(foreign_dex_profiles_de_path, 0773, AID_SYSTEM, AID_SYSTEM)) {
-                return false;
-            }
-        }
-
-        if (e4crypt_is_native()) {
+        // For now, FBE is only supported on internal storage
+        if (e4crypt_is_native() && volume_uuid == nullptr) {
             std::string de_raw_ref;
             if (!lookup_key_ref(s_de_key_raw_refs, user_id, &de_raw_ref)) return false;
             if (!ensure_policy(de_raw_ref, system_de_path)) return false;
             if (!ensure_policy(de_raw_ref, misc_de_path)) return false;
             if (!ensure_policy(de_raw_ref, user_de_path)) return false;
-            // No need to set the policy for profiles_de_path. The parent directory (/data/misc)
-            // already has a DE_sys policy set.
         }
     }
 
     if (flags & FLAG_STORAGE_CE) {
+        // CE_n key
         auto system_ce_path = android::vold::BuildDataSystemCePath(user_id);
         auto misc_ce_path = android::vold::BuildDataMiscCePath(user_id);
-        auto media_ce_path = android::vold::BuildDataMediaPath(volume_uuid, user_id);
-        auto user_ce_path = android::vold::BuildDataUserPath(volume_uuid, user_id);
+        auto media_ce_path = android::vold::BuildDataMediaCePath(volume_uuid, user_id);
+        auto user_ce_path = android::vold::BuildDataUserCePath(volume_uuid, user_id);
 
         if (!prepare_dir(system_ce_path, 0770, AID_SYSTEM, AID_SYSTEM)) return false;
         if (!prepare_dir(misc_ce_path, 01771, AID_SYSTEM, AID_MISC)) return false;
         if (!prepare_dir(media_ce_path, 0770, AID_MEDIA_RW, AID_MEDIA_RW)) return false;
         if (!prepare_dir(user_ce_path, 0771, AID_SYSTEM, AID_SYSTEM)) return false;
 
-        if (e4crypt_is_native()) {
+        // For now, FBE is only supported on internal storage
+        if (e4crypt_is_native() && volume_uuid == nullptr) {
             std::string ce_raw_ref;
             if (!lookup_key_ref(s_ce_key_raw_refs, user_id, &ce_raw_ref)) return false;
             if (!ensure_policy(ce_raw_ref, system_ce_path)) return false;
@@ -644,4 +658,52 @@ bool e4crypt_prepare_user_storage(const char* volume_uuid, userid_t user_id, int
     }
 
     return true;
+}
+
+bool e4crypt_destroy_user_storage(const char* volume_uuid, userid_t user_id, int flags) {
+    LOG(DEBUG) << "e4crypt_destroy_user_storage for volume " << escape_null(volume_uuid)
+               << ", user " << user_id << ", flags " << flags;
+    bool res = true;
+
+    if (flags & FLAG_STORAGE_DE) {
+        // DE_sys key
+        auto system_legacy_path = android::vold::BuildDataSystemLegacyPath(user_id);
+        auto misc_legacy_path = android::vold::BuildDataMiscLegacyPath(user_id);
+        auto profiles_de_path = android::vold::BuildDataProfilesDePath(user_id);
+        auto foreign_de_path = android::vold::BuildDataProfilesForeignDexDePath(user_id);
+
+        // DE_n key
+        auto system_de_path = android::vold::BuildDataSystemDePath(user_id);
+        auto misc_de_path = android::vold::BuildDataMiscDePath(user_id);
+        auto user_de_path = android::vold::BuildDataUserDePath(volume_uuid, user_id);
+
+        if (volume_uuid == nullptr) {
+            res &= destroy_dir(system_legacy_path);
+#if MANAGE_MISC_DIRS
+            res &= destroy_dir(misc_legacy_path);
+#endif
+            res &= destroy_dir(profiles_de_path);
+            res &= destroy_dir(foreign_de_path);
+            res &= destroy_dir(system_de_path);
+            res &= destroy_dir(misc_de_path);
+        }
+        res &= destroy_dir(user_de_path);
+    }
+
+    if (flags & FLAG_STORAGE_CE) {
+        // CE_n key
+        auto system_ce_path = android::vold::BuildDataSystemCePath(user_id);
+        auto misc_ce_path = android::vold::BuildDataMiscCePath(user_id);
+        auto media_ce_path = android::vold::BuildDataMediaCePath(volume_uuid, user_id);
+        auto user_ce_path = android::vold::BuildDataUserCePath(volume_uuid, user_id);
+
+        if (volume_uuid == nullptr) {
+            res &= destroy_dir(system_ce_path);
+            res &= destroy_dir(misc_ce_path);
+        }
+        res &= destroy_dir(media_ce_path);
+        res &= destroy_dir(user_ce_path);
+    }
+
+    return res;
 }
