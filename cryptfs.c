@@ -3705,26 +3705,20 @@ out:
  */
 int cryptfs_mount_default_encrypted(void)
 {
-    char decrypt_state[PROPERTY_VALUE_MAX];
-    property_get("vold.decrypt", decrypt_state, "0");
-    if (!strcmp(decrypt_state, "0")) {
-        SLOGE("Not encrypted - should not call here");
+    int crypt_type = cryptfs_get_password_type();
+    if (crypt_type < 0 || crypt_type > CRYPT_TYPE_MAX_TYPE) {
+        SLOGE("Bad crypt type - error");
+    } else if (crypt_type != CRYPT_TYPE_DEFAULT) {
+        SLOGD("Password is not default - "
+              "starting min framework to prompt");
+        property_set("vold.decrypt", "trigger_restart_min_framework");
+        return 0;
+    } else if (cryptfs_check_passwd(DEFAULT_PASSWORD) == 0) {
+        SLOGD("Password is default - restarting filesystem");
+        cryptfs_restart_internal(0);
+        return 0;
     } else {
-        int crypt_type = cryptfs_get_password_type();
-        if (crypt_type < 0 || crypt_type > CRYPT_TYPE_MAX_TYPE) {
-            SLOGE("Bad crypt type - error");
-        } else if (crypt_type != CRYPT_TYPE_DEFAULT) {
-            SLOGD("Password is not default - "
-                  "starting min framework to prompt");
-            property_set("vold.decrypt", "trigger_restart_min_framework");
-            return 0;
-        } else if (cryptfs_check_passwd(DEFAULT_PASSWORD) == 0) {
-            SLOGD("Password is default - restarting filesystem");
-            cryptfs_restart_internal(0);
-            return 0;
-        } else {
-            SLOGE("Encrypted, default crypt type but can't decrypt");
-        }
+        SLOGE("Encrypted, default crypt type but can't decrypt");
     }
 
     /** Corrupt. Allow us to boot into framework, which will detect bad
