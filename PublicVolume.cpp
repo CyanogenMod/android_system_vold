@@ -194,12 +194,10 @@ status_t PublicVolume::doMount() {
 }
 
 status_t PublicVolume::doUnmount() {
-    if (mFusePid > 0) {
-        kill(mFusePid, SIGTERM);
-        TEMP_FAILURE_RETRY(waitpid(mFusePid, nullptr, 0));
-        mFusePid = 0;
-    }
-
+    // Unmount the storage before we kill the FUSE process. If we kill
+    // the FUSE process first, most file system operations will return
+    // ENOTCONN until the unmount completes. This is an exotic and unusual
+    // error code and might cause broken behaviour in applications.
     KillProcessesUsingPath(getPath());
 
     ForceUnmount(kAsecPath);
@@ -208,6 +206,12 @@ status_t PublicVolume::doUnmount() {
     ForceUnmount(mFuseRead);
     ForceUnmount(mFuseWrite);
     ForceUnmount(mRawPath);
+
+    if (mFusePid > 0) {
+        kill(mFusePid, SIGTERM);
+        TEMP_FAILURE_RETRY(waitpid(mFusePid, nullptr, 0));
+        mFusePid = 0;
+    }
 
     rmdir(mFuseDefault.c_str());
     rmdir(mFuseRead.c_str());
