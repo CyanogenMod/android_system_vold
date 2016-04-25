@@ -5,3 +5,4 @@ service vold /system/bin/vold \
     socket vold stream 0660 root mount
     socket cryptd stream 0660 root mount
     ioprio be 2
+    writepid /dev/cpuset/foreground/tasks
