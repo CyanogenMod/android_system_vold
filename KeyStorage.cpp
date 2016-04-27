@@ -56,6 +56,8 @@ static constexpr size_t SALT_BYTES = 1 << 4;
 static constexpr size_t SECDISCARDABLE_BYTES = 1 << 14;
 static constexpr size_t STRETCHED_BYTES = 1 << 6;
 
+static constexpr uint32_t AUTH_TIMEOUT = 30; // Seconds
+
 static const char* kCurrentVersion = "1";
 static const char* kRmPath = "/system/bin/rm";
 static const char* kSecdiscardPath = "/system/bin/secdiscard";
@@ -115,7 +117,7 @@ static bool generateKeymasterKey(Keymaster& keymaster, const KeyAuthentication& 
         const hw_auth_token_t* at = reinterpret_cast<const hw_auth_token_t*>(auth.token.data());
         paramBuilder.Authorization(keymaster::TAG_USER_SECURE_ID, at->user_id);
         paramBuilder.Authorization(keymaster::TAG_USER_AUTH_TYPE, HW_AUTH_PASSWORD);
-        paramBuilder.Authorization(keymaster::TAG_AUTH_TIMEOUT, 5);
+        paramBuilder.Authorization(keymaster::TAG_AUTH_TIMEOUT, AUTH_TIMEOUT);
     }
     return keymaster.generateKey(paramBuilder.build(), key);
 }
