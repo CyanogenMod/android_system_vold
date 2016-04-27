@@ -98,7 +98,7 @@
 #define RSA_EXPONENT 0x10001
 #define KEYMASTER_CRYPTFS_RATE_LIMIT 1  // Maximum one try per second
 
-#define RETRY_MOUNT_ATTEMPTS 10
+#define RETRY_MOUNT_ATTEMPTS 20
 #define RETRY_MOUNT_DELAY_SECONDS 1
 
 char *me = "cryptfs";
