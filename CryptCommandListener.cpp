@@ -410,6 +410,11 @@ int CryptCommandListener::CryptfsCmd::runCommand(SocketClient *cli,
         return sendGenericOkFailOnBool(cli,
                 e4crypt_destroy_user_storage(parseNull(argv[2]), atoi(argv[3]), atoi(argv[4])));
 
+    } else if (subcommand == "ensure_policy") {
+        if (!check_argc(cli, subcommand, argc, 4, "<dir> <policy>")) return 0;
+        return sendGenericOkFailOnBool(cli,
+                e4crypt_hex_policy_ensure(argv[2], argv[3]));
+
     } else {
         dumpArgs(argc, argv, -1);
         cli->sendMsg(ResponseCode::CommandSyntaxError, "Unknown cryptfs subcommand", false);
