@@ -221,7 +221,9 @@ static int verify_and_update_hw_fde_passwd(char *passwd,
                 }
                 strlcpy(new_passwd, DEFAULT_HEX_PASSWORD, strlen(DEFAULT_HEX_PASSWORD) + 1);
             } else {
-                new_passwd = fix_broken_cm12_pattern(passwd);
+                if (crypt_ftr->crypt_type == CRYPT_TYPE_PATTERN) {
+                    new_passwd = fix_broken_cm12_pattern(passwd);
+                }
                 if (new_passwd == NULL) { // not an old broken pattern
                     new_passwd = (char*)malloc(strlen(passwd) * 2 + 1);
                     if (new_passwd == NULL) {
