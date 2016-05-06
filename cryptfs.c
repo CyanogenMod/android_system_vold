@@ -184,66 +184,63 @@ static int verify_and_update_hw_fde_passwd(char *passwd,
     int ascii_passwd_updated = (crypt_ftr->flags & CRYPT_ASCII_PASSWORD_UPDATED);
 
     key_index = verify_hw_fde_passwd(passwd, crypt_ftr);
-    if (key_index < 0) {
-        ++crypt_ftr->failed_decrypt_count;
-
-        if (ascii_passwd_updated) {
-            SLOGI("Ascii password was updated");
-        } else {
-            /* Code in else part would execute only once:
-             * When device is upgraded from L->M release.
-             * Once upgraded, code flow should never come here.
-             * L release passed actual password in hex, so try with hex
-             * Each nible of passwd was encoded as a byte, so allocate memory
-             * twice of password len plus one more byte for null termination
-             */
-            if (crypt_ftr->crypt_type == CRYPT_TYPE_DEFAULT) {
-                new_passwd = (char*)malloc(strlen(DEFAULT_HEX_PASSWORD) + 1);
-                if (new_passwd == NULL) {
-                    SLOGE("System out of memory. Password verification  incomplete");
-                    goto out;
-                }
-                strlcpy(new_passwd, DEFAULT_HEX_PASSWORD, strlen(DEFAULT_HEX_PASSWORD) + 1);
-            } else {
-                new_passwd = (char*)malloc(strlen(passwd) * 2 + 1);
-                if (new_passwd == NULL) {
-                    SLOGE("System out of memory. Password verification  incomplete");
-                    goto out;
-                }
-                convert_key_to_hex_ascii_for_upgrade((const unsigned char*)passwd,
-                                       strlen(passwd), new_passwd);
-            }
-            key_index = set_hw_device_encryption_key((const char*)new_passwd,
-                                       (char*) crypt_ftr->crypto_type_name);
-            if (key_index >=0) {
-                crypt_ftr->failed_decrypt_count = 0;
-                SLOGI("Hex password verified...will try to update with Ascii value");
-                /* Before updating password, tie that with keymaster to tie with ROT */
-
-                if (get_keymaster_hw_fde_passwd(passwd, newpw,
-                                                crypt_ftr->salt, crypt_ftr)) {
-                    passwd_updated = update_hw_device_encryption_key(new_passwd,
-                                     passwd, (char*)crypt_ftr->crypto_type_name);
-                } else {
-                    passwd_updated = update_hw_device_encryption_key(new_passwd,
-                                     (const char*)newpw, (char*)crypt_ftr->crypto_type_name);
-                }
-
-                if (passwd_updated >= 0) {
-                    crypt_ftr->flags |= CRYPT_ASCII_PASSWORD_UPDATED;
-                    SLOGI("Ascii password recorded and updated");
-                } else {
-                    SLOGI("Passwd verified, could not update...Will try next time");
-                }
-            } else {
-                ++crypt_ftr->failed_decrypt_count;
-            }
-            free(new_passwd);
-        }
+    if (ascii_passwd_updated) {
+        SLOGI("Ascii password was updated");
+        if (key_index < 0)
+            ++crypt_ftr->failed_decrypt_count;
+    } else if (!ascii_passwd_updated && (key_index >= 0)) {
+        crypt_ftr->flags |= CRYPT_ASCII_PASSWORD_UPDATED;
     } else {
-        if (!ascii_passwd_updated)
-            crypt_ftr->flags |= CRYPT_ASCII_PASSWORD_UPDATED;
-    }
+        /* Code in else part would execute only once:
+         * When device is upgraded from L->M release.
+         * Once upgraded, code flow should never come here.
+         * L release passed actual password in hex, so try with hex
+         * Each nible of passwd was encoded as a byte, so allocate memory
+         * twice of password len plus one more byte for null termination
+         */
+        if (crypt_ftr->crypt_type == CRYPT_TYPE_DEFAULT) {
+             new_passwd = (char*)malloc(strlen(DEFAULT_HEX_PASSWORD) + 1);
+             if (new_passwd == NULL) {
+                SLOGE("System out of memory. Password verification  incomplete");
+                goto out;
+             }
+             strlcpy(new_passwd, DEFAULT_HEX_PASSWORD, strlen(DEFAULT_HEX_PASSWORD) + 1);
+        } else {
+             new_passwd = (char*)malloc(strlen(passwd) * 2 + 1);
+             if (new_passwd == NULL) {
+                SLOGE("System out of memory. Password verification  incomplete");
+                goto out;
+             }
+             convert_key_to_hex_ascii_for_upgrade((const unsigned char*)passwd,
+                                    strlen(passwd), new_passwd);
+        }
+        key_index = set_hw_device_encryption_key((const char*)new_passwd,
+                                    (char*) crypt_ftr->crypto_type_name);
+        if (key_index >=0) {
+            crypt_ftr->failed_decrypt_count = 0;
+            SLOGI("Hex password verified...will try to update with Ascii value");
+            /* Before updating password, tie that with keymaster to tie with ROT */
+
+            if (get_keymaster_hw_fde_passwd(passwd, newpw,
+                                           crypt_ftr->salt, crypt_ftr)) {
+                passwd_updated = update_hw_device_encryption_key(new_passwd,
+                                     passwd, (char*)crypt_ftr->crypto_type_name);
+            } else {
+                passwd_updated = update_hw_device_encryption_key(new_passwd,
+                                    (const char*)newpw, (char*)crypt_ftr->crypto_type_name);
+            }
+
+            if (passwd_updated >= 0) {
+                crypt_ftr->flags |= CRYPT_ASCII_PASSWORD_UPDATED;
+                SLOGI("Ascii password recorded and updated");
+            } else {
+                SLOGI("Passwd verified, could not update...Will try next time");
+            }
+        } else {
+                ++crypt_ftr->failed_decrypt_count;
+        }
+        free(new_passwd);
+     }
 out:
     // update footer before leaving
     put_crypt_ftr_and_key(crypt_ftr);
