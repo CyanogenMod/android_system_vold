@@ -19,6 +19,7 @@
 #include "KeyStorage.h"
 #include "Utils.h"
 
+#include <algorithm>
 #include <iomanip>
 #include <map>
 #include <set>
@@ -29,6 +30,7 @@
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <limits.h>
 #include <openssl/sha.h>
 #include <selinux/android.h>
 #include <stdio.h>
@@ -191,16 +193,100 @@ static std::string get_de_key_path(userid_t user_id) {
     return StringPrintf("%s/de/%d", user_key_dir.c_str(), user_id);
 }
 
-static std::string get_ce_key_path(userid_t user_id) {
-    return StringPrintf("%s/ce/%d/current", user_key_dir.c_str(), user_id);
+static std::string get_ce_key_directory_path(userid_t user_id) {
+    return StringPrintf("%s/ce/%d", user_key_dir.c_str(), user_id);
+}
+
+// Returns the keys newest first
+static std::vector<std::string> get_ce_key_paths(const std::string& directory_path) {
+    auto dirp = std::unique_ptr<DIR, int (*)(DIR*)>(opendir(directory_path.c_str()), closedir);
+    if (!dirp) {
+        PLOG(ERROR) << "Unable to open ce key directory: " + directory_path;
+        return std::vector<std::string>();
+    }
+    std::vector<std::string> result;
+    for (;;) {
+        errno = 0;
+        auto const entry = readdir(dirp.get());
+        if (!entry) {
+            if (errno) {
+                PLOG(ERROR) << "Unable to read ce key directory: " + directory_path;
+                return std::vector<std::string>();
+            }
+            break;
+        }
+        if (entry->d_type != DT_DIR || entry->d_name[0] != 'c') {
+            LOG(DEBUG) << "Skipping non-key " << entry->d_name;
+            continue;
+        }
+        result.emplace_back(directory_path + "/" + entry->d_name);
+    }
+    std::sort(result.begin(), result.end());
+    std::reverse(result.begin(), result.end());
+    return result;
+}
+
+static std::string get_ce_key_current_path(const std::string& directory_path) {
+    return directory_path + "/current";
+}
+
+static bool get_ce_key_new_path(const std::string& directory_path,
+                                const std::vector<std::string>& paths,
+                                std::string *ce_key_path) {
+    if (paths.empty()) {
+        *ce_key_path = get_ce_key_current_path(directory_path);
+        return true;
+    }
+    for (unsigned int i = 0; i < UINT_MAX; i++) {
+        auto const candidate = StringPrintf("%s/cx%010u", directory_path.c_str(), i);
+        if (paths[0] < candidate) {
+            *ce_key_path = candidate;
+            return true;
+        }
+    }
+    return false;
+}
+
+// Discard all keys but the named one; rename it to canonical name.
+// No point in acting on errors in this; ignore them.
+static void fixate_user_ce_key(const std::string& directory_path, const std::string &to_fix,
+                               const std::vector<std::string>& paths) {
+    for (auto const other_path: paths) {
+        if (other_path != to_fix) {
+            android::vold::destroyKey(other_path);
+        }
+    }
+    auto const current_path = get_ce_key_current_path(directory_path);
+    if (to_fix != current_path) {
+        LOG(DEBUG) << "Renaming " << to_fix << " to " << current_path;
+        if (rename(to_fix.c_str(), current_path.c_str()) != 0) {
+            PLOG(WARNING) << "Unable to rename " << to_fix << " to " << current_path;
+        }
+    }
+}
+
+static bool read_and_fixate_user_ce_key(userid_t user_id,
+                                        const android::vold::KeyAuthentication& auth,
+                                        std::string *ce_key) {
+    auto const directory_path = get_ce_key_directory_path(user_id);
+    auto const paths = get_ce_key_paths(directory_path);
+    for (auto const ce_key_path: paths) {
+        LOG(DEBUG) << "Trying user CE key " << ce_key_path;
+        if (android::vold::retrieveKey(ce_key_path, auth, ce_key)) {
+            LOG(DEBUG) << "Successfully retrieved key";
+            fixate_user_ce_key(directory_path, ce_key_path, paths);
+            return true;
+        }
+    }
+    LOG(ERROR) << "Failed to find working ce key for user " << user_id;
+    return false;
 }
 
 static bool read_and_install_user_ce_key(userid_t user_id,
                                          const android::vold::KeyAuthentication& auth) {
     if (s_ce_key_raw_refs.count(user_id) != 0) return true;
-    const auto ce_key_path = get_ce_key_path(user_id);
     std::string ce_key;
-    if (!android::vold::retrieveKey(ce_key_path, auth, &ce_key)) return false;
+    if (!read_and_fixate_user_ce_key(user_id, auth, &ce_key)) return false;
     std::string ce_raw_ref;
     if (!install_key(ce_key, &ce_raw_ref)) return false;
     s_ce_keys[user_id] = ce_key;
@@ -268,12 +354,17 @@ static bool create_and_install_user_keys(userid_t user_id, bool create_ephemeral
         // If the key should be created as ephemeral, don't store it.
         s_ephemeral_users.insert(user_id);
     } else {
+        auto const directory_path = get_ce_key_directory_path(user_id);
+        if (!prepare_dir(directory_path, 0700, AID_ROOT, AID_ROOT)) return false;
+        auto const paths = get_ce_key_paths(directory_path);
+        std::string ce_key_path;
+        if (!get_ce_key_new_path(directory_path, paths, &ce_key_path)) return false;
+        if (!store_key(ce_key_path, user_key_temp,
+                kEmptyAuthentication, ce_key)) return false;
+        fixate_user_ce_key(directory_path, ce_key_path, paths);
+        // Write DE key second; once this is written, all is good.
         if (!store_key(get_de_key_path(user_id), user_key_temp,
                 kEmptyAuthentication, de_key)) return false;
-        if (!prepare_dir(user_key_dir + "/ce/" + std::to_string(user_id),
-            0700, AID_ROOT, AID_ROOT)) return false;
-        if (!store_key(get_ce_key_path(user_id), user_key_temp,
-                kEmptyAuthentication, ce_key)) return false;
     }
     std::string de_raw_ref;
     if (!install_key(de_key, &de_raw_ref)) return false;
@@ -390,15 +481,7 @@ bool e4crypt_init_user0() {
         if (!prepare_dir(user_key_dir, 0700, AID_ROOT, AID_ROOT)) return false;
         if (!prepare_dir(user_key_dir + "/ce", 0700, AID_ROOT, AID_ROOT)) return false;
         if (!prepare_dir(user_key_dir + "/de", 0700, AID_ROOT, AID_ROOT)) return false;
-        auto de_path = get_de_key_path(0);
-        auto ce_path = get_ce_key_path(0);
-        if (!path_exists(de_path) || !path_exists(ce_path)) {
-            if (path_exists(de_path)) {
-                android::vold::destroyKey(de_path);  // May be partially created so ignore errors
-            }
-            if (path_exists(ce_path)) {
-                android::vold::destroyKey(ce_path);  // May be partially created so ignore errors
-            }
+        if (!path_exists(get_de_key_path(0))) {
             if (!create_and_install_user_keys(0, false)) return false;
         }
         // TODO: switch to loading only DE_0 here once framework makes
@@ -472,7 +555,9 @@ bool e4crypt_destroy_user_key(userid_t user_id) {
     if (it != s_ephemeral_users.end()) {
         s_ephemeral_users.erase(it);
     } else {
-        success &= android::vold::destroyKey(get_ce_key_path(user_id));
+        for (auto const path: get_ce_key_paths(get_ce_key_directory_path(user_id))) {
+            success &= android::vold::destroyKey(path);
+        }
         success &= android::vold::destroyKey(get_de_key_path(user_id));
     }
     return success;
@@ -520,35 +605,40 @@ static bool parse_hex(const char* hex, std::string* result) {
     return true;
 }
 
-bool e4crypt_change_user_key(userid_t user_id, int serial, const char* token_hex,
-                             const char* old_secret_hex, const char* new_secret_hex) {
-    LOG(DEBUG) << "e4crypt_change_user_key " << user_id << " serial=" << serial
+bool e4crypt_add_user_key_auth(userid_t user_id, int serial, const char* token_hex,
+                          const char* secret_hex) {
+    LOG(DEBUG) << "e4crypt_add_user_key_auth " << user_id << " serial=" << serial
                << " token_present=" << (strcmp(token_hex, "!") != 0);
     if (!e4crypt_is_native()) return true;
     if (s_ephemeral_users.count(user_id) != 0) return true;
-    std::string token, old_secret, new_secret;
+    std::string token, secret;
     if (!parse_hex(token_hex, &token)) return false;
-    if (!parse_hex(old_secret_hex, &old_secret)) return false;
-    if (!parse_hex(new_secret_hex, &new_secret)) return false;
-    auto old_auth = old_secret.empty() ? kEmptyAuthentication
-                                       : android::vold::KeyAuthentication(token, old_secret);
-    auto new_auth = new_secret.empty() ? kEmptyAuthentication
-                                       : android::vold::KeyAuthentication(token, new_secret);
+    if (!parse_hex(secret_hex, &secret)) return false;
+    auto auth = secret.empty() ? kEmptyAuthentication
+                                   : android::vold::KeyAuthentication(token, secret);
     auto it = s_ce_keys.find(user_id);
     if (it == s_ce_keys.end()) {
         LOG(ERROR) << "Key not loaded into memory, can't change for user " << user_id;
         return false;
     }
     auto ce_key = it->second;
-    auto ce_key_path = get_ce_key_path(user_id);
-    std::string trial_key;
-    if (!android::vold::retrieveKey(ce_key_path, old_auth, &trial_key)) {
-        LOG(WARNING) << "change_user_key wasn't given enough info to reconstruct the key";
-    } else if (ce_key != trial_key) {
-        LOG(WARNING) << "Reconstructed key != stored key";
+    auto const directory_path = get_ce_key_directory_path(user_id);
+    auto const paths = get_ce_key_paths(directory_path);
+    std::string ce_key_path;
+    if (!get_ce_key_new_path(directory_path, paths, &ce_key_path)) return false;
+    if (!store_key(ce_key_path, user_key_temp, auth, ce_key)) return false;
+    return true;
+}
+
+bool e4crypt_fixate_newest_user_key_auth(userid_t user_id) {
+    LOG(DEBUG) << "e4crypt_fixate_newest_user_key_auth " << user_id;
+    auto const directory_path = get_ce_key_directory_path(user_id);
+    auto const paths = get_ce_key_paths(directory_path);
+    if (paths.empty()) {
+        LOG(ERROR) << "No ce keys present, cannot fixate for user " << user_id;
+        return false;
     }
-    android::vold::destroyKey(ce_key_path);
-    if (!store_key(ce_key_path, user_key_temp, new_auth, ce_key)) return false;
+    fixate_user_ce_key(directory_path, paths[0], paths);
     return true;
 }
 
