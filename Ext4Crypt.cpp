@@ -25,7 +25,6 @@
 #include <sstream>
 #include <string>
 
-#include <cutils/properties.h>
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -59,7 +58,7 @@ static constexpr int FLAG_STORAGE_DE = 1 << 0;
 static constexpr int FLAG_STORAGE_CE = 1 << 1;
 
 namespace {
-const std::string device_key_dir = std::string() + DATA_MNT_POINT + "/unencrypted";
+const std::string device_key_dir = std::string() + DATA_MNT_POINT + e4crypt_unencrypted_folder;
 const std::string device_key_path = device_key_dir + "/key";
 const std::string device_key_temp = device_key_dir + "/temp";
 
@@ -91,13 +90,6 @@ struct ext4_encryption_key {
     char raw[EXT4_MAX_KEY_SIZE];
     uint32_t size;
 };
-}
-
-// TODO replace with proper function to test for file encryption
-bool e4crypt_is_native() {
-    char value[PROPERTY_VALUE_MAX];
-    property_get("ro.crypto.type", value, "none");
-    return !strcmp(value, "file");
 }
 
 static bool e4crypt_is_emulated() {
