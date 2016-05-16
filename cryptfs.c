@@ -2323,7 +2323,7 @@ int cryptfs_check_passwd(char *passwd)
 
         crypt_ftr.flags &= ~CRYPT_FORCE_COMPLETE;
         put_crypt_ftr_and_key(&crypt_ftr);
-        rc = cryptfs_changepw(crypt_ftr.crypt_type, passwd);
+        rc = cryptfs_changepw(crypt_ftr.crypt_type, DEFAULT_PASSWORD, passwd);
         if (rc) {
             SLOGE("Could not change password on reboot encryption");
             return rc;
