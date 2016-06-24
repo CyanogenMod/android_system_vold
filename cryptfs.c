@@ -62,7 +62,7 @@
 #include "CheckBattery.h"
 #include "Process.h"
 
-#include <bootloader_message_writer.h>
+#include <bootloader_message/bootloader_message.h>
 #include <hardware/keymaster0.h>
 #include <hardware/keymaster1.h>
 
