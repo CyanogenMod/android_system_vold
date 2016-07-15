@@ -747,6 +747,12 @@ bool e4crypt_prepare_user_storage(const char* volume_uuid, userid_t user_id, int
             if (!ensure_policy(ce_raw_ref, misc_ce_path)) return false;
             if (!ensure_policy(ce_raw_ref, media_ce_path)) return false;
             if (!ensure_policy(ce_raw_ref, user_ce_path)) return false;
+
+            // Now that credentials have been installed, we can run restorecon
+            // over these paths
+            // NOTE: these paths need to be kept in sync with libselinux
+            android::vold::RestoreconRecursive(system_ce_path);
+            android::vold::RestoreconRecursive(misc_ce_path);
         }
     }
 

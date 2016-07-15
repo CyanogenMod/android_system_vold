@@ -137,23 +137,7 @@ status_t PrivateVolume::doMount() {
         return -EIO;
     }
 
-    LOG(VERBOSE) << "Starting restorecon of " << mPath;
-
-    // TODO: find a cleaner way of waiting for restorecon to finish
-    property_set("selinux.restorecon_recursive", "");
-    property_set("selinux.restorecon_recursive", mPath.c_str());
-
-    char value[PROPERTY_VALUE_MAX];
-    while (true) {
-        property_get("selinux.restorecon_recursive", value, "");
-        if (strcmp(mPath.c_str(), value) == 0) {
-            break;
-        }
-        sleep(1);
-        LOG(VERBOSE) << "Waiting for restorecon...";
-    }
-
-    LOG(VERBOSE) << "Finished restorecon of " << mPath;
+    RestoreconRecursive(mPath);
 
     // Verify that common directories are ready to roll
     if (PrepareDir(mPath + "/app", 0771, AID_SYSTEM, AID_SYSTEM) ||
