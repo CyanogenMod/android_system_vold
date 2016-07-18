@@ -3377,7 +3377,12 @@ int cryptfs_enable_internal(char *howarg, int crypt_type, char *passwd,
             crypt_ftr.flags |= CRYPT_INCONSISTENT_STATE;
         }
         crypt_ftr.crypt_type = crypt_type;
+
+#ifdef CONFIG_HW_DISK_ENCRYPTION
+        strlcpy((char *)crypt_ftr.crypto_type_name, "aes-xts", MAX_CRYPTO_TYPE_NAME_LEN);
+#else
         strlcpy((char *)crypt_ftr.crypto_type_name, "aes-cbc-essiv:sha256", MAX_CRYPTO_TYPE_NAME_LEN);
+#endif
 
         /* Make an encrypted master key */
         if (create_encrypted_random_key(onlyCreateHeader ? DEFAULT_PASSWORD : passwd,
@@ -3386,20 +3391,6 @@ int cryptfs_enable_internal(char *howarg, int crypt_type, char *passwd,
             goto error_shutting_down;
         }
 
-#ifdef CONFIG_HW_DISK_ENCRYPTION
-        strlcpy((char *)crypt_ftr.crypto_type_name, "aes-xts", MAX_CRYPTO_TYPE_NAME_LEN);
-        clear_hw_device_encryption_key();
-        if (get_keymaster_hw_fde_passwd(passwd, newpw, crypt_ftr.salt,
-                                        &crypt_ftr))
-            key_index = set_hw_device_encryption_key(passwd, (char*)crypt_ftr.crypto_type_name);
-        else
-            key_index = set_hw_device_encryption_key((const char*)newpw,
-                                (char*) crypt_ftr.crypto_type_name);
-        if (key_index < 0)
-            goto error_shutting_down;
-        else
-           crypt_ftr.flags |= CRYPT_ASCII_PASSWORD_UPDATED;
-#endif
         /* Replace scrypted intermediate key if we are preparing for a reboot */
         if (onlyCreateHeader) {
             unsigned char fake_master_key[KEY_LEN_BYTES];
@@ -3426,6 +3417,27 @@ int cryptfs_enable_internal(char *howarg, int crypt_type, char *passwd,
             save_persistent_data();
         }
     }
+
+    /* When encryption triggered from settings, encryption starts after reboot.
+       So set the encryption key when the actual encryption starts.
+     */
+#ifdef CONFIG_HW_DISK_ENCRYPTION
+    if (previously_encrypted_upto == 0 && !onlyCreateHeader) {
+        clear_hw_device_encryption_key();
+        if (get_keymaster_hw_fde_passwd(passwd, newpw, crypt_ftr.salt,
+                                           &crypt_ftr))
+            key_index = set_hw_device_encryption_key(passwd, (char*)crypt_ftr.crypto_type_name);
+        else
+            key_index = set_hw_device_encryption_key((const char*)newpw,
+                                (char*) crypt_ftr.crypto_type_name);
+        if (key_index < 0)
+            goto error_shutting_down;
+        else
+            crypt_ftr.flags |= CRYPT_ASCII_PASSWORD_UPDATED;
+
+        put_crypt_ftr_and_key(&crypt_ftr);
+    }
+#endif
 
     if (onlyCreateHeader) {
         sleep(2);
@@ -3476,7 +3488,6 @@ int cryptfs_enable_internal(char *howarg, int crypt_type, char *passwd,
     else
       create_crypto_blk_dev(&crypt_ftr, decrypted_master_key, real_blkdev, crypto_blkdev,
                           CRYPTO_BLOCK_DEVICE);
-
 #else
     create_crypto_blk_dev(&crypt_ftr, decrypted_master_key, real_blkdev, crypto_blkdev,
                           CRYPTO_BLOCK_DEVICE);
