@@ -517,19 +517,6 @@ bool e4crypt_vold_create_user_key(userid_t user_id, int serial, bool ephemeral) 
     return true;
 }
 
-static bool evict_key(const std::string& raw_ref) {
-    auto ref = keyname(raw_ref);
-    key_serial_t device_keyring;
-    if (!e4crypt_keyring(&device_keyring)) return false;
-    auto key_serial = keyctl_search(device_keyring, "logon", ref.c_str(), 0);
-    if (keyctl_revoke(key_serial) != 0) {
-        PLOG(ERROR) << "Failed to revoke key with serial " << key_serial << " ref " << ref;
-        return false;
-    }
-    LOG(DEBUG) << "Revoked key with serial " << key_serial << " ref " << ref;
-    return true;
-}
-
 bool e4crypt_destroy_user_key(userid_t user_id) {
     LOG(DEBUG) << "e4crypt_destroy_user_key(" << user_id << ")";
     if (!e4crypt_is_native()) {
@@ -538,12 +525,7 @@ bool e4crypt_destroy_user_key(userid_t user_id) {
     bool success = true;
     s_ce_keys.erase(user_id);
     std::string raw_ref;
-    // If we haven't loaded the CE key, no need to evict it.
-    if (lookup_key_ref(s_ce_key_raw_refs, user_id, &raw_ref)) {
-        success &= evict_key(raw_ref);
-    }
     s_ce_key_raw_refs.erase(user_id);
-    success &= lookup_key_ref(s_de_key_raw_refs, user_id, &raw_ref) && evict_key(raw_ref);
     s_de_key_raw_refs.erase(user_id);
     auto it = s_ephemeral_users.find(user_id);
     if (it != s_ephemeral_users.end()) {
