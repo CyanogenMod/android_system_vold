@@ -614,6 +614,7 @@ bool e4crypt_add_user_key_auth(userid_t user_id, int serial, const char* token_h
 bool e4crypt_fixate_newest_user_key_auth(userid_t user_id) {
     LOG(DEBUG) << "e4crypt_fixate_newest_user_key_auth " << user_id;
     if (!e4crypt_is_native()) return true;
+    if (s_ephemeral_users.count(user_id) != 0) return true;
     auto const directory_path = get_ce_key_directory_path(user_id);
     auto const paths = get_ce_key_paths(directory_path);
     if (paths.empty()) {
