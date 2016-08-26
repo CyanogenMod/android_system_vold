@@ -41,7 +41,7 @@ static int do_cmd(int sock, int argc, char **argv);
 
 static constexpr int kCommandTimeoutMs = 20 * 1000;
 
-int vdc_main(int argc, char **argv) {
+extern "C" int vdc_main(int argc, char **argv) {
     int sock;
     int wait_for_socket;
     char *progname;
