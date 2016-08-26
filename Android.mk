@@ -3,7 +3,6 @@ LOCAL_PATH:= $(call my-dir)
 common_src_files := \
 	VolumeManager.cpp \
 	CommandListener.cpp \
-	CryptCommandListener.cpp \
 	VoldCommand.cpp \
 	NetlinkManager.cpp \
 	NetlinkHandler.cpp \
@@ -17,7 +16,6 @@ common_src_files := \
 	Devmapper.cpp \
 	ResponseCode.cpp \
 	CheckBattery.cpp \
-	Ext4Crypt.cpp \
 	VoldUtil.c \
 	cryptfs.c \
 	Disk.cpp \
@@ -30,11 +28,16 @@ common_src_files := \
 	MoveTask.cpp \
 	Benchmark.cpp \
 	TrimTask.cpp \
-	Keymaster.cpp \
-	KeyStorage.cpp \
-	ScryptParameters.cpp \
 	secontext.cpp \
 	main.cpp
+
+crypto_src_files := \
+	CryptCommandListener.cpp \
+	Ext4Crypt.cpp \
+	cryptfs.c \
+	Keymaster.cpp \
+	KeyStorage.cpp \
+	ScryptParameters.cpp
 
 common_c_includes := \
 	system/extras/ext4_utils \
@@ -99,7 +102,7 @@ include $(CLEAR_VARS)
 LOCAL_ADDITIONAL_DEPENDENCIES := $(LOCAL_PATH)/Android.mk
 LOCAL_MODULE := libvold
 LOCAL_CLANG := true
-LOCAL_SRC_FILES := $(common_src_files)
+LOCAL_SRC_FILES := $(common_src_files) $(crypto_src_files)
 LOCAL_C_INCLUDES := $(common_c_includes)
 LOCAL_SHARED_LIBRARIES := $(common_shared_libraries)
 LOCAL_STATIC_LIBRARIES := $(common_static_libraries)
