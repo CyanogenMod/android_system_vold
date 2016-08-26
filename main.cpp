@@ -17,7 +17,9 @@
 #include "Disk.h"
 #include "VolumeManager.h"
 #include "CommandListener.h"
+#ifndef MINIVOLD
 #include "CryptCommandListener.h"
+#endif
 #include "NetlinkManager.h"
 #include "cryptfs.h"
 #include "sehandle.h"
@@ -68,7 +70,9 @@ extern "C" int vold_main(int argc, char** argv) {
 
     VolumeManager *vm;
     CommandListener *cl;
+#ifndef MINIVOLD
     CryptCommandListener *ccl;
+#endif
     NetlinkManager *nm;
 
     parse_args(argc, argv);
@@ -103,7 +107,9 @@ extern "C" int vold_main(int argc, char** argv) {
     }
 
     cl = new CommandListener();
+#ifndef MINIVOLD
     ccl = new CryptCommandListener();
+#endif
     vm->setBroadcaster((SocketListener *) cl);
     nm->setBroadcaster((SocketListener *) cl);
 
@@ -132,10 +138,12 @@ extern "C" int vold_main(int argc, char** argv) {
         exit(1);
     }
 
+#ifndef MINIVOLD
     if (ccl->startListener()) {
         PLOG(ERROR) << "Unable to start CryptCommandListener";
         exit(1);
     }
+#endif
 
     // Eventually we'll become the monitoring thread
     while(1) {
