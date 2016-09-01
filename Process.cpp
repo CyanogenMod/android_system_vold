@@ -213,8 +213,26 @@ int Process::killProcessesWithOpenFiles(const char *path, int signal) {
 
         if (signal != 0) {
             SLOGW("Sending %s to process %d", strsignal(signal), pid);
-            kill(pid, signal);
-            count++;
+            int ret = kill(pid, signal);
+            if (ret) {//send signal failed
+                    count++;
+            } else {//send signal success, wait finish
+                    char pidname[PATH_MAX];
+                    int  cnt=0;
+                    sprintf(pidname, "/proc/%d", pid);
+#define RETRY_COUNT 20
+                    //check if pid exist by opendir
+                    while(opendir(pidname) && cnt < RETRY_COUNT) {
+                        usleep(20000);
+                        cnt++;
+                    };
+                    if (cnt >= RETRY_COUNT) {
+                        count++;
+                        SLOGW("%d failed to kill",pid);
+                    } else {
+                        SLOGW("%d kill successfully", pid);
+                    }
+            }
         }
     }
     closedir(dir);
