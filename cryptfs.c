@@ -121,6 +121,7 @@ static int test_mount_hw_encrypted_fs(struct crypt_mnt_ftr* crypt_ftr,
                                    char *passwd, char *mount_point, char *label);
 int cryptfs_changepw_hw_fde(int crypt_type, const char *currentpw,
                                    const char *newpw);
+int cryptfs_check_passwd_hw(char *passwd);
 
 static void convert_key_to_hex_ascii_for_upgrade(const unsigned char *master_key,
                                      unsigned int keysize, char *master_key_ascii)
@@ -2290,6 +2291,54 @@ int check_unmounted_and_get_ftr(struct crypt_mnt_ftr* crypt_ftr)
     return 0;
 }
 
+#ifdef CONFIG_HW_DISK_ENCRYPTION
+int cryptfs_check_passwd_hw(char* passwd)
+{
+    struct crypt_mnt_ftr crypt_ftr;
+    int rc;
+
+    /* get key */
+    if (get_crypt_ftr_and_key(&crypt_ftr)) {
+        SLOGE("Error getting crypt footer and key");
+        return -1;
+    }
+
+    /*
+     * in case of manual encryption (from GUI), the encryption is done with
+     * default password
+     */
+    if (crypt_ftr.flags & CRYPT_FORCE_COMPLETE) {
+        rc = test_mount_hw_encrypted_fs(&crypt_ftr, DEFAULT_PASSWORD,
+            DATA_MNT_POINT, CRYPTO_BLOCK_DEVICE);
+
+        if (rc) {
+            SLOGE("Default password did not match on reboot encryption");
+            return rc;
+        }
+
+        crypt_ftr.flags &= ~CRYPT_FORCE_COMPLETE;
+        put_crypt_ftr_and_key(&crypt_ftr);
+        rc = cryptfs_changepw(crypt_ftr.crypt_type, DEFAULT_PASSWORD, passwd);
+        if (rc) {
+            SLOGE("Could not change password on reboot encryption");
+            return rc;
+        }
+    } else
+        rc = test_mount_hw_encrypted_fs(&crypt_ftr, passwd,
+            DATA_MNT_POINT, CRYPTO_BLOCK_DEVICE);
+
+    if (crypt_ftr.crypt_type != CRYPT_TYPE_DEFAULT) {
+        cryptfs_clear_password();
+        password = strdup(passwd);
+        struct timespec now;
+        clock_gettime(CLOCK_BOOTTIME, &now);
+        password_expiry_time = now.tv_sec + password_max_age_seconds;
+    }
+
+    return rc;
+}
+#endif
+
 int cryptfs_check_passwd(char *passwd)
 {
     SLOGI("cryptfs_check_passwd");
@@ -2309,15 +2358,12 @@ int cryptfs_check_passwd(char *passwd)
 
 #ifdef CONFIG_HW_DISK_ENCRYPTION
     if (is_hw_disk_encryption((char*)crypt_ftr.crypto_type_name))
-      rc = test_mount_hw_encrypted_fs(&crypt_ftr, passwd,
-                                   DATA_MNT_POINT, CRYPTO_BLOCK_DEVICE);
-    else
-      rc = test_mount_encrypted_fs(&crypt_ftr, passwd,
-                                 DATA_MNT_POINT, CRYPTO_BLOCK_DEVICE);
-#else
+        return cryptfs_check_passwd_hw(passwd);
+#endif
+
     rc = test_mount_encrypted_fs(&crypt_ftr, passwd,
                                  DATA_MNT_POINT, CRYPTO_BLOCK_DEVICE);
-#endif
+
     if (rc) {
         SLOGE("Password did not match");
         return rc;
@@ -3242,7 +3288,7 @@ int cryptfs_enable_internal(char *howarg, int crypt_type, char *passwd,
     unsigned char newpw[32];
     int key_index = 0;
 #endif
-  int index = 0;
+    int index = 0;
 
     if (!strcmp(howarg, "wipe")) {
       how = CRYPTO_ENABLE_WIPE;
