@@ -114,6 +114,8 @@ dev_t GetDevice(const std::string& path);
 
 std::string DefaultFstabPath();
 
+status_t RestoreconRecursive(const std::string& path);
+
 status_t SaneReadLinkAt(int dirfd, const char* path, char* buf, size_t bufsiz);
 
 class ScopedFd {

@@ -72,7 +72,7 @@ common_shared_libraries := \
 	libext2_blkid
 
 common_static_libraries := \
-	libbootloader_message_writer \
+	libbootloader_message \
 	libfs_mgr \
 	libfec \
 	libfec_rs \

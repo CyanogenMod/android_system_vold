@@ -62,7 +62,7 @@
 #include "CheckBattery.h"
 #include "Process.h"
 
-#include <bootloader_message_writer.h>
+#include <bootloader_message/bootloader_message.h>
 #include <hardware/keymaster0.h>
 #include <hardware/keymaster1.h>
 
@@ -4290,4 +4290,10 @@ int cryptfs_set_password(struct crypt_mnt_ftr* ftr, const char* password,
 {
     return encrypt_master_key(password, ftr->salt, master_key, ftr->master_key,
                               ftr, true);
+}
+
+const char* cryptfs_get_file_encryption_mode()
+{
+    struct fstab_rec* rec = fs_mgr_get_entry_for_mount_point(fstab, DATA_MNT_POINT);
+    return fs_mgr_get_file_encryption_mode(rec);
 }

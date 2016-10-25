@@ -182,8 +182,11 @@ void MoveTask::run() {
 
     // Step 1: tear down volumes and mount silently without making
     // visible to userspace apps
-    bringOffline(mFrom);
-    bringOffline(mTo);
+    {
+        std::lock_guard<std::mutex> lock(VolumeManager::Instance()->getLock());
+        bringOffline(mFrom);
+        bringOffline(mTo);
+    }
 
     fromPath = mFrom->getInternalPath();
     toPath = mTo->getInternalPath();
@@ -195,14 +198,17 @@ void MoveTask::run() {
 
     // Step 3: perform actual copy
     if (execCp(fromPath, toPath, 20, 60) != OK) {
-        goto fail;
+        goto copy_fail;
     }
 
     // NOTE: MountService watches for this magic value to know
     // that move was successful
     notifyProgress(82);
-    bringOnline(mFrom);
-    bringOnline(mTo);
+    {
+        std::lock_guard<std::mutex> lock(VolumeManager::Instance()->getLock());
+        bringOnline(mFrom);
+        bringOnline(mTo);
+    }
 
     // Step 4: clean up old data
     if (execRm(fromPath, 85, 15) != OK) {
@@ -212,9 +218,18 @@ void MoveTask::run() {
     notifyProgress(kMoveSucceeded);
     release_wake_lock(kWakeLock);
     return;
+
+copy_fail:
+    // if we failed to copy the data we should not leave it laying around
+    // in target location. Do not check return value, we can not do any
+    // useful anyway.
+    execRm(toPath, 80, 1);
 fail:
-    bringOnline(mFrom);
-    bringOnline(mTo);
+    {
+        std::lock_guard<std::mutex> lock(VolumeManager::Instance()->getLock());
+        bringOnline(mFrom);
+        bringOnline(mTo);
+    }
     notifyProgress(kMoveFailedInternalError);
     release_wake_lock(kWakeLock);
     return;

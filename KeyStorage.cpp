@@ -314,9 +314,13 @@ static bool deleteKey(const std::string& dir) {
     return true;
 }
 
-static bool secdiscardSecdiscardable(const std::string& dir) {
+static bool runSecdiscard(const std::string& dir) {
     if (ForkExecvp(
-            std::vector<std::string>{kSecdiscardPath, "--", dir + "/" + kFn_secdiscardable}) != 0) {
+            std::vector<std::string>{kSecdiscardPath, "--",
+                dir + "/" + kFn_encrypted_key,
+                dir + "/" + kFn_keymaster_key_blob,
+                dir + "/" + kFn_secdiscardable,
+                }) != 0) {
         LOG(ERROR) << "secdiscard failed";
         return false;
     }
@@ -335,7 +339,7 @@ bool destroyKey(const std::string& dir) {
     bool success = true;
     // Try each thing, even if previous things failed.
     success &= deleteKey(dir);
-    success &= secdiscardSecdiscardable(dir);
+    success &= runSecdiscard(dir);
     success &= recursiveDeleteKey(dir);
     return success;
 }

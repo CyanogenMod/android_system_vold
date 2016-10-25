@@ -677,6 +677,27 @@ std::string DefaultFstabPath() {
     return StringPrintf("/fstab.%s", hardware);
 }
 
+status_t RestoreconRecursive(const std::string& path) {
+    LOG(VERBOSE) << "Starting restorecon of " << path;
+
+    // TODO: find a cleaner way of waiting for restorecon to finish
+    const char* cpath = path.c_str();
+    property_set("selinux.restorecon_recursive", "");
+    property_set("selinux.restorecon_recursive", cpath);
+
+    char value[PROPERTY_VALUE_MAX];
+    while (true) {
+        property_get("selinux.restorecon_recursive", value, "");
+        if (strcmp(cpath, value) == 0) {
+            break;
+        }
+        usleep(100000); // 100ms
+    }
+
+    LOG(VERBOSE) << "Finished restorecon of " << path;
+    return OK;
+}
+
 status_t SaneReadLinkAt(int dirfd, const char* path, char* buf, size_t bufsiz) {
     ssize_t len = readlinkat(dirfd, path, buf, bufsiz);
     if (len < 0) {

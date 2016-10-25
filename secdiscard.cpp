@@ -43,11 +43,12 @@ constexpr uint32_t max_extents = 32;
 
 bool read_command_line(int argc, const char * const argv[], Options &options);
 void usage(const char *progname);
-int secdiscard_path(const std::string &path);
+bool secdiscard_path(const std::string &path);
 std::unique_ptr<struct fiemap> path_fiemap(const std::string &path, uint32_t extent_count);
 bool check_fiemap(const struct fiemap &fiemap, const std::string &path);
 std::unique_ptr<struct fiemap> alloc_fiemap(uint32_t extent_count);
 std::string block_device_for_path(const std::string &path);
+bool overwrite_with_zeros(int fd, off64_t start, off64_t length);
 
 }
 
@@ -58,9 +59,11 @@ int main(int argc, const char * const argv[]) {
         usage(argv[0]);
         return -1;
     }
-    for (auto target: options.targets) {
+    for (auto const &target: options.targets) {
         LOG(DEBUG) << "Securely discarding '" << target << "' unlink=" << options.unlink;
-        secdiscard_path(target);
+        if (!secdiscard_path(target)) {
+            LOG(ERROR) << "Secure discard failed for: " << target;
+        }
         if (options.unlink) {
             if (unlink(target.c_str()) != 0 && errno != ENOENT) {
                 PLOG(ERROR) << "Unable to unlink: " << target;
@@ -95,19 +98,19 @@ void usage(const char *progname) {
 }
 
 // BLKSECDISCARD all content in "path", if it's small enough.
-int secdiscard_path(const std::string &path) {
+bool secdiscard_path(const std::string &path) {
     auto fiemap = path_fiemap(path, max_extents);
     if (!fiemap || !check_fiemap(*fiemap, path)) {
-        return -1;
+        return false;
     }
     auto block_device = block_device_for_path(path);
     if (block_device.empty()) {
-        return -1;
+        return false;
     }
     AutoCloseFD fs_fd(block_device, O_RDWR | O_LARGEFILE);
     if (!fs_fd) {
         PLOG(ERROR) << "Failed to open device " << block_device;
-        return -1;
+        return false;
     }
     for (uint32_t i = 0; i < fiemap->fm_mapped_extents; i++) {
         uint64_t range[2];
@@ -115,10 +118,11 @@ int secdiscard_path(const std::string &path) {
         range[1] = fiemap->fm_extents[i].fe_length;
         if (ioctl(fs_fd.get(), BLKSECDISCARD, range) == -1) {
             PLOG(ERROR) << "Unable to BLKSECDISCARD " << path;
-            return -1;
+            if (!overwrite_with_zeros(fs_fd.get(), range[0], range[1])) return false;
+            LOG(DEBUG) << "Used zero overwrite";
         }
     }
-    return 0;
+    return true;
 }
 
 // Read the file's FIEMAP
@@ -204,6 +208,25 @@ std::string block_device_for_path(const std::string &path)
     }
     LOG(DEBUG) << "For path " << path << " block device is " << result;
     return result;
+}
+
+bool overwrite_with_zeros(int fd, off64_t start, off64_t length) {
+    if (lseek64(fd, start, SEEK_SET) != start) {
+        PLOG(ERROR) << "Seek failed for zero overwrite";
+        return false;
+    }
+    char buf[BUFSIZ];
+    memset(buf, 0, sizeof(buf));
+    while (length > 0) {
+        size_t wlen = static_cast<size_t>(std::min(static_cast<off64_t>(sizeof(buf)), length));
+        auto written = write(fd, buf, wlen);
+        if (written < 1) {
+            PLOG(ERROR) << "Write of zeroes failed";
+            return false;
+        }
+        length -= written;
+    }
+    return true;
 }
 
 }

@@ -216,7 +216,7 @@ static status_t BenchmarkRun() {
                 # TODO: track actual file size instead of guessing
                 count = min(int(e.args[2]), bufsize)
                 f.size += count
-                print >>bench, 'TEMP_FAILURE_RETRY(read(%s, buf, %d));' % (handle, count)
+                print >>bench, 'TEMP_FAILURE_RETRY(write(%s, buf, %d));' % (handle, count)
                 nwrite += 1
 
         elif e.call == "pread64":

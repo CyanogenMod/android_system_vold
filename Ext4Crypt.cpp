@@ -170,6 +170,7 @@ static bool install_key(const std::string& key, std::string* raw_ref) {
     }
     LOG(DEBUG) << "Added key " << key_id << " (" << ref << ") to keyring " << device_keyring
                << " in process " << getpid();
+
     return true;
 }
 
@@ -373,7 +374,9 @@ static bool lookup_key_ref(const std::map<userid_t, std::string>& key_map, useri
 }
 
 static bool ensure_policy(const std::string& raw_ref, const std::string& path) {
-    if (e4crypt_policy_ensure(path.c_str(), raw_ref.data(), raw_ref.size()) != 0) {
+    if (e4crypt_policy_ensure(path.c_str(),
+                              raw_ref.data(), raw_ref.size(),
+                              cryptfs_get_file_encryption_mode()) != 0) {
         LOG(ERROR) << "Failed to set policy on: " << path;
         return false;
     }
@@ -430,6 +433,13 @@ bool e4crypt_initialize_global_de() {
     if (s_global_de_initialized) {
         LOG(INFO) << "Already initialized";
         return true;
+    }
+
+    std::string mode_filename = std::string("/data") + e4crypt_key_mode;
+    std::string mode = cryptfs_get_file_encryption_mode();
+    if (!android::base::WriteStringToFile(mode, mode_filename)) {
+        PLOG(ERROR) << "Cannot save type";
+        return false;
     }
 
     std::string device_key;
@@ -507,19 +517,6 @@ bool e4crypt_vold_create_user_key(userid_t user_id, int serial, bool ephemeral) 
     return true;
 }
 
-static bool evict_key(const std::string& raw_ref) {
-    auto ref = keyname(raw_ref);
-    key_serial_t device_keyring;
-    if (!e4crypt_keyring(&device_keyring)) return false;
-    auto key_serial = keyctl_search(device_keyring, "logon", ref.c_str(), 0);
-    if (keyctl_revoke(key_serial) != 0) {
-        PLOG(ERROR) << "Failed to revoke key with serial " << key_serial << " ref " << ref;
-        return false;
-    }
-    LOG(DEBUG) << "Revoked key with serial " << key_serial << " ref " << ref;
-    return true;
-}
-
 bool e4crypt_destroy_user_key(userid_t user_id) {
     LOG(DEBUG) << "e4crypt_destroy_user_key(" << user_id << ")";
     if (!e4crypt_is_native()) {
@@ -528,12 +525,7 @@ bool e4crypt_destroy_user_key(userid_t user_id) {
     bool success = true;
     s_ce_keys.erase(user_id);
     std::string raw_ref;
-    // If we haven't loaded the CE key, no need to evict it.
-    if (lookup_key_ref(s_ce_key_raw_refs, user_id, &raw_ref)) {
-        success &= evict_key(raw_ref);
-    }
     s_ce_key_raw_refs.erase(user_id);
-    success &= lookup_key_ref(s_de_key_raw_refs, user_id, &raw_ref) && evict_key(raw_ref);
     s_de_key_raw_refs.erase(user_id);
     auto it = s_ephemeral_users.find(user_id);
     if (it != s_ephemeral_users.end()) {
@@ -542,7 +534,12 @@ bool e4crypt_destroy_user_key(userid_t user_id) {
         for (auto const path: get_ce_key_paths(get_ce_key_directory_path(user_id))) {
             success &= android::vold::destroyKey(path);
         }
-        success &= android::vold::destroyKey(get_de_key_path(user_id));
+        auto de_key_path = get_de_key_path(user_id);
+        if (path_exists(de_key_path)) {
+            success &= android::vold::destroyKey(de_key_path);
+        } else {
+            LOG(INFO) << "Not present so not erasing: " << de_key_path;
+        }
     }
     return success;
 }
@@ -617,6 +614,7 @@ bool e4crypt_add_user_key_auth(userid_t user_id, int serial, const char* token_h
 bool e4crypt_fixate_newest_user_key_auth(userid_t user_id) {
     LOG(DEBUG) << "e4crypt_fixate_newest_user_key_auth " << user_id;
     if (!e4crypt_is_native()) return true;
+    if (s_ephemeral_users.count(user_id) != 0) return true;
     auto const directory_path = get_ce_key_directory_path(user_id);
     auto const paths = get_ce_key_paths(directory_path);
     if (paths.empty()) {
@@ -737,6 +735,12 @@ bool e4crypt_prepare_user_storage(const char* volume_uuid, userid_t user_id, int
             if (!ensure_policy(ce_raw_ref, misc_ce_path)) return false;
             if (!ensure_policy(ce_raw_ref, media_ce_path)) return false;
             if (!ensure_policy(ce_raw_ref, user_ce_path)) return false;
+
+            // Now that credentials have been installed, we can run restorecon
+            // over these paths
+            // NOTE: these paths need to be kept in sync with libselinux
+            android::vold::RestoreconRecursive(system_ce_path);
+            android::vold::RestoreconRecursive(misc_ce_path);
         }
     }
 
