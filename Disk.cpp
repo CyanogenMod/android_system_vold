@@ -21,6 +21,7 @@
 #include "VolumeBase.h"
 #include "VolumeManager.h"
 #include "ResponseCode.h"
+#include "Ext4Crypt.h"
 
 #include <android-base/file.h>
 #include <android-base/stringprintf.h>
@@ -493,6 +494,11 @@ status_t Disk::partitionPrivate() {
 
 status_t Disk::partitionMixed(int8_t ratio) {
     int res;
+
+    if (e4crypt_is_native()) {
+        LOG(ERROR) << "Private volumes not yet supported on FBE devices";
+        return -EINVAL;
+    }
 
     destroyAllVolumes();
     mJustPartitioned = true;

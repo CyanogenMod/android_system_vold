@@ -301,7 +301,7 @@ int CommandListener::StorageCmd::runCommand(SocketClient *cli,
             cli->sendMsg(ResponseCode::CommandSyntaxError, "Usage: mountall", false);
             return 0;
         }
-        fs_mgr_mount_all(fstab);
+        fs_mgr_mount_all(fstab, MOUNT_MODE_DEFAULT);
         cli->sendMsg(ResponseCode::CommandOkay, "Mountall ran successfully", false);
         return 0;
     }
