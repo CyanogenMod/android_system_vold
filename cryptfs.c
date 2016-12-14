@@ -3617,6 +3617,12 @@ int cryptfs_enable_internal(char *howarg, int crypt_type, char *passwd,
             property_set("ro.crypto.type", "block");
             release_wake_lock(lockid);
             if (rebootEncryption && crypt_ftr.crypt_type != CRYPT_TYPE_DEFAULT) {
+#ifdef CONFIG_HW_DISK_ENCRYPTION
+                if (is_hw_disk_encryption((char*)crypt_ftr.crypto_type_name)) {
+                  sleep(2); /* Give the UI a chance to show 100% progress */
+                  cryptfs_reboot(reboot);
+                }
+#endif
                 // Bring up cryptkeeper that will check the password and set it
                 property_set("vold.decrypt", "trigger_shutdown_framework");
                 sleep(2);
