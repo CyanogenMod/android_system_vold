@@ -2053,6 +2053,14 @@ static int test_mount_hw_encrypted_fs(struct crypt_mnt_ftr* crypt_ftr,
   SLOGD("crypt_ftr->fs_size = %lld\n", crypt_ftr->fs_size);
   orig_failed_decrypt_count = crypt_ftr->failed_decrypt_count;
 
+  if (! (crypt_ftr->flags & CRYPT_MNT_KEY_UNENCRYPTED) ) {
+    if (decrypt_master_key(passwd, decrypted_master_key, crypt_ftr, 0, 0)) {
+      SLOGE("Failed to decrypt master key\n");
+      rc = -1;
+      goto errout;
+    }
+  }
+
   fs_mgr_get_crypt_info(fstab, 0, real_blkdev, sizeof(real_blkdev));
 
   int key_index = 0;
@@ -3617,6 +3625,12 @@ int cryptfs_enable_internal(char *howarg, int crypt_type, char *passwd,
             property_set("ro.crypto.type", "block");
             release_wake_lock(lockid);
             if (rebootEncryption && crypt_ftr.crypt_type != CRYPT_TYPE_DEFAULT) {
+#ifdef CONFIG_HW_DISK_ENCRYPTION
+                if (is_hw_disk_encryption((char*)crypt_ftr.crypto_type_name)) {
+                  sleep(2); /* Give the UI a chance to show 100% progress */
+                  cryptfs_reboot(reboot);
+                }
+#endif
                 // Bring up cryptkeeper that will check the password and set it
                 property_set("vold.decrypt", "trigger_shutdown_framework");
                 sleep(2);
