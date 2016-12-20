@@ -130,7 +130,7 @@ int Fat::check(const char *fsPath) {
             errno = EIO;
             return -1;
         }
-    } while (0);
+    } while (1);
 
     return 0;
 }
